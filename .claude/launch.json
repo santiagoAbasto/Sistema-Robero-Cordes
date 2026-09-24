@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["artisan", "serve", "--port=8002"],
+      "cwd": "backend",
+      "port": 8002
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "frontend",
+      "port": 5180
+    }
+  ]
+}
