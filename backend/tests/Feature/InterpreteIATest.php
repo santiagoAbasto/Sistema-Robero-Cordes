@@ -20,13 +20,26 @@ class InterpreteIATest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * Un pedido que las reglas no pueden leer: pura prosa, sin cantidades ni
+     * medidas. Es el unico caso en que se le pregunta a la IA.
+     */
+    private const PROSA = 'Necesitamos cotizar material para el reactor, por favor avisen que tienen disponible.';
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->seed(CatalogosSeeder::class);
     }
 
-    public function test_lee_el_pedido_con_la_ia_cuando_hay_credencial(): void
+    /**
+     * La IA lee solo lo que las reglas no pudieron.
+     *
+     * Antes bastaba con que hubiera credencial para que la IA se quedara con
+     * la lectura entera, y como engancha el material por nombre EXACTO,
+     * devolvia lineas sin material que las reglas si reconocian.
+     */
+    public function test_la_ia_lee_lo_que_las_reglas_no_pudieron(): void
     {
         config(['services.openai.key' => 'clave-de-prueba']);
 
@@ -48,7 +61,7 @@ class InterpreteIATest extends TestCase
             ]),
         ]);
 
-        $resultado = app(InterpreteIA::class)->interpretar('6 barras de hastelloy de 38 x 145');
+        $resultado = app(InterpreteIA::class)->interpretar(self::PROSA);
 
         $this->assertTrue($resultado['con_ia']);
         $this->assertCount(1, $resultado['lineas']);
@@ -71,7 +84,7 @@ class InterpreteIATest extends TestCase
         );
 
         $this->assertFalse($resultado['con_ia']);
-        $this->assertStringContainsString('no esta configurada', $resultado['aviso']);
+        $this->assertNull($resultado['aviso'], 'las reglas leyeron: no hay nada que avisar');
         $this->assertCount(2, $resultado['lineas']);
 
         // Sin credencial no se llama a nadie.
@@ -95,12 +108,10 @@ class InterpreteIATest extends TestCase
         config(['services.openai.key' => 'clave-de-prueba']);
         Http::fake(['*/chat/completions' => Http::response(['error' => ['message' => 'x']], $estado)]);
 
-        $resultado = app(InterpreteIA::class)->interpretar('6 UN HASTELLOY C-276 BAR RED 38.1 X 145MM');
+        $resultado = app(InterpreteIA::class)->interpretar(self::PROSA);
 
         $this->assertFalse($resultado['con_ia']);
         $this->assertStringContainsString($esperado, $resultado['aviso']);
-        // Pase lo que pase, la linea se tiene que poder cargar igual.
-        $this->assertCount(1, $resultado['lineas']);
     }
 
     public static function fallas(): array
@@ -136,7 +147,7 @@ class InterpreteIATest extends TestCase
         ]);
 
         $linea = app(InterpreteIA::class)
-            ->interpretar('200 caños hastelloy, coticen aerea y maritima')['lineas'][0];
+            ->interpretar(self::PROSA)['lineas'][0];
 
         $this->assertCount(2, $linea['alternativas']);
         $this->assertSame('Maritimo', $linea['alternativas'][0]['etiqueta']);
@@ -163,7 +174,7 @@ class InterpreteIATest extends TestCase
             ]),
         ]);
 
-        $linea = app(InterpreteIA::class)->interpretar('10 barras')['lineas'][0];
+        $linea = app(InterpreteIA::class)->interpretar(self::PROSA)['lineas'][0];
 
         // Con una sola opcion no hay nada que elegir: es la linea y ya.
         $this->assertSame([], $linea['alternativas']);
@@ -186,7 +197,7 @@ class InterpreteIATest extends TestCase
             ]),
         ]);
 
-        $linea = app(InterpreteIA::class)->interpretar('10 barras')['lineas'][0];
+        $linea = app(InterpreteIA::class)->interpretar(self::PROSA)['lineas'][0];
 
         // Un tipo que no existe cae en "Otra", no rompe ni se guarda como vino.
         $this->assertSame('Otra', $linea['alternativas'][0]['tipo']);
@@ -209,7 +220,7 @@ class InterpreteIATest extends TestCase
             ]),
         ]);
 
-        $resultado = app(InterpreteIA::class)->interpretar('3 un material raro');
+        $resultado = app(InterpreteIA::class)->interpretar(self::PROSA);
 
         // El material no está en el catálogo: queda vacío, no se inventa.
         $this->assertNull($resultado['lineas'][0]['material']);
@@ -219,5 +230,31 @@ class InterpreteIATest extends TestCase
         // Y la linea queda sin dar por buena, para que alguien la mire: cotizar
         // una aleacion parecida a la pedida es peor que no cotizar.
         $this->assertFalse($resultado['lineas'][0]['igual_a_lo_pedido']);
+    }
+
+    /**
+     * Con credencial cargada, las reglas siguen mandando.
+     *
+     * Es el arreglo de fondo. La IA engancha el material por nombre exacto y
+     * el catalogo no lo escribe como lo escribe ella, asi que una lectura que
+     * las reglas hacian bien terminaba sin material. Ahora la IA solo entra
+     * donde las reglas no llegaron, y no se la llama al pedo.
+     */
+    public function test_las_reglas_mandan_aunque_haya_credencial(): void
+    {
+        config(['services.openai.key' => 'clave-de-prueba']);
+        Http::fake();
+
+        $resultado = app(InterpreteIA::class)->interpretar(
+            '3 Barras de Ø127mm x 25.4mm de largo. Material: TITANIO GR2',
+        );
+
+        $this->assertFalse($resultado['con_ia']);
+        $this->assertCount(1, $resultado['lineas']);
+        $this->assertSame('TITANIO GR2', $resultado['lineas'][0]['material']);
+        $this->assertSame(127.0, $resultado['lineas'][0]['diametro_mm']);
+
+        // Y no se gasta una llamada cuando no hace falta.
+        Http::assertNothingSent();
     }
 }
