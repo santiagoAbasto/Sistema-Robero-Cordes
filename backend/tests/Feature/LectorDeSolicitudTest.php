@@ -225,14 +225,170 @@ class LectorDeSolicitudTest extends TestCase
         $this->assertNull($linea['diametro_mm'], 'una pulgada no es un milimetro');
     }
 
-    /** Un saludo o una firma no son una linea de pedido. */
-    public function test_el_ruido_del_mail_no_entra(): void
+    /**
+     * El ruido del mail no entra, aunque nombre un material sin querer.
+     *
+     * El catalogo tiene alias de dos y tres letras —RE es Renio, TAN es
+     * Tantalio, GRA es Grafito, CUAL es Cobre Aluminio— y buscandolos por
+     * pedazo de texto caen adentro de palabras comunes: "entREGA",
+     * "TiTANiu", "GRAcias", "CUALquier". Un mail de seis renglones devolvia
+     * seis lineas de materiales carisimos y ninguna era lo que se pidio.
+     *
+     * Un renglon es una linea de pedido si pide una cantidad o dice una
+     * medida. Un saludo no pide nada.
+     */
+    #[DataProvider('ruidoDeMail')]
+    public function test_el_ruido_del_mail_no_entra(string $renglon): void
     {
-        $r = $this->lector->interpretar(
-            "Hola Roberto, como va?\n2 DISCOS de Inconel 600 de 200 x 12 mm\nGracias, saludos\nJuan",
-        );
+        $this->assertNull($this->leer($renglon), "entro como linea: {$renglon}");
+    }
 
-        $this->assertCount(1, $r['lineas']);
-        $this->assertSame('DISCO', $r['lineas'][0]['forma']);
+    public static function ruidoDeMail(): array
+    {
+        return [
+            ['Buenos dias Roberto, espero que andes bien.'],
+            ['entrega:'],
+            ['Ante cualquier consulta estamos a disposicion.'],
+            ['Desde ya, muchas gracias.'],
+            ['Quedo a la espera de su respuesta.'],
+            ['Att. Juan Perez - Compras'],
+            ['Por favor cotizar con entrega en planta.'],
+        ];
+    }
+
+    /**
+     * Un alias corto no engancha adentro de una palabra.
+     *
+     * Aca el renglon SI es un pedido —tiene cantidad y medida—, asi que la
+     * linea entra. Lo que no puede pasar es que "para cualquier uso" la
+     * cargue con Cobre Aluminio.
+     */
+    public function test_un_alias_corto_no_cae_adentro_de_una_palabra(): void
+    {
+        $cobre = Material::where('activo', true)->firstOrFail();
+        MaterialAlias::create(['material_id' => $cobre->id, 'alias' => 'CUAL']);
+        MaterialAlias::create(['material_id' => $cobre->id, 'alias' => 'GRA']);
+
+        $linea = $this->leer('3 DISCOS de 200 x 12 mm para cualquier uso, gracias');
+
+        $this->assertNotNull($linea);
+        $this->assertNull($linea['material_id'], 'no lo nombro: no se elige uno');
+        $this->assertSame('DISCO', $linea['forma']);
+    }
+
+    /**
+     * Una letra cambiada no deja la linea sin material.
+     *
+     * Los mails vienen con tipeos. "Titaniu Grado 2" es Titanio Grado 2 y no
+     * hay otra cosa que pueda ser.
+     */
+    public function test_corrige_un_tipeo_de_una_letra(): void
+    {
+        $linea = $this->leer('3 Barras de Ø127mm x 25.4mm de largo. Material: Titaniu Grado 2');
+
+        $this->assertNotNull($linea);
+        $this->assertSame('TITANIO GR2', $linea['material']);
+    }
+
+    /**
+     * Una designacion no se corrige nunca.
+     *
+     * En "AISI 317" esa ultima letra no es un error de tipeo: es otro acero,
+     * con otro precio. Los codigos con numeros quedan como vinieron.
+     */
+    public function test_no_corrige_una_designacion(): void
+    {
+        $linea = $this->leer('2 CHAPA AISI 317 de 2 x 1000 x 2000 mm');
+
+        $this->assertNotNull($linea);
+        $this->assertNotSame('Acero AISI 316', $linea['material']);
+    }
+
+    /** La viñeta de la lista no se come la cantidad. */
+    #[DataProvider('vinetas')]
+    public function test_la_vineta_no_se_come_la_cantidad(string $renglon): void
+    {
+        $linea = $this->leer($renglon);
+
+        $this->assertNotNull($linea, "se descarto: {$renglon}");
+        $this->assertSame(3.0, $linea['cantidad'], "fallo con: {$renglon}");
+    }
+
+    public static function vinetas(): array
+    {
+        return [
+            ['- 3 DISCOS de inconel 600 de 200 x 12 mm'],
+            ['* 3 DISCOS de inconel 600 de 200 x 12 mm'],
+            ['• 3 DISCOS de inconel 600 de 200 x 12 mm'],
+            ['1) 3 DISCOS de inconel 600 de 200 x 12 mm'],
+        ];
+    }
+
+    /**
+     * "Barra" a secas con el diametro marcado es una barra redonda.
+     *
+     * El catalogo tiene BARRA desactivada y activas BARRA REDONDA y BARRA
+     * RED. / VARILLA. Sin mas datos no se elige ninguna. Pero el Ø lo
+     * escribio el cliente: una barra con diametro es redonda, una hexagonal
+     * se escribe entre caras.
+     */
+    public function test_barra_con_diametro_marcado_es_redonda(): void
+    {
+        $this->assertSame('BARRA REDONDA', $this->leer('3 Barras de Ø127mm x 25.4mm de largo')['forma']);
+        $this->assertSame('BARRA REDONDA', $this->leer('4 un barra DIA 65 X 145MM')['forma']);
+    }
+
+    /** Sin el diametro marcado, "barra" no dice cual es y queda vacia. */
+    public function test_barra_sin_diametro_marcado_queda_sin_forma(): void
+    {
+        $linea = $this->leer('3 barras de titanio gr2 de 127 x 25.4 mm');
+
+        $this->assertNotNull($linea);
+        $this->assertNull($linea['forma_id']);
+        $this->assertSame(3.0, $linea['cantidad'], 'lo demas se carga igual');
+    }
+
+    /**
+     * El mail de verdad, entero.
+     *
+     * Es el que destapó todo esto: devolvia seis lineas —Renio, Tantalio,
+     * Cobre Aluminio, Grafito— y ninguna era lo que el cliente pidio.
+     */
+    public function test_el_mail_de_un_cliente_entero(): void
+    {
+        $r = $this->lector->interpretar(<<<'MAIL'
+            Buenos días Roberto, espero que andes bien. Quería solicitar si me podrían cotizar lo siguiente y confirmar si tienen stock o el plazo de
+            entrega:
+
+            - 3 Barras de Ø127mm x 25.4mm de largo. Material: Titaniu Grado 2
+
+            - 1 Barras de Ø127mm x 26mm de largo. Material: Titaniu Grado 2
+
+            - 3 Caño de 1.5" SCH40S x 3340mm. Material: Titaniu Grado 2
+
+            Ante cualquier consulta estamos a disposición.
+
+            Desde ya, muchas gracias.
+
+            Saludos.!
+            MAIL);
+
+        $this->assertCount(3, $r['lineas'], 'tres renglones pidieron algo, tres lineas');
+
+        [$una, $dos, $tres] = $r['lineas'];
+
+        $this->assertSame(3.0, $una['cantidad']);
+        $this->assertSame('TITANIO GR2', $una['material']);
+        $this->assertSame('BARRA REDONDA', $una['forma']);
+        $this->assertSame(127.0, $una['diametro_mm']);
+        $this->assertSame(25.4, $una['largo_mm']);
+
+        $this->assertSame(1.0, $dos['cantidad']);
+        $this->assertSame(26.0, $dos['largo_mm']);
+
+        $this->assertSame(3.0, $tres['cantidad']);
+        $this->assertSame('CAÑO', $tres['forma']);
+        // La medida comercial se guarda como la escriben, no en milimetros.
+        $this->assertStringContainsString('SCH40S', $tres['dimensiones']);
     }
 }
