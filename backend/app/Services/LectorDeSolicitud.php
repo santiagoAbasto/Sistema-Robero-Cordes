@@ -16,6 +16,32 @@ use App\Models\Unidad;
  */
 class LectorDeSolicitud
 {
+    /** Donde guarda la linea, en milimetros, cada medida de la forma. */
+    private const COLUMNA = [
+        'diameter' => 'diametro_mm', 'outer' => 'diametro_mm',
+        'side' => 'diametro_mm', 'across' => 'diametro_mm',
+        'wall' => 'espesor_mm', 'height' => 'espesor_mm',
+        'width' => 'ancho_mm', 'length' => 'largo_mm',
+    ];
+
+    /**
+     * Como escriben las formas cuando no escriben el nombre entero.
+     *
+     * Salio de leer las descripciones del archivo: "BAR RED", "ALA", "FLEJE".
+     * Solo abrevia formas que ya estan en el catalogo; no inventa ninguna.
+     */
+    private const ABREVIATURAS = [
+        'BARRA REDONDA' => ['BAR RED', 'BARRED', 'BARRA RED', 'REDONDO'],
+        'BARRA HEXAGONAL' => ['BAR HEX', 'HEXAG'],
+        'BARRA CUADRADA' => ['BAR CUAD', 'CUADRADA'],
+        'BARRA RED. / VARILLA' => ['VARILLA'],
+        'ALAMBRE' => ['ALAMB', 'ALA'],
+        'CAÑO' => ['CANIO', 'SCH'],
+        'CHAPA' => ['PLACA'],
+        'PLANCHUELA' => ['PLANCH', 'FLEJE'],
+        'TUBO' => ['TUB'],
+    ];
+
     /** @return array{lineas: array<int, array<string, mixed>>, sin_reconocer: array<int, string>} */
     public function interpretar(string $texto): array
     {
@@ -62,26 +88,41 @@ class LectorDeSolicitud
     {
         $normalizado = $this->normalizar($renglon);
 
-        // El material es lo que decide si el renglón es una línea de pedido.
         $material = $this->buscarMaterial($normalizado, $materiales);
+        $forma = $this->buscarForma($normalizado, $renglon, $formas);
+        [$cantidad, $unidad] = $this->buscarCantidad($normalizado, $unidades);
+        $medidas = $this->buscarMedidas($renglon, $forma);
 
-        if (! $material) {
+        /*
+          Que hace que un renglón sea una línea de pedido.
+
+          Antes lo decidia el material solo: sin material, el renglón se
+          descartaba entero y con el se iban la forma, la cantidad y las
+          medidas que si se habian leido. "1 caño inoxidable 316L 4\" SCH 40
+          x 6 m" desaparecia de la pantalla en vez de entrar con todo cargado
+          menos el material, que es un desplegable al lado.
+
+          Tirar trabajo hecho es peor que dejar un campo vacio: la linea se
+          revisa igual antes de guardar.
+        */
+        $esPedido = $material !== null
+            || ($forma !== null && ($cantidad !== null || $medidas['texto'] !== null));
+
+        if (! $esPedido) {
             return null;
         }
 
-        $forma = $this->buscarForma($normalizado, $formas);
-        [$cantidad, $unidad] = $this->buscarCantidad($normalizado, $unidades);
-        $medidas = $this->buscarMedidas($renglon);
-
         return [
             'descripcion' => trim($renglon),
-            'material_id' => $material->id,
-            'material' => $material->nombre,
+            'material_id' => $material?->id,
+            'material' => $material?->nombre,
             'forma_id' => $forma?->id,
             'forma' => $forma?->nombre,
             'dimensiones' => $medidas['texto'],
-            'diametro_mm' => $medidas['diametro'],
-            'largo_mm' => $medidas['largo'],
+            'diametro_mm' => $medidas['diametro_mm'],
+            'espesor_mm' => $medidas['espesor_mm'],
+            'ancho_mm' => $medidas['ancho_mm'],
+            'largo_mm' => $medidas['largo_mm'],
             'cantidad' => $cantidad,
             'unidad_venta_id' => $unidad?->id,
             'unidad' => $unidad?->codigo,
@@ -113,6 +154,10 @@ class LectorDeSolicitud
                 ->filter();
 
             foreach ($candidatos as $candidato) {
+                if (! $this->identificaAlgo($candidato)) {
+                    continue;
+                }
+
                 // El más largo gana: "AISI 316TI" antes que "AISI 316".
                 if (str_contains($normalizado, $candidato) && mb_strlen($candidato) > $largoMejor) {
                     $mejor = $material;
@@ -124,33 +169,102 @@ class LectorDeSolicitud
         return $mejor;
     }
 
-    private function buscarForma(string $normalizado, $formas): ?Forma
+    /**
+     * La forma, buscada en el catalogo y no en una lista escrita a mano.
+     *
+     * Antes eran ocho sinonimos fijos. El catalogo tiene diecinueve formas
+     * activas, asi que once no se reconocian nunca: una arandela, un disco,
+     * un anillo, una brida o un alambre entraban sin forma. Y sin forma no
+     * hay donde poner las medidas, y sin medidas no hay peso ni precio.
+     *
+     * Gana el nombre mas largo que aparezca escrito, igual que con el
+     * material: asi "BARRA REDONDA" le gana a "BARRA" donde estan las dos.
+     */
+    /**
+     * Si ese nombre o alias alcanza para reconocer un material por si solo.
+     *
+     * El catalogo tiene entradas de dos letras —"SC" es Scandio— y de puros
+     * numeros —"50"—. Buscadas por pedazo de texto enganchan cualquier cosa:
+     * "CAÑO S/C 4\" SCH 40" entraba como Scandio por el SCH, y un
+     * "RECTANGULO 50 X 3000" como el material 50.
+     *
+     * Siguen en el catalogo y se eligen a mano en la lista; lo que no se
+     * puede es adivinarlas desde el texto que escribio el cliente.
+     */
+    private function identificaAlgo(string $candidato): bool
     {
-        // Cómo lo escriben ellos, además del nombre del catálogo.
-        $sinonimos = [
-            'BARRA REDONDA' => ['BARRAREDONDA', 'BARRED', 'REDONDO', 'BARREDONDA'],
-            'CAÑO' => ['CANO', 'CANO', 'TUBOSCH', 'SCH'],
-            'CHAPA' => ['CHAPA', 'PLACA'],
-            'PLANCHUELA' => ['PLANCHUELA', 'FLEJE'],
-            'BARRA HEXAGONAL' => ['HEXAGONAL', 'BARHEX'],
-            'BARRA CUADRADA' => ['CUADRADA', 'BARCUAD'],
-            'TUBO' => ['TUBO'],
-            'BARRA' => ['BARRA'],
-        ];
+        // Una designacion: tiene letras y numeros. F138, X750, 316L, C276.
+        if (preg_match('/^(?=.*[A-Z])(?=.*\d)[A-Z0-9]+$/', $candidato)) {
+            return true;
+        }
 
-        foreach ($sinonimos as $nombre => $claves) {
+        // O una palabra de verdad: cuatro letras para arriba.
+        return ctype_alpha($candidato) && mb_strlen($candidato) >= 4;
+    }
+
+    private function buscarForma(string $normalizado, string $renglon, $formas): ?Forma
+    {
+        $mejor = null;
+        $largoMejor = 0;
+
+        foreach ($formas as $forma) {
+            $candidato = $this->normalizar($forma->nombre);
+
+            // Menos de cuatro letras no alcanza para distinguir nada.
+            if (mb_strlen($candidato) < 4 || mb_strlen($candidato) <= $largoMejor) {
+                continue;
+            }
+
+            if (str_contains($normalizado, $candidato)) {
+                $mejor = $forma;
+                $largoMejor = mb_strlen($candidato);
+            }
+        }
+
+        if ($mejor !== null) {
+            return $mejor;
+        }
+
+        /*
+          Recien si no escribieron el nombre entero, las abreviaturas.
+
+          Van sobre el texto con los espacios puestos y pegadas a un borde de
+          palabra: "ALA" es alambre en "TIT GR4 ALA Ø 3.18", pero adentro de
+          otra palabra no es nada. Sobre el texto sin espacios —que es con lo
+          que se busca el material— "ALA" aparece en cualquier lado.
+
+          BARRA a secas no esta y no es un olvido: el catalogo tiene activas
+          BARRA REDONDA y BARRA RED. / VARILLA, y cual de las dos es queda
+          para que lo diga CORDES. Adivinar una define el peso que se
+          factura.
+        */
+        $conEspacios = $this->conEspacios($renglon);
+
+        foreach (self::ABREVIATURAS as $nombre => $claves) {
             foreach ($claves as $clave) {
-                if (str_contains($normalizado, $clave)) {
-                    $forma = $formas->firstWhere('nombre', $nombre);
+                if (! preg_match('/\b'.preg_quote($clave, '/').'\b/', $conEspacios)) {
+                    continue;
+                }
 
-                    if ($forma) {
-                        return $forma;
-                    }
+                $forma = $formas->firstWhere('nombre', $nombre);
+
+                if ($forma) {
+                    return $forma;
                 }
             }
         }
 
         return null;
+    }
+
+    /** El texto en mayusculas y sin simbolos, pero con los espacios. */
+    private function conEspacios(string $texto): string
+    {
+        $mayusculas = strtr(mb_strtoupper($texto, 'UTF-8'), [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ñ' => 'N',
+        ]);
+
+        return trim(preg_replace('/[^A-Z0-9]+/', ' ', $mayusculas) ?? '');
     }
 
     /** "6 UN", "2 c/u", "3 metros" al principio del renglón. */
@@ -177,28 +291,74 @@ class LectorDeSolicitud
         return [$cantidad, $unidades->firstWhere('codigo', 'UN')];
     }
 
-    /** Saca la medida escrita y, si puede, el diámetro y el largo en mm. */
-    private function buscarMedidas(string $renglon): array
+    /**
+     * Las medidas escritas, cada una en el campo que le toca.
+     *
+     * El orden lo pone la forma, no este metodo: una barra redonda escrita
+     * "38.1 X 145" es diametro y largo, y una chapa escrita "2 X 1000 X 2000"
+     * es espesor, ancho y largo. Antes se tomaban siempre los dos primeros
+     * numeros como diametro y largo, asi que la chapa entraba con 2 mm de
+     * diametro y 1000 de largo, y el 2000 se perdia. De ahi sale el peso.
+     *
+     * @return array{texto: ?string, diametro_mm: ?float, espesor_mm: ?float, ancho_mm: ?float, largo_mm: ?float}
+     */
+    private function buscarMedidas(string $renglon, ?Forma $forma): array
     {
-        $texto = null;
-        $diametro = null;
-        $largo = null;
+        $medidas = [
+            'texto' => null, 'diametro_mm' => null,
+            'espesor_mm' => null, 'ancho_mm' => null, 'largo_mm' => null,
+        ];
 
-        // 38.1 X 145 MM  ·  DIA 65 X 145  ·  4" SCH 40 X 3000 MM
-        if (preg_match('/(?:DIA\s*)?(\d+(?:[.,]\d+)?)\s*(?:MM)?\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*(?:MM)?/u', $renglon, $m)) {
-            $texto = trim($m[0]);
-            $diametro = (float) str_replace(',', '.', $m[1]);
-            $largo = (float) str_replace(',', '.', $m[2]);
-        } elseif (preg_match('/(?:DIA\s*)?(\d+(?:[.,]\d+)?)\s*MM/iu', $renglon, $m)) {
-            $texto = trim($m[0]);
-            $diametro = (float) str_replace(',', '.', $m[1]);
+        $numeros = [];
+
+        // "38.1 X 145 MM" · "2 X 1000 X 2000" · "DIA 65 X 145MM" · "Ø 10 X 2000"
+        $serie = '/(?:DIA\s*|Ø\s*)?\d+(?:[.,]\d+)?(?:\s*(?:MM\s*)?[xX]\s*\d+(?:[.,]\d+)?){1,2}(?:\s*MM)?/iu';
+
+        if (preg_match($serie, $renglon, $m)) {
+            $medidas['texto'] = trim($m[0]);
+            $limpio = preg_replace('/\s*(?:MM|DIA|Ø)\s*/iu', ' ', $m[0]) ?? '';
+            $numeros = array_values(array_filter(
+                array_map('trim', preg_split('/[xX]/', $limpio) ?: []),
+                fn ($n) => $n !== '',
+            ));
+        } elseif (preg_match('/(?:DIA\s*|Ø\s*)?(\d+(?:[.,]\d+)?)\s*MM/iu', $renglon, $m)) {
+            // Una sola medida, pero con su unidad puesta: "ALAMBRE 0,70 MM".
+            $medidas['texto'] = trim($m[0]);
+            $numeros = [$m[1]];
         }
 
-        // Los caños vienen en pulgadas: la medida se guarda como la escriben.
+        /*
+          Los caños vienen en pulgadas y con schedule. La medida se guarda
+          como la escriben —"4\" SCH 40 X 6000"— porque asi la pide el cliente
+          y asi la busca el proveedor; pasarla a milimetros es otra cosa.
+        */
         if (preg_match('/\d+\s*"\s*(?:SCH\s*\d+)?(?:\s*[xX]\s*\d+\s*(?:MM)?)?/u', $renglon, $m)) {
-            $texto = trim($m[0]);
+            $medidas['texto'] = trim($m[0]);
+
+            return $medidas;
         }
 
-        return ['texto' => $texto, 'diametro' => $diametro, 'largo' => $largo];
+        /*
+          Sin forma reconocida, dos numeros se leen como diametro y largo.
+
+          Es lo que son en las seis formas del catalogo que piden dos medidas:
+          primero la seccion, despues el largo. Con tres numeros no se
+          arriesga —cual de ellos es el espesor depende de la forma— y quedan
+          vacios, con el texto entero a la vista para completarlos.
+        */
+        $orden = $forma?->ordenEnQueSeEscriben()
+            ?? (count($numeros) === 2 ? ['diameter', 'length'] : []);
+
+        foreach ($numeros as $i => $n) {
+            $columna = self::COLUMNA[$orden[$i] ?? ''] ?? null;
+
+            if ($columna === null || $medidas[$columna] !== null) {
+                continue;
+            }
+
+            $medidas[$columna] = (float) str_replace(',', '.', $n);
+        }
+
+        return $medidas;
     }
 }
