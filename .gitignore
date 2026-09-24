@@ -1,0 +1,170 @@
+# =============================================================================
+#  SISTEMA CORDES — qué NO sube al repositorio
+#
+#  Regla de fondo: al repositorio va el CÓDIGO. Los datos de CORDES, las
+#  credenciales y los documentos del proyecto se entregan aparte.
+#  Un archivo que se sube una vez queda en el historial de GitHub para
+#  siempre, aunque después se borre.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+#  1. DATOS REALES DE CORDES  ←  lo más importante de esta lista
+#
+#  Las exportaciones del Access traen nombres de contacto, teléfonos, notas
+#  internas y precios de 8.048 cotizaciones. Los respaldos .sql traen la base
+#  entera. Nada de esto es público.
+# -----------------------------------------------------------------------------
+backend/storage/app/migracion/
+backend/storage/app/migracion-anterior/
+backend/storage/app/respaldos/
+
+# Las bases del sistema anterior y cualquier volcado o copia de la nueva.
+*.accdb
+*.mdb
+*.ldb
+*.laccdb
+*.sql
+*.sql.gz
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+
+
+# -----------------------------------------------------------------------------
+#  2. CREDENCIALES Y CONFIGURACIÓN DE CADA MÁQUINA
+#
+#  El .env tiene la contraseña de MySQL, la clave de la app y las de OpenAI,
+#  Google Places y el correo. Se versionan los .env.example, que dicen qué
+#  variables hacen falta sin decir sus valores.
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+auth.json
+*.pem
+*.key
+*.p12
+*.pfx
+backend/storage/*.key
+
+# Ajustes del asistente propios de esta máquina (incluyen comandos con
+# usuario y contraseña de la base local).
+.claude/settings.local.json
+.claude/*.local.json
+MEMORY.md
+.memanto/
+
+
+# -----------------------------------------------------------------------------
+#  3. DEPENDENCIAS Y COMPILADOS
+#
+#  Se reconstruyen con `composer install` y `npm ci` desde composer.lock y
+#  package-lock.json, que sí se versionan. Son 260 MB que no aportan nada.
+# -----------------------------------------------------------------------------
+/vendor/
+backend/vendor/
+node_modules/
+backend/public/build/
+backend/public/hot
+backend/public/storage
+frontend/dist/
+frontend/dist-ssr/
+*.local
+
+
+# -----------------------------------------------------------------------------
+#  4. DOCUMENTOS Y CAPTURAS DEL PROYECTO
+#
+#  Planes, planillas, el índice telefónico y el flujo de pantallas. Son del
+#  proyecto, no del sistema: viven en la carpeta compartida.
+# -----------------------------------------------------------------------------
+flujo-capturas/
+capturas/
+screenshots/
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+
+# Capturas sueltas, con el nombre que les pone el sistema operativo.
+/*.png
+/*.jpg
+/*.jpeg
+Captura*.png
+Screenshot*.png
+Screen?Shot*.png
+
+
+# -----------------------------------------------------------------------------
+#  5. LO QUE GENERA EL SISTEMA AL CORRER
+#
+#  Laravel ya trae un .gitignore adentro de storage/ y bootstrap/cache/ que
+#  deja las carpetas vacías y descarta el contenido. Esto es el refuerzo.
+# -----------------------------------------------------------------------------
+*.log
+backend/storage/logs/*
+!backend/storage/logs/.gitignore
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/framework/testing/*
+backend/bootstrap/cache/*
+!backend/bootstrap/cache/.gitignore
+.phpunit.result.cache
+.phpunit.cache/
+/coverage/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# -----------------------------------------------------------------------------
+#  6. SISTEMA OPERATIVO Y EDITORES
+# -----------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+.idea/
+.vscode/
+!.vscode/extensions.json
+.nova/
+.zed/
+.fleet/
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+_ide_helper.php
+_ide_helper_models.php
+.phpstorm.meta.php
+.phpactor.json
+Homestead.json
+Homestead.yaml
+
+
+# -----------------------------------------------------------------------------
+#  7. TEMPORALES
+# -----------------------------------------------------------------------------
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+*.rej
