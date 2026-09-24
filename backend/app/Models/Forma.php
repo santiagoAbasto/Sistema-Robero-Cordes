@@ -51,6 +51,79 @@ class Forma extends Model
             ->all();
     }
 
+    /**
+     * En que orden se escriben las medidas de esta forma.
+     *
+     * No es el mismo orden que el del formulario, y esa es la trampa. El
+     * formulario de una chapa pide ancho, espesor y largo; escrita, una chapa
+     * es "2 X 1000 X 2000" y ese 2 es el espesor. Leerla en el orden de los
+     * campos carga 2 mm de ancho y 1000 de espesor, y de ahi sale el peso que
+     * se factura.
+     *
+     * El orden sale de medidas_habituales, que es como el catalogo dice que
+     * se escribe esa forma: "Espesor x ancho x largo". Se emparejan sus
+     * pedazos con los campos por el nombre. Asi lo decide el catalogo —y lo
+     * puede corregir cualquiera desde Formas y formulas— y no una lista
+     * escrita aca adentro.
+     *
+     * Si no se entiende, queda el orden de los campos: es una propuesta que
+     * alguien revisa, no un dato que se guarda solo.
+     *
+     * @return list<string> claves de campos, en el orden en que se escriben
+     */
+    public function ordenEnQueSeEscriben(): array
+    {
+        $campos = $this->camposDelCalculo();
+        $claves = array_column($campos, 'clave');
+        $pistas = trim((string) $this->medidas_habituales);
+
+        if ($pistas === '' || count($campos) < 2) {
+            return $claves;
+        }
+
+        $pedazos = preg_split('/\s*[x×+]\s*/iu', $pistas) ?: [];
+
+        // Tiene que nombrar exactamente las medidas que la forma pide. "Ø" o
+        // "Diametro nominal + norma" no dicen el orden de nada.
+        if (count($pedazos) !== count($campos)) {
+            return $claves;
+        }
+
+        $orden = [];
+        $libres = $campos;
+
+        foreach ($pedazos as $pedazo) {
+            $pedazo = mb_strtolower(trim($pedazo));
+            $mejor = null;
+            $puntajeMejor = 0;
+
+            foreach ($libres as $i => $campo) {
+                $puntaje = 0;
+
+                foreach (preg_split('/\s+/', mb_strtolower($campo['label'])) as $palabra) {
+                    // Por el principio de la palabra: "espesor" tiene que
+                    // encontrar "Espesor de pared".
+                    if (mb_strlen($palabra) > 3 && str_contains($pedazo, mb_substr($palabra, 0, 5))) {
+                        $puntaje += mb_strlen($palabra);
+                    }
+                }
+
+                if ($puntaje > $puntajeMejor) {
+                    [$mejor, $puntajeMejor] = [$i, $puntaje];
+                }
+            }
+
+            if ($mejor === null) {
+                return $claves;
+            }
+
+            $orden[] = $libres[$mejor]['clave'];
+            unset($libres[$mejor]);
+        }
+
+        return $orden;
+    }
+
     public function tieneCalculoAutomatico(): bool
     {
         return filled($this->expresion);

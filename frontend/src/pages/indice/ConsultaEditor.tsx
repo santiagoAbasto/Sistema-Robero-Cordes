@@ -605,7 +605,7 @@ export default function ConsultaEditor() {
           // piezas en 1 el peso de la linea sale por una sola.
           piezas: String(l.cantidad ?? 1),
           medidas: medidasDeLaLinea(
-            { diametro_mm: l.diametro_mm, espesor_mm: l.espesor_mm, largo_mm: l.largo_mm },
+            { diametro_mm: l.diametro_mm, espesor_mm: l.espesor_mm, ancho_mm: l.ancho_mm, largo_mm: l.largo_mm },
             catalogos?.formas.find((f) => f.id === l.forma_id) ?? null,
           ),
         },
