@@ -182,6 +182,10 @@ class LectorDeSolicitud
             'unidad' => $unidad?->codigo,
             // Lo que pidió el cliente arranca igual a lo que se va a cotizar.
             'igual_a_lo_pedido' => true,
+            // Las variantes —aerea y maritima, tramos de cantidad— se agregan
+            // con un clic en la linea. La misma clave que devuelve la IA, para
+            // que la pantalla no tenga que preguntar de donde vino la lectura.
+            'alternativas' => [],
         ];
     }
 
@@ -490,8 +494,16 @@ class LectorDeSolicitud
           suponer nada. Con tres numeros y sin forma no se arriesga: cual de
           ellos es el espesor depende de la forma.
         */
-        $orden = $forma?->ordenEnQueSeEscriben()
-            ?? (count($numeros) === 2 || $marcado ? ['diameter', 'length'] : []);
+        $orden = $forma?->ordenEnQueSeEscriben() ?: null;
+
+        /*
+          Y lo mismo si la forma no declara medidas.
+
+          BRIDA, PERFIL y ESFERA estan en el catalogo sin campos cargados. Al
+          reconocerlas, las medidas escritas se perdian en silencio: peor que
+          no reconocer la forma.
+        */
+        $orden ??= count($numeros) === 2 || $marcado ? ['diameter', 'length'] : [];
 
         foreach ($numeros as $i => $n) {
             $columna = self::COLUMNA[$orden[$i] ?? ''] ?? null;

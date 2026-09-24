@@ -15,6 +15,21 @@ use App\Http\Controllers\PermisoController;
 use App\Http\Controllers\ResumenController;
 use Illuminate\Support\Facades\Route;
 
+/*
+  Que version esta corriendo. Publica y sin token a proposito.
+
+  Sirve para una sola cosa, que ya costo caro: saber si el servidor tiene el
+  ultimo cambio o si todavia esta sirviendo el build anterior. Sin esto, un
+  arreglo que anda en local y "sigue fallando" en el servidor no se distingue
+  de un arreglo que no anda.
+*/
+Route::get('/version', fn () => [
+    'commit' => substr((string) env('RAILWAY_GIT_COMMIT_SHA', 'local'), 0, 7),
+    'mensaje' => env('RAILWAY_GIT_COMMIT_MESSAGE'),
+    'desplegado' => env('RAILWAY_DEPLOYMENT_ID') ? true : false,
+    'ahora' => now()->toDateTimeString(),
+]);
+
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware('auth:sanctum')->group(function () {

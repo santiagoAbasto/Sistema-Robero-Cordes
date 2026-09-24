@@ -32,15 +32,32 @@ class InterpreteIA
      */
     public function interpretar(string $texto): array
     {
-        if (! $this->estaConfigurada()) {
-            return $this->conReglas($texto, 'La IA no esta configurada: se leyo con las reglas de siempre.');
+        /*
+          LAS REGLAS PRIMERO. La IA es la red, no el camino.
+
+          Al reves andaba mal: bastaba que hubiera una credencial cargada para
+          que la IA se quedara con la lectura entera, y sus lineas se
+          enganchan al catalogo por nombre EXACTO. La IA devolvia "Titanio
+          Grado 7", el catalogo lo escribe de otra forma, y la linea entraba
+          sin material aunque el cliente lo hubiera dicho con todas las
+          letras. Las reglas lo encuentran por palabras, aguantan un tipeo y
+          no cuestan nada por uso.
+
+          Si las reglas no sacaron NINGUNA linea —un mail escrito en prosa,
+          sin cantidades ni medidas— recien ahi se le pregunta a la IA. Asi la
+          IA solo puede sumar: nunca pisa una lectura que salio bien.
+        */
+        $reglas = $this->conReglas($texto, null);
+
+        if ($reglas['lineas'] !== [] || ! $this->estaConfigurada()) {
+            return $reglas;
         }
 
         try {
             $lineas = $this->preguntarALaIA($texto);
 
-            if ($lineas === null) {
-                return $this->conReglas($texto, 'La IA contesto algo que no se entiende: se leyo con las reglas de siempre.');
+            if ($lineas === null || $lineas === []) {
+                return $this->conReglas($texto, 'Tampoco la IA le encontro lineas a este texto.');
             }
 
             return [
@@ -59,7 +76,7 @@ class InterpreteIA
         }
     }
 
-    private function conReglas(string $texto, string $aviso): array
+    private function conReglas(string $texto, ?string $aviso): array
     {
         $resultado = $this->lectorDeReglas->interpretar($texto);
 
@@ -192,7 +209,7 @@ class InterpreteIA
     /** Pasa los nombres que devolvió la IA a los ids del sistema. */
     private function aLineasDelSistema(array $crudas): array
     {
-        $materiales = Material::where('activo', true)->get();
+        $materiales = Material::with('alias')->where('activo', true)->get();
         $formas = Forma::where('activo', true)->get();
         $unidades = Unidad::where('activo', true)->get();
 
@@ -205,7 +222,7 @@ class InterpreteIA
                 continue;
             }
 
-            $material = $materiales->firstWhere('nombre', data_get($cruda, 'material'));
+            $material = $this->materialDelCatalogo($materiales, data_get($cruda, 'material'));
             $forma = $formas->firstWhere('nombre', data_get($cruda, 'forma'));
             $unidad = $unidades->firstWhere('codigo', data_get($cruda, 'unidad'));
 
@@ -237,6 +254,32 @@ class InterpreteIA
         }
 
         return $lineas;
+    }
+
+    /**
+     * El material del catalogo que nombro la IA.
+     *
+     * Por nombre exacto y, si no, por alias: la IA contesta "Titanio Grado 7"
+     * o "TIT GR7" segun como este escrito el mail, y las dos son el mismo
+     * material. Buscando solo por nombre, la linea entraba sin material.
+     *
+     * @param  \Illuminate\Support\Collection<int, Material>  $materiales
+     */
+    private function materialDelCatalogo($materiales, mixed $nombre): ?Material
+    {
+        $buscado = trim((string) $nombre);
+
+        if ($buscado === '') {
+            return null;
+        }
+
+        $plano = fn (string $t) => preg_replace('/[^a-z0-9]/', '', mb_strtolower($t)) ?? '';
+        $clave = $plano($buscado);
+
+        return $materiales->first(fn ($m) => $plano($m->nombre) === $clave)
+            ?? $materiales->first(
+                fn ($m) => $m->alias->contains(fn ($a) => $plano($a->alias) === $clave),
+            );
     }
 
     /**
