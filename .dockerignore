@@ -1,0 +1,21 @@
+# Lo que no tiene por qué entrar al contexto del build.
+.git
+.claude
+flujo-capturas
+**/node_modules
+**/vendor
+**/dist
+**/.env
+**/.DS_Store
+**/storage/logs/*
+**/storage/framework/cache/*
+**/storage/framework/sessions/*
+**/storage/framework/views/*
+**/storage/app/migracion
+**/storage/app/migracion-anterior
+**/storage/app/respaldos
+**/.phpunit.result.cache
+*.md
+*.pdf
+*.xlsx
+*.docx
