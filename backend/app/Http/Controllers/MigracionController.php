@@ -7,6 +7,7 @@ use App\Models\ConsultaLinea;
 use App\Models\Empresa;
 use App\Models\Forma;
 use App\Models\Material;
+use App\Services\Migracion\OriginalesDelAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -430,27 +431,19 @@ class MigracionController extends Controller
      */
     private function leerCsv(string $archivo): array
     {
-        $ruta = storage_path('app/migracion/'.$archivo);
+        $ruta = OriginalesDelAccess::carpeta().'/'.$archivo;
 
-        if (! is_file($ruta)) {
-            return [];
-        }
+        /*
+          El archivo primero, la base si no esta.
 
-        $f = fopen($ruta, 'r');
-        // Sin escape: el Access escribe las comillas duplicandolas, como manda
-        // el formato. Los archivos no tienen una sola barra invertida.
-        $cabecera = fgetcsv($f, 0, ',', '"', '');
-        $filas = [];
-
-        while (($fila = fgetcsv($f, 0, ',', '"', '')) !== false) {
-            if (count($fila) === count($cabecera)) {
-                $filas[] = array_combine($cabecera, $fila);
-            }
-        }
-
-        fclose($f);
-
-        return $filas;
+          En la maquina donde se importo estan los CSV y se leen de ahi. En el
+          servidor no: no se versionan ni se copian a la imagen porque son
+          datos de clientes. Alla la copia que hay es la que viajo adentro de
+          la base, puesta por `migracion:guardar-originales`.
+        */
+        return is_file($ruta)
+            ? OriginalesDelAccess::delArchivo($ruta)
+            : OriginalesDelAccess::deLaBase($archivo);
     }
 
     /**
