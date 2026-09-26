@@ -68,6 +68,7 @@ import CalculadoraDePeso, {
   type EstadoCalculadora,
 } from '../../components/CalculadoraDePeso'
 import AlternativasDeLinea from '../../components/AlternativasDeLinea'
+import { ModalContacto } from './modales'
 import { UNIDADES_MEDIDA, aMilimetros, calcularPeso } from '../../lib/calculadora'
 import { armarDescripcion, armarDimensiones } from '../../lib/descripcion'
 import type { Catalogos, Consulta, ConsultaLinea, Empresa, Forma } from '../../types/indice'
@@ -248,10 +249,11 @@ export default function ConsultaEditor() {
   // contactos y las condiciones para poder editarla.
   const empresaId = id ?? (existente?.empresa?.id ? String(existente.empresa.id) : null)
 
-  const { datos: empresa, cargando: cargandoEmpresa } = useCarga(
-    () => (empresaId ? traerEmpresa(empresaId) : Promise.resolve(null)),
-    [empresaId],
-  )
+  const {
+    datos: empresa,
+    cargando: cargandoEmpresa,
+    recargar: recargarEmpresa,
+  } = useCarga(() => (empresaId ? traerEmpresa(empresaId) : Promise.resolve(null)), [empresaId])
 
   const empresaActual = empresa
 
@@ -768,6 +770,7 @@ export default function ConsultaEditor() {
             empresa={empresaActual}
             catalogos={catalogos}
             venceEl={venceEl}
+            onContactoNuevo={recargarEmpresa}
           />
           <Lineas
             lineas={lineas}
@@ -932,6 +935,7 @@ function Encabezado({
   empresa,
   catalogos,
   venceEl,
+  onContactoNuevo,
 }: {
   /** Cotizacion, Pedido u Observacion: solo para mostrarlo. */
   tipo: string
@@ -940,10 +944,37 @@ function Encabezado({
   empresa: Empresa
   catalogos: Catalogos | null
   venceEl: string | null
+  /** Vuelve a traer la ficha: recién se cargó un contacto desde acá. */
+  onContactoNuevo: () => void
 }) {
   const c = cabecera as Record<string, string | number | boolean>
   const set = (k: string, v: string | number | boolean) =>
     setCabecera({ ...cabecera, [k]: v } as never)
+
+  /*
+    Dar de alta un contacto sin salir de la cotización.
+
+    "Quiero seleccionar el contacto del cliente y no está cargado, no tengo
+    opción de cargarlo sin salir de pantalla": había que ir a la ficha de la
+    empresa, cargarlo, volver y empezar la cotización de nuevo.
+
+    El modal es el mismo de la ficha. Al guardar se recarga la ficha y el
+    contacto nuevo —el último— queda elegido, que es para lo que se cargó.
+  */
+  const [cargandoContacto, setCargandoContacto] = useState(false)
+  const [eligeElNuevo, setEligeElNuevo] = useState(false)
+  const contactos = empresa?.contactos ?? []
+
+  useEffect(() => {
+    if (!eligeElNuevo || contactos.length === 0) return
+
+    const ultimo = contactos.reduce((a, b) => (b.id > a.id ? b : a))
+
+    set('contacto_id', ultimo.id)
+    setEligeElNuevo(false)
+    // set() se rearma en cada render del padre: incluirlo dispararía de nuevo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eligeElNuevo, contactos.length])
 
   return (
     <Card className="flex flex-col gap-3.5 p-[22px]">
@@ -953,6 +984,17 @@ function Encabezado({
           Los campos en celeste se tomaron de la ficha de esta empresa
         </span>
       </div>
+
+      <ModalContacto
+        abierto={cargandoContacto}
+        empresaId={empresa.id}
+        onCerrar={() => setCargandoContacto(false)}
+        onGuardado={() => {
+          setCargandoContacto(false)
+          setEligeElNuevo(true)
+          onContactoNuevo()
+        }}
+      />
 
       {/* Para quien es. Antes solo estaba en la miga de pan, chiquito: con
           varias cotizaciones abiertas no se sabia cual era cual. */}
@@ -968,17 +1010,25 @@ function Encabezado({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-5">
-        <Lista
-          etiqueta="Contactar a:"
-          className="lg:col-span-2"
-          value={c.contacto_id as string}
-          vacio="Sin elegir"
-          onChange={(e) => set('contacto_id', e.target.value)}
-          opciones={(empresa?.contactos ?? []).map((k) => ({
-            valor: k.id,
-            texto: k.sector ? `${k.nombre} · ${k.sector}` : k.nombre,
-          }))}
-        />
+        <div className="flex min-w-0 flex-col lg:col-span-2">
+          <Lista
+            etiqueta="Contactar a:"
+            value={c.contacto_id as string}
+            vacio="Sin elegir"
+            onChange={(e) => set('contacto_id', e.target.value)}
+            opciones={contactos.map((k) => ({
+              valor: k.id,
+              texto: k.sector ? `${k.nombre} · ${k.sector}` : k.nombre,
+            }))}
+          />
+          <button
+            type="button"
+            onClick={() => setCargandoContacto(true)}
+            className="mt-1 self-start text-[11px] font-semibold text-brand-600 hover:text-brand"
+          >
+            + Cargar un contacto nuevo
+          </button>
+        </div>
         <Texto
           etiqueta="Fecha"
           type="date"

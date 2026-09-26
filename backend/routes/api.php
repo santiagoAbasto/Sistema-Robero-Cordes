@@ -13,6 +13,7 @@ use App\Http\Controllers\HistorialController;
 use App\Http\Controllers\PdfController;
 use App\Http\Controllers\PermisoController;
 use App\Http\Controllers\ResumenController;
+use App\Http\Controllers\UsuarioController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -68,6 +69,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/empresas/{empresa}/restaurar', [EmpresaEscrituraController::class, 'restaurar']);
 
     Route::get('/empresas/{empresa}/historial', [HistorialController::class, 'deEmpresa']);
+    // Las revisiones de UNA cotizacion: un renglon por guardado, no por campo.
+    Route::get('/consultas/{consulta}/revisiones', [HistorialController::class, 'revisionesDeConsulta']);
 
     // Predictivos de direccion. La credencial queda en el servidor.
     Route::get('/direcciones/sugerencias', [DireccionController::class, 'sugerencias']);
@@ -129,6 +132,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/consultas/{consulta}/impresiones', [ConsultaEscrituraController::class, 'registrarImpresion']);
 
     // Quien ve que
+    // Alta, baja y modificacion de usuarios. Solo administradores.
+    Route::get('/usuarios', [UsuarioController::class, 'index']);
+    Route::post('/usuarios', [UsuarioController::class, 'guardar']);
+    Route::put('/usuarios/{usuario}', [UsuarioController::class, 'guardar']);
+    Route::post('/usuarios/{usuario}/baja', [UsuarioController::class, 'baja']);
+    Route::post('/usuarios/{usuario}/alta', [UsuarioController::class, 'alta']);
+
     Route::get('/permisos', [PermisoController::class, 'index']);
     Route::put('/permisos/{usuario}', [PermisoController::class, 'actualizar']);
     Route::put('/empresas/{empresa}/visibilidad', [PermisoController::class, 'visibilidad']);
