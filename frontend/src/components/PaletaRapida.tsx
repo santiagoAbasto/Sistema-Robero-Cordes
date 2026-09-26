@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { Building2, CornerDownLeft, Search } from 'lucide-react'
 import { NAV_ROUTES } from '../data/navigation'
-import { useUltimasVistas } from '../lib/indice'
+import { buscarEmpresas, useDebounce, useUltimasVistas } from '../lib/indice'
+import type { EmpresaVista } from '../lib/indice'
 
 /* ---------------------------------------------------------------------------
    Ir a cualquier lado escribiendo, sin recorrer el menú.
@@ -14,6 +15,11 @@ import { useUltimasVistas } from '../lib/indice'
 
    Se busca por el nombre de la entrada Y por el de su sección, así que "cotiz"
    trae todo lo de Cotizaciones aunque la palabra no esté en cada etiqueta.
+
+   LAS EMPRESAS SE LE PIDEN AL SERVIDOR. Antes se buscaban entre las últimas
+   que ese navegador había abierto, que son seis: Roberto escribía "ypf" y no
+   aparecía nada porque la había cargado Ricardo, en otra máquina. Parecía un
+   problema de permisos y era que la búsqueda nunca salía del navegador.
 --------------------------------------------------------------------------- */
 
 /** Sin acentos y en minúscula: "fórmulas" tiene que encontrarse con "formulas". */
@@ -42,13 +48,47 @@ export default function PaletaRapida({
     return NAV_ROUTES.filter((d) => plano(`${d.parent ?? ''} ${d.label}`).includes(q)).slice(0, 8)
   }, [texto])
 
-  const empresas = useMemo(() => {
-    const q = plano(texto.trim())
+  /*
+    Con el campo vacío, las últimas que abrió: es lo que uno busca casi
+    siempre y no cuesta un viaje al servidor. Con texto, las 968.
+  */
+  const [encontradas, setEncontradas] = useState<EmpresaVista[]>([])
+  const buscado = useDebounce(texto.trim(), 250)
 
-    if (!q) return ultimas.slice(0, 4)
+  useEffect(() => {
+    if (buscado.length < 2) {
+      setEncontradas([])
 
-    return ultimas.filter((e) => plano(e.nombre).includes(q)).slice(0, 4)
-  }, [texto, ultimas])
+      return
+    }
+
+    let vigente = true
+
+    buscarEmpresas({ buscar: buscado })
+      .then((r) => {
+        if (!vigente) return
+
+        setEncontradas(
+          r.data.slice(0, 6).map((e) => ({
+            id: e.id,
+            nombre: e.nombre,
+            relaciones: [],
+            localidad: null,
+          })),
+        )
+      })
+      // Que falle la búsqueda no puede trabar la paleta: queda el menú.
+      .catch(() => vigente && setEncontradas([]))
+
+    return () => {
+      vigente = false
+    }
+  }, [buscado])
+
+  const empresas = useMemo(
+    () => (texto.trim() ? encontradas.slice(0, 6) : ultimas.slice(0, 4)),
+    [texto, encontradas, ultimas],
+  )
 
   const todo = useMemo(
     () => [

@@ -61,7 +61,7 @@ export default function Topbar({ onMenu }: { onMenu?: () => void }) {
       >
         <Search size={17} strokeWidth={2} className="shrink-0" />
         <span className="w-full min-w-0 truncate text-[13.5px]">
-          Buscar empresa, material o cotización…
+          Buscar empresa o ir a una pantalla…
         </span>
         <kbd className="hidden shrink-0 rounded-md border border-line bg-white px-1.5 py-0.5 text-[11px] font-medium text-faint sm:inline-flex">
           ⌘K
