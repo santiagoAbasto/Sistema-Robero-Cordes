@@ -15,6 +15,7 @@ import {
 import { Guardado, Lista } from '../../components/ui/form'
 import api from '../../lib/api'
 import { mensajeDeError, useCarga } from '../../lib/indice'
+import Usuarios from './Usuarios'
 
 interface PermisosUsuario {
   ve_fichas: string
@@ -92,9 +93,12 @@ export default function QuienVeQue() {
     <div className="flex flex-col gap-[18px]">
       <PageHeader
         breadcrumb="Configuracion  ›  Usuarios"
-        titulo="Quien ve que"
+        titulo="Usuarios y permisos"
         bajada="Se marca con casillas, por persona. Los dueños ven todo siempre, para que nunca quede una ficha que nadie pueda abrir."
       />
+
+      {/* Quiénes son. Los permisos de abajo se aplican sobre estos. */}
+      <Usuarios />
 
       <Card className="overflow-hidden">
         <CardHeader
