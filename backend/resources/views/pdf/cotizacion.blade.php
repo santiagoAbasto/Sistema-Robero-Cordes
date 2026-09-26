@@ -93,6 +93,10 @@
         </td>
         <td class="doc">
             <div class="tipo">{{ mb_strtoupper($titulo) }}</div>
+            {{-- El numero de la cotizacion: es por el que pregunta el cliente. --}}
+            @if ($consulta->numero)
+                <div class="num"><strong>N° {{ $consulta->numero }}</strong></div>
+            @endif
             <div class="num">{{ $fecha }}</div>
             @if ($consulta->id_sistema)
                 <div class="num">{{ $consulta->id_sistema }}</div>

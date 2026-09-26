@@ -48,10 +48,13 @@ function Atajo({ onClick, children }: { onClick: () => void; children: React.Rea
 export default function AlternativasDeLinea({
   opciones,
   linea,
+  materiales = [],
   onCambio,
 }: {
   opciones: DatosOpcion[]
-  linea: { cantidad?: number | null; precio_unitario?: number | null }
+  linea: { cantidad?: number | null; precio_unitario?: number | null; material_id?: number | null }
+  /** El catálogo, para las alternativas que cambian el material. */
+  materiales?: { id: number; nombre: string }[]
   onCambio: (o: DatosOpcion[]) => void
 }) {
   const [sugerencias, setSugerencias] = useState<SugerenciasDeAlternativas | null>(null)
@@ -139,6 +142,38 @@ export default function AlternativasDeLinea({
     )
   }
 
+  /**
+   * El mismo item en dos materiales, para que el cliente elija.
+   *
+   * Es la alternativa que faltaba: las otras dos cambian el transporte o la
+   * cantidad, esta cambia QUE se entrega. La primera fila arranca con el
+   * material que ya tiene la linea y la segunda queda para elegir el otro.
+   */
+  function porMaterial() {
+    const suyo = materiales.find((m) => m.id === linea.material_id)
+
+    onCambio([
+      {
+        etiqueta: suyo?.nombre ?? '',
+        tipo: 'Material',
+        es_base: true,
+        cantidad: null,
+        precio_unitario: null,
+        plazo_dias: null,
+        material_id: suyo?.id ?? null,
+      },
+      {
+        etiqueta: '',
+        tipo: 'Material',
+        es_base: false,
+        cantidad: null,
+        precio_unitario: null,
+        plazo_dias: null,
+        material_id: null,
+      },
+    ])
+  }
+
   function quitar(i: number) {
     const quedan = opciones.filter((_, j) => j !== i)
 
@@ -177,6 +212,8 @@ export default function AlternativasDeLinea({
             </span>
           ) : null}
         </Atajo>
+
+        <Atajo onClick={porMaterial}>Otro material</Atajo>
 
         <button
           type="button"
@@ -238,12 +275,40 @@ export default function AlternativasDeLinea({
               {o.es_base && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
             </button>
 
-            <input
-              value={o.etiqueta}
-              onChange={(e) => cambiar(i, { etiqueta: e.target.value })}
-              placeholder="Aereo, 73,2 m, INCONEL 625…"
-              className="h-[28px] min-w-0 rounded-[6px] border border-line-strong bg-white px-2 text-[12px] outline-none focus:border-brand"
-            />
+            {/*
+              Cuando la alternativa es otro material, el nombre ES el material:
+              se elige del catálogo y queda enganchado por id, no por texto.
+            */}
+            <div className="flex min-w-0 flex-col">
+              <input
+                list={o.tipo === 'Material' ? `alt-materiales-${i}` : undefined}
+                value={o.etiqueta}
+                onChange={(e) => {
+                  const texto = e.target.value
+
+                  if (o.tipo !== 'Material') {
+                    cambiar(i, { etiqueta: texto })
+
+                    return
+                  }
+
+                  const enLista = materiales.find(
+                    (m) => m.nombre.localeCompare(texto.trim(), 'es', { sensitivity: 'base' }) === 0,
+                  )
+
+                  cambiar(i, { etiqueta: texto, material_id: enLista?.id ?? null })
+                }}
+                placeholder={o.tipo === 'Material' ? 'INCONEL 625' : 'Aereo, 73,2 m…'}
+                className="h-[28px] min-w-0 rounded-[6px] border border-line-strong bg-white px-2 text-[12px] outline-none focus:border-brand"
+              />
+              {o.tipo === 'Material' && (
+                <datalist id={`alt-materiales-${i}`}>
+                  {materiales.map((m) => (
+                    <option key={m.id} value={m.nombre} />
+                  ))}
+                </datalist>
+              )}
+            </div>
 
             <select
               value={o.tipo}

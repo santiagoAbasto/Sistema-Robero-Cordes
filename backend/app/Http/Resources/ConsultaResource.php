@@ -46,6 +46,8 @@ class ConsultaResource extends JsonResource
 
             'nro_factura' => $this->nro_factura,
             'id_sistema' => $this->id_sistema,
+            // Se lo pone el sistema al imprimir o al dejar de ser borrador.
+            'numero' => $this->numero,
             'condicion_pago' => $this->condicion_pago,
             'lista_precios' => $this->lista_precios,
 

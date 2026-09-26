@@ -77,6 +77,10 @@ class PdfController extends Controller
         $incluyeImportes = $datos['incluye_importes'] ?? true;
         $incluyeNota = $datos['incluye_nota'] ?? false;
 
+        // La hoja sale numerada. Si todavia no tenia numero, se lo gana ahora:
+        // esta saliendo de la empresa.
+        $consulta->numerar();
+
         $lineas = $consulta->lineas->where('quitada', false);
 
         $titulo = match ($consulta->tipo) {
