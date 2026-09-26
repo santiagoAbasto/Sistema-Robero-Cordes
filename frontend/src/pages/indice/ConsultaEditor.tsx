@@ -69,6 +69,7 @@ import CalculadoraDePeso, {
 } from '../../components/CalculadoraDePeso'
 import AlternativasDeLinea from '../../components/AlternativasDeLinea'
 import { ModalContacto } from './modales'
+import Revisiones from './Revisiones'
 import { UNIDADES_MEDIDA, aMilimetros, calcularPeso } from '../../lib/calculadora'
 import { armarDescripcion, armarDimensiones } from '../../lib/descripcion'
 import type { Catalogos, Consulta, ConsultaLinea, Empresa, Forma } from '../../types/indice'
@@ -798,6 +799,9 @@ export default function ConsultaEditor() {
       )}
 
       {!esNueva && <Relacionadas consultaId={Number(consultaId)} />}
+
+      {/* Qué se cambió después de la primera vez, y quién. */}
+      {!esNueva && <Revisiones consultaId={Number(consultaId)} />}
 
       {/* Observaciones internas — sólo cuando la consulta ya existe. */}
       {!esNueva && existente && (
@@ -1789,8 +1793,9 @@ function LineaFila({
 
     Lo ya escrito a mano no se pisa: solo se completa lo que esta vacio.
   */
-  function marcarDistinto(distinto: boolean) {
-    if (! distinto) {
+  function alternarIgualALoPedido() {
+    // Estaba en distinto: vuelve a ser igual y no hay nada que copiar.
+    if (! linea.igual_a_lo_pedido) {
       onCambio({ igual_a_lo_pedido: true })
 
       return
@@ -1822,7 +1827,7 @@ function LineaFila({
 
         <button
           type="button"
-          onClick={() => marcarDistinto(!linea.igual_a_lo_pedido)}
+          onClick={alternarIgualALoPedido}
           className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
             linea.igual_a_lo_pedido
               ? 'border-[#cdebd8] bg-[#f4fbf6] text-success-ink'

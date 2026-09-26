@@ -208,6 +208,27 @@ export function useDebounce<T>(valor: T, ms = 300): T {
   return diferido
 }
 
+/* ------------------------------------------------------------- revisiones */
+
+/** Un guardado de la cotización: todo lo que cambió una persona de una vez. */
+export interface Revision {
+  numero: number
+  fecha: string | null
+  quien: string
+  iniciales: string
+  /** Una línea que dice qué pasó, para no tener que leer el detalle. */
+  que_paso: string
+  cambios: { que: string; antes: string | null; ahora: string | null }[]
+}
+
+export async function traerRevisiones(consultaId: number) {
+  const { data } = await api.get<{ revisiones: Revision[]; total: number }>(
+    `/consultas/${consultaId}/revisiones`,
+  )
+
+  return data
+}
+
 /* ------------------------------------------------------- últimas empresas vistas */
 
 const VISTAS_KEY = 'cordes_ultimas_empresas'
