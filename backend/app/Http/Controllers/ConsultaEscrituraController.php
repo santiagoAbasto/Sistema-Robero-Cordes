@@ -301,6 +301,15 @@ class ConsultaEscrituraController extends Controller
             $consulta->estado = $datos['estado'];
             $consulta->save();
 
+            /*
+              Deja de ser un borrador: se gana el numero. Copiar una cotizacion
+              a veinte empresas deja veinte borradores y la mitad se descarta;
+              numerarlos a todos dejaria agujeros en la correlatividad.
+            */
+            if ($datos['estado'] !== 'Borrador') {
+                $consulta->numerar();
+            }
+
             if (blank($datos['comentario'] ?? null)) {
                 return;
             }

@@ -30,6 +30,57 @@ class Consulta extends Model
 
     protected $appends = ['total', 'esta_vencida', 'dias_para_vencer', 'lineas_iguales_a_lo_pedido', 'total_kilos'];
 
+    /**
+     * Le pone el numero, si todavia no lo tiene.
+     *
+     * Correlativo por anio: 2026-0001, 2026-0002. El anio sale de la fecha de
+     * la cotizacion y no del dia en que se numera, asi una de diciembre que se
+     * imprime en enero sigue siendo del anio en que se hizo.
+     *
+     * NO se numera al crear: copiar una cotizacion a veinte empresas deja
+     * veinte borradores, y la mitad se descarta. Se numera cuando la
+     * cotizacion sale —al imprimirla— o cuando deja de ser un borrador. Un
+     * numero quemado es un agujero en la correlatividad que despues alguien
+     * tiene que explicar.
+     *
+     * Las que vinieron del Access no se numeran: su numero es el id_sistema
+     * que ya esta impreso en los papeles que tiene el cliente.
+     */
+    public function numerar(): string
+    {
+        if (filled($this->numero)) {
+            return $this->numero;
+        }
+
+        $anio = ($this->fecha ?? now())->format('Y');
+
+        /*
+          Dos personas guardando al mismo tiempo pueden pedir el mismo numero.
+          La columna es unica, asi que el segundo choca: se reintenta con el
+          siguiente en vez de fallar la impresion.
+        */
+        for ($intento = 0; $intento < 5; $intento++) {
+            $ultimo = static::query()
+                ->where('numero', 'like', $anio.'-%')
+                ->orderByDesc('numero')
+                ->value('numero');
+
+            $siguiente = $ultimo ? ((int) substr($ultimo, 5)) + 1 : 1;
+            $numero = $anio.'-'.str_pad((string) ($siguiente + $intento), 4, '0', STR_PAD_LEFT);
+
+            try {
+                static::whereKey($this->id)->update(['numero' => $numero]);
+                $this->numero = $numero;
+
+                return $numero;
+            } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+                continue;
+            }
+        }
+
+        throw new \RuntimeException('No se pudo asignar un numero de cotizacion.');
+    }
+
     /** Días de validez por defecto. Se define una sola vez y se puede pisar por cotización. */
     public const VALIDEZ_POR_DEFECTO = 7;
 

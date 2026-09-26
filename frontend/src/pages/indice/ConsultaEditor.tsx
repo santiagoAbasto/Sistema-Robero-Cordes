@@ -1388,6 +1388,15 @@ function Lineas({
  * lista para la proxima cotizacion. El peso sigue sin calcularse hasta que la
  * empresa cargue la densidad, y la pantalla lo dice en lugar de callarselo.
  */
+/** "Ti-Ta" y "tita" se comparan igual: sin acentos, sin simbolos, en minuscula. */
+function sinAcentos(t: string): string {
+  return t
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+}
+
 function ElegirMaterial({
   linea,
   catalogos,
@@ -1420,10 +1429,30 @@ function ElegirMaterial({
     )
   }
 
+  /*
+    Al salir del campo, lo escrito a medias se engancha al de la lista.
+
+    Escribir "tita" y pasar al siguiente campo daba de alta un material
+    llamado "tita". El desplegable filtra mientras se escribe, pero si nadie
+    elige, lo tipeado queda como esta. Ahora, si lo escrito aparece en UNO
+    solo del catalogo, se toma ese; si aparece en varios o en ninguno, queda
+    como material nuevo con su aviso, que es lo que se decidio en su momento.
+  */
+  function alSalir() {
+    if (elegido || escrito === '') return
+
+    const parecidos = materiales.filter((m) => sinAcentos(m.nombre).includes(sinAcentos(escrito)))
+
+    if (parecidos.length === 1) {
+      onCambio({ material_id: parecidos[0].id, material_nuevo: null })
+    }
+  }
+
   return (
     <Combo
       id={`material-${linea.clave}`}
       etiqueta="MATERIAL"
+      onBlur={alSalir}
       ayuda={esNuevo ? 'no esta en el catalogo: se da de alta al guardar' : undefined}
       aviso={
         esNuevo
@@ -2136,7 +2165,12 @@ function LineaFila({
       <div className="mt-2.5">
         <AlternativasDeLinea
           opciones={linea.opciones ?? []}
-          linea={{ cantidad: linea.cantidad, precio_unitario: linea.precio_unitario }}
+          linea={{
+            cantidad: linea.cantidad,
+            precio_unitario: linea.precio_unitario,
+            material_id: linea.material_id,
+          }}
+          materiales={catalogos?.materiales ?? []}
           onCambio={(opciones) => onCambio({ opciones })}
         />
       </div>
