@@ -26,6 +26,16 @@ class DatabaseSeeder extends Seeder
             IndiceTelefonicoSeeder::class,
         ]);
 
+        /*
+          OJO: la clave de abajo es para levantar el sistema en una maquina
+          nueva, nada mas. Esta escrita en el codigo y el codigo esta en
+          GitHub, asi que en un servidor con datos reales la puede leer
+          cualquiera. Despues de sembrar en un servidor, cambiala:
+
+              php artisan usuarios:clave <correo>
+
+          (con DB_URL delante apunta al servidor en vez de a la base local).
+        */
         User::updateOrCreate(
             ['email' => 'roberto@cordes.com'],
             [
