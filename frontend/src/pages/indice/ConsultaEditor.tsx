@@ -271,7 +271,9 @@ export default function ConsultaEditor() {
     nota: '',
     texto: '',
     solicitud_via: '',
-    solicitud_fecha: '',
+    // El pedido llegó hoy salvo que digan otra cosa: es lo que pasa casi
+    // siempre, y tipear la fecha del día en cada cotización es trabajo al pedo.
+    solicitud_fecha: new Date().toISOString().slice(0, 10),
     solicitud_texto: '',
     juego_condiciones: '' as '' | JuegoDeCondiciones,
   })
@@ -1268,6 +1270,33 @@ function Lineas({
   iguales: number
   vigentes: number
 }) {
+  const agregar = () => setLineas((p) => [...p, lineaVacia()])
+
+  /*
+    Diez barras del mismo material y distinto largo son diez líneas casi
+    iguales. Se copia todo menos el precio: el precio depende de la medida y
+    arrastrarlo en silencio es cotizar mal.
+  */
+  const copiarLaUltima = () =>
+    setLineas((p) => {
+      const ultima = p[p.length - 1]
+
+      if (!ultima) return [...p, lineaVacia()]
+
+      return [
+        ...p,
+        {
+          ...ultima,
+          clave: crypto.randomUUID(),
+          precio_unitario: null,
+          precio_por_kilo: null,
+          quitada: false,
+          // Las alternativas son de esa línea, no de la copia.
+          opciones: [],
+        },
+      ]
+    })
+
   return (
     <Card className="overflow-hidden">
       <CardHeader
@@ -1277,7 +1306,7 @@ function Lineas({
         }
         ayuda="La tilde verde quiere decir que se cotiza igual a lo que pidieron. Al destildarla se abre lo que se cotiza y el motivo del cambio."
         acciones={
-          <Accion onClick={() => setLineas((p) => [...p, lineaVacia()])}>+ Agregar linea</Accion>
+          <Accion onClick={agregar}>+ Agregar linea</Accion>
         }
       />
 
@@ -1292,6 +1321,17 @@ function Lineas({
             onQuitar={() => setLineas((p) => p.filter((x) => x.clave !== l.clave))}
           />
         ))}
+
+        {/*
+          Los mismos dos botones abajo. Con diez líneas cargadas, agregar la
+          once obligaba a subir hasta el título y volver a bajar.
+        */}
+        <div className="flex flex-wrap items-center gap-3 pt-0.5">
+          <Accion onClick={agregar}>+ Agregar linea</Accion>
+          {lineas.length > 0 && (
+            <Accion onClick={copiarLaUltima}>+ Copiar la anterior, sin precio</Accion>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 border-t border-[#eef2f6] bg-[#f8fafc] px-[22px] py-3">
@@ -1659,6 +1699,37 @@ function LineaFila({
     ? Number(linea.cantidad ?? 0) * Number(linea.factor_conversion ?? 0)
     : null
 
+  /*
+    Destildar "igual a lo que pidio" copia la linea al bloque de abajo.
+
+    Al reves no tenia sentido y confundia: el lector carga la linea CON LO QUE
+    PIDIO EL CLIENTE —lo saca de su mail—, asi que al destildar el bloque
+    amarillo aparecia vacio y habia que volver a tipear ahi lo que ya estaba
+    escrito arriba. Ahora se copia solo, y arriba queda para cambiar lo que se
+    va a cotizar, que es lo unico que falta.
+
+    Lo ya escrito a mano no se pisa: solo se completa lo que esta vacio.
+  */
+  function marcarDistinto(distinto: boolean) {
+    if (! distinto) {
+      onCambio({ igual_a_lo_pedido: true })
+
+      return
+    }
+
+    const material = catalogos?.materiales.find((m) => m.id === linea.material_id)
+    const forma = catalogos?.formas.find((f) => f.id === linea.forma_id)
+
+    onCambio({
+      igual_a_lo_pedido: false,
+      pedido_material: linea.pedido_material ?? material?.nombre ?? linea.material_nuevo ?? null,
+      pedido_forma: linea.pedido_forma ?? forma?.nombre ?? null,
+      pedido_dimensiones: linea.pedido_dimensiones ?? linea.dimensiones ?? null,
+      cantidad_pedida: linea.cantidad_pedida ?? linea.cantidad ?? null,
+      unidad_pedida_id: linea.unidad_pedida_id ?? linea.unidad_venta_id ?? null,
+    })
+  }
+
   return (
     <div
       className={`rounded-[10px] border p-3 ${
@@ -1672,7 +1743,7 @@ function LineaFila({
 
         <button
           type="button"
-          onClick={() => onCambio({ igual_a_lo_pedido: !linea.igual_a_lo_pedido })}
+          onClick={() => marcarDistinto(!linea.igual_a_lo_pedido)}
           className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
             linea.igual_a_lo_pedido
               ? 'border-[#cdebd8] bg-[#f4fbf6] text-success-ink'
@@ -1707,54 +1778,6 @@ function LineaFila({
           </button>
         </div>
       </div>
-
-      {/* Lo que había pedido, sólo cuando es distinto. */}
-      {!linea.igual_a_lo_pedido && (
-        <div className="mb-2.5 grid gap-2.5 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] p-2.5 lg:grid-cols-6">
-          <Texto
-            etiqueta="Cantidad"
-            type="number"
-            step="0.01"
-            value={linea.cantidad_pedida ?? ''}
-            onChange={(e) =>
-              onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
-            }
-          />
-          <Lista
-            etiqueta="Unidad"
-            value={linea.unidad_pedida_id ?? ''}
-            onChange={(e) =>
-              onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
-            }
-            opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
-          />
-          <Texto
-            etiqueta="Le habia pedido — material"
-            value={linea.pedido_material ?? ''}
-            onChange={(e) => onCambio({ pedido_material: e.target.value })}
-            placeholder="AISI 316"
-          />
-          <Texto
-            etiqueta="Forma"
-            value={linea.pedido_forma ?? ''}
-            onChange={(e) => onCambio({ pedido_forma: e.target.value })}
-            placeholder="BARRA"
-          />
-          <Texto
-            etiqueta="Dimensiones"
-            value={linea.pedido_dimensiones ?? ''}
-            onChange={(e) => onCambio({ pedido_dimensiones: e.target.value })}
-            placeholder="DIA 65 X 145 MM"
-          />
-          <Lista
-            etiqueta="Motivo del cambio"
-            value={linea.motivo_cambio ?? ''}
-            vacio="Por que"
-            onChange={(e) => onCambio({ motivo_cambio: e.target.value })}
-            opciones={(catalogos?.motivos_cambio ?? []).map((m) => ({ valor: m, texto: m }))}
-          />
-        </div>
-      )}
 
       <div className="grid items-end gap-2.5 lg:grid-cols-2">
         <ElegirMaterial linea={linea} catalogos={catalogos} onCambio={onCambio} />
@@ -2003,6 +2026,74 @@ function LineaFila({
       )}
 
       {/*
+        Lo que habia pedido el cliente, DEBAJO de lo que se cotiza.
+
+        Estaba arriba, y en el orden al reves: primero lo que pidio y despues
+        lo que se ofrece. Para leer una linea habia que arrancar por lo que no
+        se va a vender. Ahora arriba esta lo que se cotiza —que es el trabajo—
+        y abajo, en amarillo, contra que se lo compara.
+
+        Los campos son los mismos y en el mismo orden que arriba: material,
+        forma, medidas, cantidad y unidad. Antes eran cajas de texto libre, asi
+        que no se podia elegir de la lista.
+      */}
+      {!linea.igual_a_lo_pedido && (
+        <div className="mt-2.5 grid gap-2.5 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] p-2.5 lg:grid-cols-6">
+          <p className="text-[10.5px] font-bold uppercase tracking-wide text-warning-ink lg:col-span-6">
+            Lo que habia pedido el cliente
+          </p>
+          <Combo
+            id={`pedido-material-${linea.clave}`}
+            etiqueta="Material"
+            className="lg:col-span-2"
+            value={linea.pedido_material ?? ''}
+            onChange={(e) => onCambio({ pedido_material: e.target.value || null })}
+            placeholder="Elegi de la lista o escribi lo que pidio"
+            opciones={(catalogos?.materiales ?? []).map((m) => m.nombre)}
+          />
+          <Combo
+            id={`pedido-forma-${linea.clave}`}
+            etiqueta="Forma"
+            value={linea.pedido_forma ?? ''}
+            onChange={(e) => onCambio({ pedido_forma: e.target.value || null })}
+            placeholder="BARRA REDONDA"
+            opciones={(catalogos?.formas ?? []).map((f) => f.nombre)}
+          />
+          <Texto
+            etiqueta="Medidas"
+            value={linea.pedido_dimensiones ?? ''}
+            onChange={(e) => onCambio({ pedido_dimensiones: e.target.value || null })}
+            placeholder="DIA 65 X 145 MM"
+          />
+          <Texto
+            etiqueta="Cantidad"
+            type="number"
+            step="0.01"
+            value={linea.cantidad_pedida ?? ''}
+            onChange={(e) =>
+              onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
+            }
+          />
+          <Lista
+            etiqueta="Unidad"
+            value={linea.unidad_pedida_id ?? ''}
+            onChange={(e) =>
+              onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
+            }
+            opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
+          />
+          <Lista
+            etiqueta="Motivo del cambio"
+            className="lg:col-span-6"
+            value={linea.motivo_cambio ?? ''}
+            vacio="Por que se cotiza distinto"
+            onChange={(e) => onCambio({ motivo_cambio: e.target.value })}
+            opciones={(catalogos?.motivos_cambio ?? []).map((m) => ({ valor: m, texto: m }))}
+          />
+        </div>
+      )}
+
+      {/*
         Marcas y stock. Se guardaban desde siempre y salian impresas, pero no
         habia donde verlas ni corregirlas al editar: la unica forma de poner
         una colada era el sistema anterior.
@@ -2025,11 +2116,11 @@ function LineaFila({
         {linea.desde_stock && (
           <div className="flex flex-1 flex-wrap items-end gap-2.5">
             <Texto
-              etiqueta="Deposito"
+              etiqueta="Codigo de stock"
               className="min-w-[150px] flex-1"
               value={linea.deposito ?? ''}
               onChange={(e) => onCambio({ deposito: e.target.value || null })}
-              placeholder="PB Frente"
+              placeholder="A-1204"
             />
             <Texto
               etiqueta="Colada"
