@@ -208,6 +208,32 @@ export function useDebounce<T>(valor: T, ms = 300): T {
   return diferido
 }
 
+/* --------------------------------------------------- el pie de un mail */
+
+/** Lo que se pudo leer del pie de un mail. Todo puede venir vacío. */
+export interface DatosDeLaFirma {
+  empresa: string | null
+  contacto: string | null
+  cargo: string | null
+  mail: string | null
+  telefono: string | null
+  web: string | null
+  direccion: string | null
+  codigo_postal: string | null
+  pais_id: number | null
+  provincia_id: number | null
+  localidad_id: number | null
+}
+
+export async function leerFirmaDeMail(texto: string) {
+  const { data } = await api.post<{ datos: DatosDeLaFirma; mensaje: string }>(
+    '/empresas/leer-firma',
+    { texto },
+  )
+
+  return data
+}
+
 /* ------------------------------------------------------------- revisiones */
 
 /** Un guardado de la cotización: todo lo que cambió una persona de una vez. */

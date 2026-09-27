@@ -285,6 +285,38 @@ export default function ConsultaEditor() {
   // Que juego de condiciones se cargó. Cambiar de juego recarga; volver al
   // mismo no pisa lo que la persona haya editado.
   const condicionesPropuestas = useRef<string | null>(null)
+
+  /*
+    Avisar antes de perder lo cargado.
+
+    "Cerrar sin hacer nada seria CANCELAR?" — si, pero en silencio: cerrar la
+    pestaña o apretar Cancelar con media cotizacion escrita la tiraba sin
+    preguntar nada. Media hora de trabajo se va con un clic.
+
+    En vez de marcar a mano cada campo que se toca, se compara el formulario
+    entero contra la foto de como quedo al abrirlo. Una sola comparacion, y no
+    hay forma de olvidarse de un campo nuevo.
+  */
+  const sinGuardar = useRef<string | null>(null)
+  const ahora = JSON.stringify({ tipo, cabecera, lineas, condiciones })
+
+  if (sinGuardar.current === null) sinGuardar.current = ahora
+
+  const hayCambios = sinGuardar.current !== ahora
+
+  /*
+    El aviso del navegador al cerrar o recargar. El texto lo pone el
+    navegador: no se puede elegir, pero el cartel aparece.
+  */
+  useEffect(() => {
+    if (!hayCambios) return
+
+    const avisar = (e: BeforeUnloadEvent) => e.preventDefault()
+
+    window.addEventListener('beforeunload', avisar)
+
+    return () => window.removeEventListener('beforeunload', avisar)
+  }, [hayCambios])
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
@@ -326,6 +358,9 @@ export default function ConsultaEditor() {
         .map((c) => ({ titulo: c.titulo ?? '', texto: c.texto, imprime: c.imprime, aMano: true })),
     )
     condicionesPropuestas.current = existente.juego_condiciones ?? null
+    // Recien cargado no hay nada cambiado: esta es la foto contra la que se
+    // compara despues para saber si hay trabajo sin guardar.
+    sinGuardar.current = null
   }, [existente, catalogos])
 
   // En una nueva, las condiciones de la ficha se proponen solas.
@@ -532,6 +567,10 @@ export default function ConsultaEditor() {
         recargar()
       }
 
+      // Recien acá: si el guardado falla, los cambios siguen sin guardar y el
+      // aviso tiene que seguir apareciendo.
+      sinGuardar.current = null
+
       if (imprimir) {
         // Se guarda primero y recién ahí se pide la hoja: así sale con lo
         // último que se cargó y no con lo que había antes de guardar.
@@ -697,9 +736,23 @@ export default function ConsultaEditor() {
         bajada="Se carga lo que pidió el cliente y lo que se le cotiza. Cuando es lo mismo, se completa solo. Lo que se escribe en NOTA y en las observaciones queda para adentro."
         acciones={
           <>
-            <Link to={`/empresas/${idFicha}`}>
-              <Boton variante="suave">Cancelar</Boton>
-            </Link>
+            {/*
+              Cancelar es salir sin guardar, que es lo que preguntaban. Con
+              algo escrito, pregunta antes: es la misma tecla que cierra la
+              pestaña de al lado.
+            */}
+            <Boton
+              variante="suave"
+              onClick={() => {
+                const seguro =
+                  !hayCambios ||
+                  window.confirm('Hay cambios sin guardar en esta cotizacion. ¿Los descartamos?')
+
+                if (seguro) navigate(`/empresas/${idFicha}`)
+              }}
+            >
+              Cancelar
+            </Boton>
             <Boton variante="suave" onClick={() => guardar()} disabled={guardando}>
               {guardando ? 'Guardando…' : 'Guardar'}
             </Boton>
@@ -1085,15 +1138,18 @@ function Encabezado({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-4">
-        <Lista
+        {/*
+          Se elige de la lista o se escribe. "No hay cargado, no deja agregar":
+          la lista estaba vacia y era un desplegable, asi que no habia por
+          donde. Lo que se escriba queda guardado para la proxima cotizacion.
+        */}
+        <Combo
+          id="condicion-pago"
           etiqueta="Condicion de pago"
-          vacio="Sin elegir"
-          value={c.condicion_pago as string}
+          value={(c.condicion_pago as string) ?? ''}
           onChange={(e) => set('condicion_pago', e.target.value)}
-          opciones={(catalogos?.condiciones_pago ?? []).map((x) => ({
-            valor: x.nombre,
-            texto: x.nombre,
-          }))}
+          placeholder="Elegi una o escribi la que acordaron"
+          opciones={(catalogos?.condiciones_pago ?? []).map((x) => x.nombre)}
         />
         <Texto
           etiqueta="Lista de precios"
