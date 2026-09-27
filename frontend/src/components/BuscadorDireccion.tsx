@@ -43,12 +43,15 @@ export default function BuscadorDireccion({
   onCambio,
   onElegir,
   activo,
+  cerca,
   className,
 }: {
   valor: string
   onCambio: (v: string) => void
   onElegir: (d: DireccionElegida) => void
   activo: boolean
+  /** "Santa Rosa, La Pampa": acota la búsqueda a la ciudad ya elegida. */
+  cerca?: string | null
   className?: string
 }) {
   const [sugerencias, setSugerencias] = useState<Sugerencia[]>([])
@@ -76,7 +79,7 @@ export default function BuscadorDireccion({
 
     api
       .get<{ activo: boolean; sugerencias: Sugerencia[] }>('/direcciones/sugerencias', {
-        params: { q: texto, s: sesion.current },
+        params: { q: texto, s: sesion.current, cerca: cerca || undefined },
       })
       .then(({ data }) => {
         if (!vivo) return
@@ -89,7 +92,7 @@ export default function BuscadorDireccion({
     return () => {
       vivo = false
     }
-  }, [texto, activo])
+  }, [texto, activo, cerca])
 
   // Cerrar al hacer click afuera.
   useEffect(() => {
@@ -136,7 +139,9 @@ export default function BuscadorDireccion({
 
   return (
     <div className={className} ref={contenedor}>
-      <Etiqueta ayuda={activo ? 'escribí y elegí de la lista' : undefined}>Direccion</Etiqueta>
+      <Etiqueta ayuda={activo ? (cerca ? `busca en ${cerca}` : 'escribí y elegí de la lista') : undefined}>
+        Direccion
+      </Etiqueta>
 
       <div className="relative">
         <input

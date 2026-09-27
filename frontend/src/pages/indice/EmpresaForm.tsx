@@ -63,6 +63,20 @@ export default function EmpresaForm({
       : deLaProvincia
   }, [catalogos, valores.provincia_id, filtroLocalidad])
 
+  /*
+    Dónde buscar la dirección.
+
+    Con la provincia y la localidad ya elegidas, "Calle 9 esq. 10" traía
+    Bariloche y Villalonga: Google buscaba en todo el país. Se le pasa la
+    ciudad de la ficha; con la provincia sola ya acota bastante.
+  */
+  const cerca = useMemo(() => {
+    const provincia = catalogos?.provincias.find((p) => p.id === valores.provincia_id)?.nombre
+    const localidad = catalogos?.localidades.find((l) => l.id === valores.localidad_id)?.nombre
+
+    return [localidad, provincia].filter(Boolean).join(', ') || null
+  }, [catalogos, valores.provincia_id, valores.localidad_id])
+
   /** Al elegir una dirección de la lista se completa el resto de los campos. */
   function completarDesdeDireccion(d: DireccionElegida) {
     onChange({
@@ -131,6 +145,7 @@ export default function EmpresaForm({
           className="lg:col-span-2"
           activo={catalogos?.direcciones_activas ?? false}
           valor={valores.direccion ?? ''}
+          cerca={cerca}
           onCambio={(v) => set('direccion', v)}
           onElegir={completarDesdeDireccion}
         />
