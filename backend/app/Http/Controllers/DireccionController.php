@@ -34,12 +34,39 @@ class DireccionController extends Controller
         return filled(config('services.google.places_key'));
     }
 
+    /**
+     * Le agrega al renglon la ciudad que ya esta elegida en la ficha.
+     *
+     * Decirle nada mas "Argentina" es decirle poco: con "Calle 9 esq. 10" y la
+     * ficha marcada en Santa Rosa, La Pampa, Google ofrecia Bariloche,
+     * Villalonga y San Luis. La ciudad viaja en la consulta, no en el campo:
+     * lo que se ve escrito no cambia.
+     */
+    private function ubicado(string $q, ?string $cerca): string
+    {
+        $q = trim($q);
+
+        if (blank($cerca)) {
+            return $q;
+        }
+
+        // Si la ciudad ya esta escrita en el renglon no se repite.
+        $llano = fn (string $t) => mb_strtolower(preg_replace('/[^\p{L}\p{N}]+/u', ' ', $t) ?? $t);
+        $ciudad = trim(explode(',', $cerca)[0]);
+
+        return filled($ciudad) && str_contains($llano($q), $llano($ciudad))
+            ? $q
+            : $q.', '.$cerca;
+    }
+
     /** Las direcciones que se proponen mientras se escribe. */
     public function sugerencias(Request $request)
     {
         $datos = $request->validate([
             'q' => ['required', 'string', 'min:3'],
             's' => ['nullable', 'string', 'max:64'],
+            // La localidad y la provincia que ya estan elegidas en la ficha.
+            'cerca' => ['nullable', 'string', 'max:120'],
         ]);
 
         if (! $this->estaConfigurado()) {
@@ -48,7 +75,7 @@ class DireccionController extends Controller
 
         try {
             $respuesta = $this->aGoogle()->post(self::BASE.'/places:autocomplete', array_filter([
-                'input' => $datos['q'],
+                'input' => $this->ubicado($datos['q'], $datos['cerca'] ?? null),
                 'languageCode' => self::IDIOMA,
                 'includedRegionCodes' => [self::PAIS],
                 // Agrupa lo tipeado con el detalle que viene después: Google lo
