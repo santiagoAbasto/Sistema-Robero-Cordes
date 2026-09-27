@@ -6,8 +6,15 @@ import Logo from './Logo'
 import { NAVIGATION } from '../data/navigation'
 import type { NavNode } from '../types'
 
+/*
+  La fila de primer nivel.
+
+  items-start y no items-center: un título de dos líneas —"Vencimientos y
+  seguimiento"— tiene que empujar la fila hacia abajo, no comprimirse adentro
+  de una altura fija. Eso era lo que se veía apretado.
+*/
 const ROW =
-  'flex w-full items-center gap-[11px] rounded-lg py-[9px] pl-3 pr-2.5 text-[13.5px] transition-colors'
+  'flex w-full items-start gap-[11px] rounded-lg py-[8px] pl-[11px] pr-2.5 text-[13px] leading-[1.35] transition-colors'
 
 function NavBadge({ label }: { label: string }) {
   return (
@@ -28,11 +35,11 @@ function DirectItem({ node, onNavigate }: { node: NavNode; onNavigate?: () => vo
         `${ROW} ${
           isActive
             ? 'bg-brand font-semibold text-white'
-            : 'font-medium text-navy-group hover:bg-white/[0.06] hover:text-white'
+            : 'font-semibold text-navy-group hover:bg-white/[0.06] hover:text-white'
         }`
       }
     >
-      <Icon size={18} strokeWidth={1.85} className="shrink-0" />
+      <Icon size={17} strokeWidth={1.9} className="mt-[1px] shrink-0" />
       <span className="flex-1 text-left">{node.label}</span>
       {node.badge && <NavBadge label={node.badge} />}
     </NavLink>
@@ -50,17 +57,19 @@ function Group({ node, onNavigate }: { node: NavNode; onNavigate?: () => void })
   }, [childActive])
 
   return (
-    <div>
+    // Aire debajo del grupo abierto: si no, los hijos del último se pegan al
+    // título del siguiente y los dos bloques se leen como uno solo.
+    <div className={open ? 'pb-1.5' : undefined}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className={`${ROW} ${
-          childActive
-            ? 'font-medium text-white'
-            : 'font-medium text-navy-group hover:bg-white/[0.06] hover:text-white'
+        className={`${ROW} font-semibold ${
+          childActive || open
+            ? 'text-white'
+            : 'text-navy-group hover:bg-white/[0.06] hover:text-white'
         }`}
       >
-        <Icon size={18} strokeWidth={1.85} className="shrink-0" />
+        <Icon size={17} strokeWidth={1.9} className="mt-[1px] shrink-0" />
         <span className="flex-1 text-left">{node.label}</span>
         <motion.span
           animate={{ rotate: open ? 90 : 0 }}
@@ -81,7 +90,16 @@ function Group({ node, onNavigate }: { node: NavNode; onNavigate?: () => void })
             transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden"
           >
-            <div className="flex flex-col gap-px pb-0.5 pt-px">
+            {/*
+              Los hijos cuelgan de una línea vertical y entran más chicos y más
+              apagados que el padre. Antes pesaban casi lo mismo —13px contra
+              13,5px, los dos en medium— y la lista se leía plana: cincuenta
+              entradas sin saber cuál manda sobre cuál.
+
+              Y sin altura fija: "Vencimientos y seguimiento" ocupa dos
+              renglones y necesita las dos.
+            */}
+            <div className="ml-[19px] flex flex-col gap-px border-l border-white/[0.16] py-1 pl-2.5">
               {node.children!.map((child) => (
                 <NavLink
                   key={child.key}
@@ -89,10 +107,10 @@ function Group({ node, onNavigate }: { node: NavNode; onNavigate?: () => void })
                   end
                   onClick={onNavigate}
                   className={({ isActive }) =>
-                    `flex h-[30px] items-center rounded-lg pl-[41px] pr-2.5 text-[13px] transition-colors ${
+                    `rounded-md py-[6px] pl-2.5 pr-2.5 text-[12.5px] leading-[1.35] transition-colors ${
                       isActive
                         ? 'bg-brand font-semibold text-white'
-                        : 'font-medium text-[#9fb6cc] hover:bg-white/[0.06] hover:text-white'
+                        : 'font-normal text-[#93a9bf] hover:bg-white/[0.06] hover:text-white'
                     }`
                   }
                 >
@@ -109,7 +127,7 @@ function Group({ node, onNavigate }: { node: NavNode; onNavigate?: () => void })
 
 export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <aside className="flex h-full w-[248px] shrink-0 flex-col gap-0.5 overflow-y-auto bg-navy px-3.5 py-[18px]">
+    <aside className="flex h-full w-[248px] shrink-0 flex-col gap-[3px] overflow-y-auto bg-navy px-3.5 pb-6 pt-[18px]">
       {/* Brand */}
       <div className="flex w-full items-center gap-2.5 pb-3 pl-2 pt-0.5">
         <Logo size={28} className="shrink-0" />
