@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\EmpresaResource;
 use App\Models\Contacto;
+use App\Services\FirmaDeMail;
 use App\Models\ContactoMedio;
 use App\Models\Empresa;
 use App\Models\EmpresaCampo;
@@ -72,6 +73,33 @@ class EmpresaEscrituraController extends Controller
     }
 
     // ------------------------------------------------------------- contactos
+
+    /**
+     * Lee el pie de un mail y propone los datos de la empresa.
+     *
+     * "Posibilidad de copiar algo —ejemplo pie de mail— para que complete la
+     * informacion". Se pega el mail entero, encabezados incluidos, y vuelven
+     * los campos ya separados. Nada se guarda: es una propuesta que la
+     * persona revisa, igual que las lineas de una cotizacion.
+     */
+    public function leerFirma(Request $request, FirmaDeMail $firma)
+    {
+        $datos = $request->validate([
+            'texto' => ['required', 'string', 'min:10', 'max:8000'],
+        ], [
+            'texto.required' => 'Pega el pie del mail y completamos lo que se pueda.',
+        ]);
+
+        $leido = $firma->leer($datos['texto']);
+        $cuantos = count(array_filter($leido, fn ($v) => filled($v)));
+
+        return [
+            'datos' => $leido,
+            'mensaje' => $cuantos === 0
+                ? 'No pudimos reconocer ningun dato. Cargalos a mano.'
+                : "{$cuantos} datos reconocidos. Revisalos antes de guardar.",
+        ];
+    }
 
     public function guardarContacto(Request $request, Empresa $empresa, ?Contacto $contacto = null)
     {

@@ -82,6 +82,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/enlaces/{enlace}', [EmpresaEscrituraController::class, 'borrarEnlace']);
 
     // Contactos
+    // Pegar el pie de un mail y que complete la ficha.
+    Route::post('/empresas/leer-firma', [EmpresaEscrituraController::class, 'leerFirma']);
+
     Route::post('/empresas/{empresa}/contactos', [EmpresaEscrituraController::class, 'guardarContacto']);
     Route::put('/empresas/{empresa}/contactos/{contacto}', [EmpresaEscrituraController::class, 'guardarContacto']);
     Route::post('/contactos/{contacto}/archivar', [EmpresaEscrituraController::class, 'archivarContacto']);

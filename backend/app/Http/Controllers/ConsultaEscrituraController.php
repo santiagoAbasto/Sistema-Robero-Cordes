@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Resources\ConsultaResource;
 use App\Models\CanoEstandar;
 use App\Models\CondicionHabitual;
+use App\Models\CondicionPago;
 use App\Models\Consulta;
 use App\Models\ConsultaCondicion;
 use App\Models\ConsultaLinea;
@@ -500,7 +501,7 @@ class ConsultaEscrituraController extends Controller
 
             // Importacion o stock: cambian el plazo de entrega y la forma de
             // pago, asi que no hay uno por defecto.
-            'juego_condiciones' => ['nullable', Rule::in(['Importacion', 'Stock'])],
+            'juego_condiciones' => ['nullable', Rule::in(['Importacion', 'Stock', 'Reventa'])],
             'condiciones' => ['array'],
             'condiciones.*.titulo' => ['nullable', 'string', 'max:60'],
             // Los bloques reales pasan los 700 caracteres: "Forma de Pago"
@@ -543,7 +544,42 @@ class ConsultaEscrituraController extends Controller
 
     private function soloCabecera(array $datos): array
     {
+        $this->recordarLaCondicionDePago($datos['condicion_pago'] ?? null);
+
         return collect($datos)->except(['lineas', 'condiciones', 'validez_dias'])->all();
+    }
+
+    /**
+     * Una condicion de pago escrita a mano queda en la lista.
+     *
+     * "Condicion de pago: no hay cargado, no deja agregar". La lista arranca
+     * con las formas de pago de siempre, pero ninguna lista alcanza para todo:
+     * un cliente pide "40% con la orden y el resto a los 45 dias" y eso hay
+     * que poder escribirlo. La primera vez se escribe; de ahi en mas esta en
+     * el desplegable, sin tener que entrar a ninguna pantalla de
+     * configuracion.
+     */
+    private function recordarLaCondicionDePago(?string $nombre): void
+    {
+        $nombre = trim((string) $nombre);
+
+        if ($nombre === '') {
+            return;
+        }
+
+        $yaEsta = CondicionPago::query()
+            ->whereRaw('LOWER(nombre) = ?', [mb_strtolower($nombre)])
+            ->exists();
+
+        if ($yaEsta) {
+            return;
+        }
+
+        CondicionPago::create([
+            'nombre' => $nombre,
+            'orden' => (int) CondicionPago::max('orden') + 1,
+            'activo' => true,
+        ]);
     }
 
     /**

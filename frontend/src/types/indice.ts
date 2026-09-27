@@ -184,7 +184,7 @@ export interface Impresion {
  * pasan los 700 caracteres. Las sueltas de una línea siguen valiendo: van sin
  * título y en la hoja salen como viñeta.
  */
-export const JUEGOS_DE_CONDICIONES = ['Importacion', 'Stock'] as const
+export const JUEGOS_DE_CONDICIONES = ['Importacion', 'Stock', 'Reventa'] as const
 
 /**
  * Los dos juegos de condiciones.
