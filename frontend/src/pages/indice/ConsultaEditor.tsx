@@ -2477,13 +2477,22 @@ function LineaFila({
             }
             opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
           />
-          <Lista
+          {/*
+            El motivo se elige o se escribe, y lo escrito queda en la lista.
+
+            "Agregar mas opciones de motivos de cambio, debe ser mas
+            administrable". Era un desplegable cerrado con siete opciones:
+            agregar una octava era tocar el codigo. Igual que la condicion de
+            pago, la primera vez se escribe y de ahi en mas esta en la lista.
+          */}
+          <Combo
+            id={`motivo-${linea.clave}`}
             etiqueta="Motivo del cambio"
             className="lg:col-span-6"
             value={linea.motivo_cambio ?? ''}
-            vacio="Por que se cotiza distinto"
-            onChange={(e) => onCambio({ motivo_cambio: e.target.value })}
-            opciones={(catalogos?.motivos_cambio ?? []).map((m) => ({ valor: m, texto: m }))}
+            onChange={(e) => onCambio({ motivo_cambio: e.target.value || null })}
+            placeholder="Elegi de la lista o escribi por que se cotiza distinto"
+            opciones={catalogos?.motivos_cambio ?? []}
           />
         </div>
       )}

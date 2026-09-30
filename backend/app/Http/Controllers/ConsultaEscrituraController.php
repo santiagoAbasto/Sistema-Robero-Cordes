@@ -14,6 +14,7 @@ use App\Models\Empresa;
 use App\Models\Forma;
 use App\Models\Impresion;
 use App\Models\Material;
+use App\Models\MotivoCambio;
 use App\Models\Observacion;
 use App\Models\Unidad;
 use App\Services\CalculadoraDePeso;
@@ -595,6 +596,37 @@ class ConsultaEscrituraController extends Controller
     }
 
     /**
+     * Un motivo de cambio escrito a mano queda en la lista.
+     *
+     * "Agregar mas opciones de motivos de cambio, debe ser mas administrable".
+     * Los motivos que trae el sistema son los que ya se usaban; los que faltan
+     * los pone la empresa escribiendolos la primera vez, no yo adivinando:
+     * el motivo sale impreso al lado de la diferencia y lo lee el cliente.
+     */
+    private function recordarElMotivo(?string $nombre): void
+    {
+        $nombre = trim((string) $nombre);
+
+        if ($nombre === '') {
+            return;
+        }
+
+        $yaEsta = MotivoCambio::query()
+            ->whereRaw('LOWER(nombre) = ?', [mb_strtolower($nombre)])
+            ->exists();
+
+        if ($yaEsta) {
+            return;
+        }
+
+        MotivoCambio::create([
+            'nombre' => $nombre,
+            'orden' => (int) MotivoCambio::max('orden') + 1,
+            'activo' => true,
+        ]);
+    }
+
+    /**
      * Guarda las lineas emparejandolas con las que ya estaban.
      *
      * Antes se borraban todas y se creaban de nuevo. Eso perdia la procedencia
@@ -643,6 +675,8 @@ class ConsultaEscrituraController extends Controller
                 $linea->pedido_dimensiones = null;
                 $linea->pedido_medidas = null;
                 $linea->motivo_cambio = null;
+            } else {
+                $this->recordarElMotivo($linea->motivo_cambio);
             }
 
             $this->resolverElFactor($linea, (bool) ($datos['aplicar_calculo_al_factor'] ?? false));
