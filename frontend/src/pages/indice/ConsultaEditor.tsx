@@ -1276,6 +1276,21 @@ function planasDeLasMedidas(
   return planas
 }
 
+/** Milímetros que mide una unidad de largo. */
+const LARGO_EN_MM: Record<string, number> = { MT: 1000, M: 1000, FT: 304.8, INCH: 25.4 }
+
+/** Kilos que pesa una unidad de peso. */
+const PESO_EN_KG: Record<string, number> = { KG: 1, TN: 1000, G: 0.001, LB: 0.45359237 }
+
+/**
+ * Cuánto entra de la unidad en que se factura dentro de UNA unidad de venta.
+ *
+ * Esto es lo que dice el rótulo del campo —"MT por UN"— y durante un tiempo no
+ * fue lo que devolvía: la cuenta daba kilos siempre, sin mirar en qué unidad se
+ * facturaba. Vendiendo por UN y facturando en MT, una barra de 3,21 m devolvía
+ * 2,0169, que eran sus kilos rotulados como metros, y de ahí salían mal la
+ * cantidad a facturar, el precio unitario y el importe.
+ */
 function factorAutomatico(
   l: LineaForm,
   catalogos: Catalogos | null,
@@ -1285,13 +1300,10 @@ function factorAutomatico(
 
   if (!forma) return { factor: null, motivo: 'Falta elegir la forma' }
 
-  /*
-    El factor son los kilos de UNA unidad de venta: un metro si se vende por
-    metro, una pieza si se vende por unidad. Con el largo de un metro para algo
-    que se vende por unidad, el número sale enorme y la factura también.
-  */
-  const unidad = catalogos?.unidades.find((u) => u.id === l.unidad_venta_id)
-  const porMetro = unidad?.codigo === 'MT'
+  const codigo = (id: number | null | undefined) =>
+    catalogos?.unidades.find((u) => u.id === id)?.codigo ?? ''
+  const venta = codigo(l.unidad_venta_id)
+  const factura = codigo(l.unidad_factura_id)
 
   /*
     Las medidas salen de la calculadora de la linea —lo que se esta
@@ -1306,12 +1318,35 @@ function factorAutomatico(
     return m ? aMilimetros(m.valor, m.unidad) : 0
   }
 
-  if (!porMetro && !enMm('length') && necesitaLargo(forma)) {
+  // Milimetros que mide una unidad de venta, cuando se vende por largo.
+  const largoDeUnaVenta = LARGO_EN_MM[venta] ?? null
+
+  // Se factura por largo: el factor es el largo de la pieza, no su peso.
+  if (LARGO_EN_MM[factura]) {
+    if (largoDeUnaVenta) {
+      return { factor: largoDeUnaVenta / LARGO_EN_MM[factura], motivo: null }
+    }
+
+    const largo = enMm('length')
+
+    return largo
+      ? { factor: largo / LARGO_EN_MM[factura], motivo: null }
+      : { factor: null, motivo: 'Falta el largo de la pieza' }
+  }
+
+  if (!PESO_EN_KG[factura]) {
+    return {
+      factor: null,
+      motivo: `No sabemos cuantos ${factura} entran en un ${venta}: escribi el factor a mano`,
+    }
+  }
+
+  if (!largoDeUnaVenta && !enMm('length') && necesitaLargo(forma)) {
     return { factor: null, motivo: 'Falta el largo de la pieza' }
   }
 
-  const medidas = porMetro
-    ? { ...l.calc.medidas, length: { valor: '1000', unidad: 'mm' } }
+  const medidas = largoDeUnaVenta
+    ? { ...l.calc.medidas, length: { valor: String(largoDeUnaVenta), unidad: 'mm' } }
     : l.calc.medidas
 
   const r = calcularPeso({
@@ -1325,8 +1360,11 @@ function factorAutomatico(
     cano: null,
   })
 
-  // Una sola pieza: su peso ES el factor de esa unidad de venta.
-  return { factor: r.pesoPorPiezaKg, motivo: r.motivo }
+  // Una sola pieza: su peso ES el factor, pasado a la unidad que se factura.
+  return {
+    factor: r.pesoPorPiezaKg === null ? null : r.pesoPorPiezaKg / PESO_EN_KG[factura],
+    motivo: r.motivo,
+  }
 }
 
 /** Si la forma lleva largo entre sus medidas. Un disco o una arandela no. */
