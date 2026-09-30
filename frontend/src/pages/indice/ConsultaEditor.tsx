@@ -813,13 +813,6 @@ export default function ConsultaEditor() {
         </Card>
       ) : (
         <>
-          <Solicitud
-            cabecera={cabecera}
-            setCabecera={setCabecera}
-            catalogos={catalogos}
-            onPrecargar={precargarDesdeTexto}
-            precargando={precargando}
-          />
           <Encabezado
             tipo={tipo}
             cabecera={cabecera}
@@ -828,6 +821,22 @@ export default function ConsultaEditor() {
             catalogos={catalogos}
             venceEl={venceEl}
             onContactoNuevo={recargarEmpresa}
+          />
+          {/*
+            Lo que pidió el cliente va entre el encabezado y las líneas.
+
+            "Bajaría LO QUE PIDIÓ EL CLIENTE debajo de ENCABEZADO y arriba de
+            LÍNEAS". Estaba primero de todo, así que al cargar las líneas
+            quedaba fuera de la pantalla y había que subir para releer el
+            pedido. Acá queda pegado a las líneas, que es contra lo que hay
+            que compararlo.
+          */}
+          <Solicitud
+            cabecera={cabecera}
+            setCabecera={setCabecera}
+            catalogos={catalogos}
+            onPrecargar={precargarDesdeTexto}
+            precargando={precargando}
           />
           <Lineas
             lineas={lineas}
@@ -936,11 +945,21 @@ function Solicitud({
 
   return (
     <Card className="flex flex-col gap-3.5 border-brand-200 bg-[#f3f9fe] p-[22px]">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <h2 className="text-[15px] font-semibold text-brand-600">Lo que pidio el cliente</h2>
-        <span className="ml-auto text-[11px] text-[#6c93ae]">
-          Se guarda tal cual llegó, para poder volver a leerlo
-        </span>
+      {/*
+        El título dice de quién son estas palabras, y el renglón de abajo dice
+        contra qué se comparan. Sin eso, un recuadro con texto del cliente
+        arriba de las líneas se lee como una nota más.
+      */}
+      <div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2 className="text-[16px] font-semibold text-brand-600">Lo que pidio el cliente</h2>
+          <span className="ml-auto text-[11px] text-[#6c93ae]">
+            Se guarda tal cual llegó, para poder volver a leerlo
+          </span>
+        </div>
+        <p className="mt-1 text-[12px] leading-relaxed text-[#5a87a3]">
+          Queda acá, pegado a las líneas: abajo va lo que le vamos a ofrecer contra esto.
+        </p>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-[180px_180px]">
@@ -961,7 +980,9 @@ function Solicitud({
       <AreaTexto
         etiqueta="Lo que mando el cliente"
         ayuda="pegalo tal cual, del mail o del WhatsApp"
-        filas={4}
+        // Seis y no cuatro: ahora se lee mientras se cargan las líneas de
+        // abajo, así que un pedido de tres ítems tiene que entrar sin scroll.
+        filas={6}
         value={c.solicitud_texto}
         onChange={(e) => set('solicitud_texto', e.target.value)}
         placeholder={'Hola Roberto, necesito cotizar:\n6 UN HASTELLOY C-276 BAR RED 38.1 X 145MM\n4 un AISI 316TI barra DIA 65 X 145MM'}
