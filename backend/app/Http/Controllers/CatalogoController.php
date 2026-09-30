@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CanoEstandar;
 use App\Models\CondicionHabitual;
 use App\Models\CondicionPago;
+use App\Models\MotivoCambio;
 use App\Models\EmpresaEnlace;
 use App\Models\Pais;
 use App\Models\Forma;
@@ -26,11 +27,14 @@ class CatalogoController extends Controller
     {
         return [
             'relaciones' => \App\Models\EmpresaRelacion::OPCIONES,
-            'motivos_cambio' => \App\Models\ConsultaLinea::MOTIVOS,
+            // Viajan como una lista de nombres, igual que antes: el campo es
+            // un combo y lo que se escribe queda para la proxima.
+            'motivos_cambio' => MotivoCambio::where('activo', true)
+                ->orderBy('orden')->pluck('nombre'),
             'tipos_consulta' => ['Cotizacion', 'Pedido', 'Observacion'],
             'estados' => \App\Models\Consulta::ESTADOS,
             'estados_de_cierre' => \App\Models\Consulta::ESTADOS_DE_CIERRE,
-            'solicitud_vias' => ['Mail', 'WhatsApp', 'Telefono', 'En persona'],
+            'solicitud_vias' => ['Mail', 'WhatsApp', 'Web', 'Telefono', 'En persona'],
             'condiciones_iva' => ['Resp. Inscripto', 'Monotributo', 'Exento', 'Consumidor Final'],
             'iibb_condiciones' => ['No inscripto', 'Local', 'Convenio multilateral'],
             'vias_envio' => ['Impresora', 'PDF', 'Correo', 'WhatsApp'],
