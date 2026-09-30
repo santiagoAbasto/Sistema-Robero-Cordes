@@ -420,4 +420,75 @@ class LectorDeSolicitudTest extends TestCase
         // La medida comercial se guarda como la escriben, no en milimetros.
         $this->assertStringContainsString('SCH40S', $tres['dimensiones']);
     }
+
+    /**
+     * El "DETALLE SOLICITADO" de la web, como lo mando Roberto.
+     *
+     * Las dos columnas quedan aplanadas con TABs. Leido renglon por renglon
+     * salian tres lineas: "Ø10mm" tomado por la cantidad, "CANTIDAD" pegado a
+     * la medida, y la aclaracion del cliente como una linea mas. Es una.
+     */
+    public function test_el_detalle_solicitado_de_la_web_es_una_linea(): void
+    {
+        $r = $this->lector->interpretar("DETALLE SOLICITADO\nMATERIAL\nAISI 420\tFORMA\nbarra redonda\n"
+            ."DIMENSIONES\nØ10mm x 3 metros de largo\tCANTIDAD\n3 metros\n"
+            ."ACLARACIONES / OBSERVACIONES\nAcero inoxidable AISI 420 Ø10mm x 3 metros de largo");
+
+        $this->assertCount(1, $r['lineas']);
+
+        $l = $r['lineas'][0];
+        $this->assertSame(3.0, $l['cantidad']);
+        $this->assertSame('MT', $l['unidad']);
+        $this->assertSame('BARRA REDONDA', $l['forma']);
+        $this->assertEquals(10, $l['diametro_mm']);
+        $this->assertEquals(3000, $l['largo_mm'], '3 metros son 3000 mm, no 3');
+    }
+
+    /**
+     * "AISI 420" no es ninguno de los 420 cargados, y no se pierde.
+     *
+     * El cliente lo escribio en su campo: se sabe exactamente que pidio. Queda
+     * en lo que pidio y la linea marcada como distinta, para que alguien elija
+     * cual es. Elegir uno seria adivinar el acero.
+     */
+    public function test_el_material_que_no_esta_tal_cual_queda_en_lo_pedido(): void
+    {
+        $l = $this->lector->interpretar("MATERIAL\nAISI 420 PIEZA ESPECIAL\tFORMA\nbarra redonda\nCANTIDAD\n3")['lineas'][0];
+
+        $this->assertNull($l['material_id']);
+        $this->assertSame('AISI 420 PIEZA ESPECIAL', $l['pedido_material']);
+        $this->assertFalse($l['igual_a_lo_pedido']);
+    }
+
+    /** Una consulta de la web con dos items trae dos fichas. */
+    public function test_dos_items_de_la_web_son_dos_lineas(): void
+    {
+        $r = $this->lector->interpretar("MATERIAL\nTitanio Gr2\tFORMA\nchapa\nCANTIDAD\n2\n"
+            ."MATERIAL\nTitanio Gr5\tFORMA\nbarra redonda\nCANTIDAD\n4");
+
+        $this->assertCount(2, $r['lineas']);
+        $this->assertSame([2.0, 4.0], array_column($r['lineas'], 'cantidad'));
+    }
+
+    /**
+     * Un mail con un par de rotulos no es una ficha.
+     *
+     * "Material" y "Observaciones" sueltos no hacen un item: las aclaraciones
+     * no cuentan, y el mail se sigue leyendo renglon por renglon.
+     */
+    public function test_un_mail_con_rotulos_sueltos_sigue_siendo_un_mail(): void
+    {
+        $r = $this->lector->interpretar("Material: titanio\nObservaciones: urgente\n4 un barra DIA 65 X 145MM\n2 un chapa 2 x 1000 x 2000");
+
+        $this->assertCount(2, $r['lineas']);
+    }
+
+    /** Cada medida con su unidad: centimetros y metros pasan a milimetros. */
+    public function test_las_medidas_en_metros_y_centimetros_pasan_a_milimetros(): void
+    {
+        $this->assertEquals(2500, $this->leer('3 un barra Ø20 mm x 2,5 m')['largo_mm']);
+        $this->assertEquals(450, $this->leer('3 un barra Ø20 x 45 cm')['largo_mm']);
+        // Sin unidad sigue siendo milimetros, como escribe casi todo el mundo.
+        $this->assertEquals(145, $this->leer('4 un barra DIA 65 X 145MM')['largo_mm']);
+    }
 }

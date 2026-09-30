@@ -120,15 +120,21 @@ export default function NuevaEmpresa() {
 
       <Card className="flex flex-col gap-3 border-brand-200 bg-[#f3f9fe] p-[22px]">
         <div className="flex flex-wrap items-center gap-2.5">
-          <h2 className="text-[15px] font-semibold text-brand-600">Pega el pie de un mail</h2>
+          {/*
+            Dice las dos cosas que entran: si dijera solo "mail", nadie pegaria
+            aca la ficha de una consulta de la web, que es lo que mas llega.
+          */}
+          <h2 className="text-[15px] font-semibold text-brand-600">
+            Pega el pie de un mail o la ficha de la web
+          </h2>
           <span className="ml-auto text-[11px] text-[#6c93ae]">
             Completa lo que esta vacio; lo que ya cargaste no se toca
           </span>
         </div>
 
         <AreaTexto
-          etiqueta="El mail, tal cual"
-          ayuda="con el encabezado y la firma: de ahi salen la empresa, la direccion y el contacto"
+          etiqueta="Tal cual llego"
+          ayuda="el mail con su firma, o la consulta de la web entera: de ahi salen la empresa, la direccion y el contacto"
           filas={4}
           value={firma}
           onChange={(e) => setFirma(e.target.value)}
