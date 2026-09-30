@@ -142,4 +142,45 @@ class Forma extends Model
 
         return static::where('clave', $base)->exists() ? $base.'_'.Str::random(4) : $base;
     }
+
+    /**
+     * Otros nombres con los que se escribe una forma que ya esta en el catalogo.
+     *
+     * "BARRA" es BARRA REDONDA: CORDES lo resolvio el 30-09-2026 y las tres
+     * formas quedaron en una. Pero las descripciones viejas siguen diciendo
+     * "TIT GR1 BARRA 1.60 X 915", sin "redonda", y el enlazador exige que
+     * esten todas las palabras del nombre: sin esto, volver a importar el
+     * Access dejaria sin forma a las 3.331 lineas que hoy la tienen.
+     *
+     * Son nombres, no formas: no aparecen en ninguna lista ni se pueden elegir.
+     *
+     * Va solo "BARRA", que es la entrada que tenia la forma borrada: el
+     * enlazador queda viendo exactamente lo que veia cuando enlazo esas 3.331.
+     * Sumar "BARRA RED. / VARILLA" no ayudaria —ninguna descripcion trae esas
+     * tres palabras juntas— y le restaria peso a "barra" en todas las demas.
+     */
+    public const TAMBIEN_SE_ESCRIBE = [
+        'BARRA REDONDA' => ['BARRA'],
+    ];
+
+    /**
+     * Los nombres de todas las formas, y sus otros nombres, para el enlazador.
+     *
+     * @return list<array{0: int, 1: string}> id y texto
+     */
+    public static function nombresParaEnlazar(): array
+    {
+        $formas = static::query()->get(['id', 'nombre']);
+        $entradas = $formas->map(fn (Forma $f) => [$f->id, $f->nombre])->all();
+
+        foreach (self::TAMBIEN_SE_ESCRIBE as $nombre => $otros) {
+            $id = $formas->firstWhere('nombre', $nombre)?->id;
+
+            foreach ($id ? $otros : [] as $otro) {
+                $entradas[] = [$id, $otro];
+            }
+        }
+
+        return $entradas;
+    }
 }

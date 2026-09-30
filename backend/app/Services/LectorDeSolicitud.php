@@ -42,10 +42,12 @@ class LectorDeSolicitud
      * Solo abrevia formas que ya estan en el catalogo; no inventa ninguna.
      */
     private const ABREVIATURAS = [
-        'BARRA REDONDA' => ['BAR RED', 'BARRED', 'BARRA RED', 'REDONDO'],
-        'BARRA HEXAGONAL' => ['BAR HEX', 'HEXAG'],
+        // VARILLA es BARRA REDONDA desde el 30-09-2026: "Barra Red / Varilla
+        // es lo mismo que Barra Redonda". Antes apuntaba a BARRA RED. /
+        // VARILLA, que se unifico.
+        'BARRA REDONDA' => ['BAR RED', 'BARRED', 'BARRA RED', 'REDONDO', 'VARILLA'],
+        'BARRA HEXAGONAL' => ['BAR HEX', 'HEXAG', 'HEXAGONAL'],
         'BARRA CUADRADA' => ['BAR CUAD', 'CUADRADA'],
-        'BARRA RED. / VARILLA' => ['VARILLA'],
         'ALAMBRE' => ['ALAMB', 'ALA'],
         'CAÑO' => ['CANIO', 'SCH'],
         'CHAPA' => ['PLACA'],
@@ -362,15 +364,15 @@ class LectorDeSolicitud
           palabra: "ALA" es alambre en "TIT GR4 ALA Ø 3.18", pero adentro de
           otra palabra no es nada.
 
-          BARRA a secas no esta y no es un olvido: el catalogo tiene activas
-          BARRA REDONDA y BARRA RED. / VARILLA, y cual de las dos es queda
-          para que lo diga CORDES. Adivinar define el peso que se factura.
+          BARRA a secas no esta en la lista: se resuelve abajo, despues de
+          que las abreviaturas de hexagonal y cuadrada tuvieron su turno.
         */
         $conEspacios = $this->conEspacios($renglon);
 
         foreach (self::ABREVIATURAS as $nombre => $claves) {
             foreach ($claves as $clave) {
-                if (! preg_match('/\b'.preg_quote($clave, '/').'S?\b/', $conEspacios)) {
+                // El plural va con S o con ES: "hexagonales" es HEXAGONAL + ES.
+                if (! preg_match('/\b'.preg_quote($clave, '/').'(?:E?S)?\b/', $conEspacios)) {
                     continue;
                 }
 
@@ -383,19 +385,23 @@ class LectorDeSolicitud
         }
 
         /*
-          "BARRA" a secas, pero con el diametro marcado.
+          "BARRA" a secas es BARRA REDONDA.
 
-          El catalogo tiene BARRA desactivada y activas BARRA REDONDA y
-          BARRA RED. / VARILLA, asi que "3 barras de 127 x 25.4" no dice cual
-          es y se deja vacia. Pero "3 Barras de Ø127mm x 25.4mm" si lo dice:
-          una barra con diametro es redonda, y lo escribio el cliente, no lo
-          supone el sistema. Una hexagonal se escribe entre caras.
+          Estuvo pendiente de CORDES y se dejaba vacia: el catalogo tenia
+          BARRA, BARRA REDONDA y BARRA RED. / VARILLA, y adivinar define el
+          peso que se factura. El 30-09-2026 lo resolvieron: "todo lo que dice
+          barra, convertilo en barra redonda". Las tres quedaron en una.
 
-          Si CORDES prefiere otra, se cambia el nombre de acá o se activa la
-          forma que corresponda.
+          Corre al final a proposito: "BARRA HEXAGONAL" o "BAR CUAD" ya
+          encontraron su forma arriba y no llegan aca.
+
+          Pero si el renglon dice de que otro tipo es y arriba no se reconocio
+          —"barras octogonales", una forma que no tiene abreviatura— no se la
+          vuelve redonda: una barra vacia se completa a mano, una redonda
+          equivocada se factura con el peso de otra pieza.
         */
         if (preg_match('/\bBARRAS?\b/', $conEspacios)
-            && preg_match('/Ø\s*\d|\bDIA\.?\s*\d/iu', $renglon)) {
+            && ! preg_match('/\b(HEXAG|CUADRAD|RECTANG|OCTOG|CANULAD|PLACAD)/', $conEspacios)) {
             return $formas->firstWhere('nombre', 'BARRA REDONDA');
         }
 

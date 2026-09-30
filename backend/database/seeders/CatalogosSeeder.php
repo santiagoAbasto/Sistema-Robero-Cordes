@@ -96,8 +96,9 @@ class CatalogosSeeder extends Seeder
 
         // --------------------------------------------------------------- formas
         $formas = [
+            // BARRA a secas no va: es BARRA REDONDA. CORDES lo resolvio el
+            // 30-09-2026 y la migracion barra_es_barra_redonda las unifico.
             'BARRA REDONDA' => 'Diametro x largo',
-            'BARRA' => 'Diametro x largo',
             'BARRA HEXAGONAL' => 'Entre caras x largo',
             'BARRA CUADRADA' => 'Lado x largo',
             'CAÑO' => 'Diametro nominal + SCH + largo',

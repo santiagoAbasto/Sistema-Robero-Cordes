@@ -46,11 +46,11 @@ class CalculadoraSeeder extends Seeder
         ];
 
         $formas = [
+            // "BARRA" a secas no esta: es BARRA REDONDA. CORDES dijo el
+            // 09-09-2026 "Barra sola debe desaparecer" y el 30-09-2026 que
+            // todo lo que dice barra es barra redonda. Crearla aca la
+            // resucitaba en cada seed: firstOrNew la hacia de nuevo.
             'BARRA REDONDA' => $barraRedonda,
-            // "BARRA" a secas queda definida para que las cotizaciones viejas
-            // se sigan abriendo, pero se desactiva mas abajo: CORDES confirmo
-            // que no es una denominacion que usen.
-            'BARRA' => $barraRedonda,
             'ALAMBRE' => $barraRedonda,
 
             'BARRA CUADRADA' => [
@@ -151,7 +151,6 @@ class CalculadoraSeeder extends Seeder
         // BRIDA y PERFIL quedan sin formula a proposito: no son un solido
         // simple y el peso depende del plano. Se cargan a mano.
 
-        $this->jubilarBarraSola();
         $this->jubilarNombresViejos();
     }
 
@@ -166,21 +165,6 @@ class CalculadoraSeeder extends Seeder
     private function jubilarNombresViejos(): void
     {
         CanoEstandar::where('nombre', 'like', '%.%/%')->update(['activo' => false]);
-    }
-
-    /**
-     * "BARRA" a secas sale de la lista.
-     *
-     * Estaba como sinonimo de BARRA REDONDA y CORDES confirmo el 09-09-2026 que
-     * no es una denominacion que usen: "Barra sola debe desaparecer".
-     *
-     * Se desactiva, no se borra. Las cotizaciones viejas que la nombran tienen
-     * que poder abrirse e imprimirse igual que el dia que se hicieron; lo unico
-     * que cambia es que deja de ofrecerse al cotizar.
-     */
-    private function jubilarBarraSola(): void
-    {
-        Forma::where('nombre', 'BARRA')->update(['activo' => false]);
     }
 
     /**

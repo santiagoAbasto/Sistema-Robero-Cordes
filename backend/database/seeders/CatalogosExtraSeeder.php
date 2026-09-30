@@ -16,8 +16,8 @@ class CatalogosExtraSeeder extends Seeder
     {
         // --- cómo se calculan los kilos por metro de cada forma ---
         $formulas = [
+            // BARRA a secas no va: es BARRA REDONDA (ver CatalogosSeeder).
             'BARRA REDONDA' => ['barra_redonda', 'Diametro'],
-            'BARRA' => ['barra_redonda', 'Diametro'],
             'BARRA CUADRADA' => ['barra_cuadrada', 'Lado'],
             'BARRA HEXAGONAL' => ['barra_hexagonal', 'Entre caras'],
             'CAÑO' => ['cano', 'Diametro exterior y espesor'],
