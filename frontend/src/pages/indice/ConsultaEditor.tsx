@@ -189,6 +189,7 @@ function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
     pedido_material: l.pedido?.material ?? null,
     pedido_forma: l.pedido?.forma ?? null,
     pedido_dimensiones: l.pedido?.dimensiones ?? null,
+    pedido_medidas: l.pedido?.medidas ?? null,
     cantidad_pedida: l.pedido?.cantidad ? Number(l.pedido.cantidad) : null,
     unidad_pedida_id: l.pedido?.unidad_id ?? null,
     /*
@@ -2021,6 +2022,34 @@ function LineaFila({
 
     Lo ya escrito a mano no se pisa: solo se completa lo que esta vacio.
   */
+  /*
+    Los campos de medida de la forma que pidio el cliente.
+
+    pedido_forma es un nombre y no un id —se puede escribir una forma que no
+    esta en el catalogo— asi que se busca por nombre. Si no aparece, no
+    sabemos que medidas lleva y queda la caja de texto libre.
+  */
+  const formaPedida =
+    catalogos?.formas.find((f) => f.nombre === linea.pedido_forma) ?? null
+  const camposDeLoPedido = formaPedida?.campos ?? []
+
+  /**
+   * Cambia una medida de lo pedido y rearma el texto que sale impreso.
+   *
+   * pedido_dimensiones sigue siendo lo que se imprime: se arma con la misma
+   * funcion que el de la linea de arriba, asi las dos mitades se escriben
+   * igual y se pueden comparar.
+   */
+  function cambiarMedidaPedida(clave: string, cambios: Partial<{ valor: string; unidad: string }>) {
+    const actual = linea.pedido_medidas?.[clave] ?? { valor: '', unidad: 'mm' }
+    const medidas = { ...(linea.pedido_medidas ?? {}), [clave]: { ...actual, ...cambios } }
+
+    onCambio({
+      pedido_medidas: medidas,
+      pedido_dimensiones: armarDimensiones(formaPedida, medidas, null) || null,
+    })
+  }
+
   function alternarIgualALoPedido() {
     // Estaba en distinto: vuelve a ser igual y no hay nada que copiar.
     if (! linea.igual_a_lo_pedido) {
@@ -2037,6 +2066,12 @@ function LineaFila({
       pedido_material: linea.pedido_material ?? material?.nombre ?? linea.material_nuevo ?? null,
       pedido_forma: linea.pedido_forma ?? forma?.nombre ?? null,
       pedido_dimensiones: linea.pedido_dimensiones ?? linea.dimensiones ?? null,
+      // Las medidas arrancan en las que ya estaban cargadas: lo que leyó el
+      // lector del pedido ES lo que pidió el cliente. Sólo hay que corregir
+      // lo que se vaya a cotizar distinto.
+      pedido_medidas:
+        linea.pedido_medidas ??
+        (Object.keys(linea.calc.medidas).length > 0 ? linea.calc.medidas : null),
       cantidad_pedida: linea.cantidad_pedida ?? linea.cantidad ?? null,
       unidad_pedida_id: linea.unidad_pedida_id ?? linea.unidad_venta_id ?? null,
     })
@@ -2371,12 +2406,60 @@ function LineaFila({
             placeholder="BARRA REDONDA"
             opciones={(catalogos?.formas ?? []).map((f) => f.nombre)}
           />
-          <Texto
-            etiqueta="Medidas"
-            value={linea.pedido_dimensiones ?? ''}
-            onChange={(e) => onCambio({ pedido_dimensiones: e.target.value || null })}
-            placeholder="DIA 65 X 145 MM"
-          />
+          {/*
+            Las medidas de lo pedido, con los nombres que les pone la forma.
+
+            Era una caja llamada "Medidas" donde cada uno escribia lo que le
+            parecia —"DIA 65 X 145", "Ø65x145mm"— mientras que arriba, en lo
+            que se cotiza, hay un campo por medida: Diametro y Largo para una
+            barra, Ancho y Largo para una chapa. Las dos mitades de la misma
+            linea no se podian comparar de un vistazo, que es para lo que esta
+            este bloque.
+
+            Con una forma que no esta en el catalogo no sabemos que campos
+            lleva: ahi sigue la caja de texto, y las lineas viejas tambien.
+          */}
+          {camposDeLoPedido.length > 0 ? (
+            camposDeLoPedido.map((campo) => {
+              const cargada = linea.pedido_medidas?.[campo.clave] ?? { valor: '', unidad: 'mm' }
+
+              return (
+                <div key={campo.clave}>
+                  <Etiqueta>{campo.label}</Etiqueta>
+                  <div className="flex">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      aria-label={`${campo.label} pedido`}
+                      value={cargada.valor}
+                      onChange={(e) => cambiarMedidaPedida(campo.clave, { valor: e.target.value })}
+                      className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                    />
+                    <select
+                      aria-label={`Unidad de ${campo.label.toLowerCase()} pedido`}
+                      value={cargada.unidad}
+                      onChange={(e) => cambiarMedidaPedida(campo.clave, { unidad: e.target.value })}
+                      className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                    >
+                      {UNIDADES_MEDIDA.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <Texto
+              etiqueta="Medidas"
+              value={linea.pedido_dimensiones ?? ''}
+              onChange={(e) => onCambio({ pedido_dimensiones: e.target.value || null })}
+              placeholder="DIA 65 X 145 MM"
+            />
+          )}
           <Texto
             etiqueta="Cantidad"
             type="number"

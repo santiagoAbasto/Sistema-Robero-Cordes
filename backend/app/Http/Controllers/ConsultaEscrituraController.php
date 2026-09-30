@@ -473,6 +473,12 @@ class ConsultaEscrituraController extends Controller
             'lineas.*.pedido_material' => ['nullable', 'string', 'max:120'],
             'lineas.*.pedido_forma' => ['nullable', 'string', 'max:60'],
             'lineas.*.pedido_dimensiones' => ['nullable', 'string', 'max:120'],
+            // Las medidas de lo pedido, campo por campo y con la misma
+            // estructura que las de la calculadora. pedido_dimensiones sigue
+            // siendo el texto que sale impreso, armado a partir de estas.
+            'lineas.*.pedido_medidas' => ['nullable', 'array'],
+            'lineas.*.pedido_medidas.*.valor' => ['nullable', 'numeric'],
+            'lineas.*.pedido_medidas.*.unidad' => ['nullable', 'string', 'in:mm,cm,m,in,ft'],
             'lineas.*.cantidad_pedida' => ['nullable', 'numeric'],
             'lineas.*.unidad_pedida_id' => ['nullable', 'exists:unidades,id'],
             'lineas.*.aprox' => ['boolean'],
@@ -635,6 +641,7 @@ class ConsultaEscrituraController extends Controller
                 $linea->pedido_material = null;
                 $linea->pedido_forma = null;
                 $linea->pedido_dimensiones = null;
+                $linea->pedido_medidas = null;
                 $linea->motivo_cambio = null;
             }
 

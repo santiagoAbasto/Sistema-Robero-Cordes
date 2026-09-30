@@ -47,6 +47,7 @@ class ConsultaLineaResource extends JsonResource
                 // dejar elegida la unidad, igual que en la unidad de venta.
                 'unidad_id' => $this->unidad_pedida_id,
                 'texto' => $this->pedido_texto,
+                'medidas' => $this->pedido_medidas,
             ],
 
             // cantidades y unidades

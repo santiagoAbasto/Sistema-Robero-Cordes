@@ -487,6 +487,11 @@ export interface DatosLinea {
   pedido_material?: string | null
   pedido_forma?: string | null
   pedido_dimensiones?: string | null
+  /**
+   * Las medidas de lo pedido, campo por campo. `pedido_dimensiones` sigue
+   * siendo el texto que sale impreso: se arma a partir de éstas.
+   */
+  pedido_medidas?: Record<string, { valor: string; unidad: string }> | null
   cantidad_pedida?: number | null
   unidad_pedida_id?: number | null
   desde_stock?: boolean

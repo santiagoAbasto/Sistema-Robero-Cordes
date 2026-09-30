@@ -58,6 +58,11 @@ export interface LineaPedida {
   material: string | null
   forma: string | null
   dimensiones: string | null
+  /**
+   * Las medidas campo por campo, con la misma estructura que las de la
+   * calculadora. Las líneas viejas no las tienen y usan `dimensiones`.
+   */
+  medidas: Record<string, { valor: string; unidad: string }> | null
   cantidad: string | null
   unidad: string | null
   /** El código es para mostrar; el id es el que elige el desplegable al abrir. */
