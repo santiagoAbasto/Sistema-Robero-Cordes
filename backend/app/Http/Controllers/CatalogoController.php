@@ -34,7 +34,7 @@ class CatalogoController extends Controller
             'tipos_consulta' => ['Cotizacion', 'Pedido', 'Observacion'],
             'estados' => \App\Models\Consulta::ESTADOS,
             'estados_de_cierre' => \App\Models\Consulta::ESTADOS_DE_CIERRE,
-            'solicitud_vias' => ['Mail', 'WhatsApp', 'Web', 'Telefono', 'En persona'],
+            'solicitud_vias' => \App\Models\Consulta::VIAS,
             'condiciones_iva' => ['Resp. Inscripto', 'Monotributo', 'Exento', 'Consumidor Final'],
             'iibb_condiciones' => ['No inscripto', 'Local', 'Convenio multilateral'],
             'vias_envio' => ['Impresora', 'PDF', 'Correo', 'WhatsApp'],

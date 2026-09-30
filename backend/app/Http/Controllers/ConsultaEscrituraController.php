@@ -527,7 +527,7 @@ class ConsultaEscrituraController extends Controller
             'nota' => ['nullable', 'string'],
             'texto' => ['nullable', 'string'],
             'estado' => ['nullable', Rule::in(Consulta::ESTADOS)],
-            'solicitud_via' => ['nullable', Rule::in(['Mail', 'WhatsApp', 'Telefono', 'En persona'])],
+            'solicitud_via' => ['nullable', Rule::in(Consulta::VIAS)],
             'solicitud_fecha' => ['nullable', 'date'],
             'solicitud_texto' => ['nullable', 'string'],
 

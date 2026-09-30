@@ -70,6 +70,8 @@ class PdfController extends Controller
 
         $telefono = $datos['telefono']
             ?? $contacto?->medio('Telefono')?->valor
+            // Un contacto con solo celular salia sin telefono en la hoja.
+            ?? $contacto?->medio('Celular')?->valor
             ?? $contacto?->medio('WhatsApp')?->valor;
 
         $mail = $datos['mail'] ?? $contacto?->medio('Mail')?->valor;

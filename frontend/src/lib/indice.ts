@@ -223,6 +223,8 @@ export interface DatosDeLaFirma {
   pais_id: number | null
   provincia_id: number | null
   localidad_id: number | null
+  /** Que es el telefono: Celular, WhatsApp o Telefono. Lo dice su rotulo. */
+  tipo_telefono?: string | null
 }
 
 export async function leerFirmaDeMail(texto: string) {
@@ -354,6 +356,8 @@ export interface DatosEmpresa {
   rubro_id?: number | null
   observacion_general?: string | null
   relaciones?: string[]
+  /** Su primer contacto: se guarda junto con la empresa y nace principal. */
+  contacto?: DatosContacto | null
 }
 
 export async function crearEmpresa(datos: DatosEmpresa) {
@@ -387,7 +391,8 @@ export async function guardarContacto(empresaId: number, datos: DatosContacto, c
     : `/empresas/${empresaId}/contactos`
   const { data } = contactoId ? await api.put(url, datos) : await api.post(url, datos)
 
-  return data
+  // Si ya habia alguien con ese nombre, el servidor le suma lo nuevo y lo dice.
+  return data as { id: number; mensaje: string; ya_estaba?: boolean }
 }
 
 export async function archivarContacto(id: number) {

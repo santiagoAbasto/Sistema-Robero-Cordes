@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
-import { Accion, Aviso, Chip } from '../../components/ui'
+import { Plus, Trash2, Wand2 } from 'lucide-react'
+import { Accion, Aviso, Boton, Chip } from '../../components/ui'
 import { AreaTexto, Casilla, Etiqueta, Lista, Modal, Texto } from '../../components/ui/form'
 import {
   guardarCampo,
   guardarContacto,
   guardarRazonSocial,
+  leerFirmaDeMail,
   mensajeDeError,
   useCatalogos,
 } from '../../lib/indice'
@@ -42,6 +43,11 @@ export function ModalContacto({
 
   const [nombre, setNombre] = useState('')
   const [sector, setSector] = useState('')
+  const [cargo, setCargo] = useState('')
+  // Lo pegado de un mail o de la web, para completar el contacto de una vez.
+  const [pegado, setPegado] = useState('')
+  const [leyendo, setLeyendo] = useState(false)
+  const [aviso, setAviso] = useState<string | null>(null)
   const [principal, setPrincipal] = useState(false)
   const [observacion, setObservacion] = useState('')
   const [medios, setMedios] = useState<MedioEditable[]>([])
@@ -53,29 +59,82 @@ export function ModalContacto({
 
     setNombre(contacto?.nombre ?? '')
     setSector(contacto?.sector ?? '')
+    setCargo(contacto?.cargo ?? '')
+    setPegado('')
+    setAviso(null)
     setPrincipal(contacto?.principal ?? false)
     setObservacion(contacto?.observacion ?? '')
     setError(null)
 
     if (contacto) {
-      const armar = (lista: { valor: string; principal: boolean; nota: string | null }[], tipo: string) =>
-        lista.map((m) => ({
-          tipo_medio_id: idPorNombre(tipo),
+      /*
+        Todos los medios, de cualquier tipo.
+
+        Antes se armaban con tres grupos —telefonos, WhatsApp y mails— y al
+        guardar se reemplazan todos: el fax no entraba en ningun grupo, asi
+        que abrir un contacto y guardarlo lo borraba. Pasaba en 128.
+      */
+      setMedios(
+        (contacto.medios ?? []).map((m) => ({
+          tipo_medio_id: m.tipo_medio_id,
           valor: m.valor,
           principal: m.principal,
           nota: m.nota ?? '',
-        }))
-
-      setMedios([
-        ...armar(contacto.telefonos, 'Telefono'),
-        ...armar(contacto.whatsapps, 'WhatsApp'),
-        ...armar(contacto.mails, 'Mail'),
-      ])
+        })),
+      )
     } else {
       setMedios([{ tipo_medio_id: idPorNombre('Telefono'), valor: '', principal: true, nota: '' }])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abierto, contacto, tipos.length])
+
+  /**
+   * Completa el contacto con lo pegado: el pie de un mail o la ficha de la web.
+   *
+   * "Si la empresa existe pero solo queremos agregar un nuevo contacto, se
+   * necesita poder pegar los datos y que complete". Es el mismo lector que el
+   * de Nueva empresa. Solo llena lo vacio, y un telefono o un mail que ya
+   * esta en la lista no se repite.
+   */
+  async function completarDesdeLoPegado() {
+    setLeyendo(true)
+    setError(null)
+
+    try {
+      const { datos, mensaje } = await leerFirmaDeMail(pegado)
+
+      setNombre((n) => n || datos.contacto || '')
+      setCargo((c) => c || datos.cargo || '')
+
+      const nuevos = [
+        datos.telefono && { tipo: datos.tipo_telefono ?? 'Telefono', valor: datos.telefono },
+        datos.mail && { tipo: 'Mail', valor: datos.mail },
+      ].filter((m): m is { tipo: string; valor: string } => Boolean(m))
+
+      const plano = (v: string) => v.toLowerCase().replace(/[^0-9a-z@.]/g, '')
+
+      setMedios((actuales) => {
+        const conValor = actuales.filter((m) => m.valor.trim() !== '')
+        const sumar = nuevos
+          .filter((n) => !conValor.some((m) => plano(m.valor) === plano(n.valor)))
+          .map((n, i) => ({
+            tipo_medio_id: idPorNombre(n.tipo) || idPorNombre('Telefono'),
+            valor: n.valor,
+            // Si todavia no tenia ninguno de ese tipo, el primero es el principal.
+            principal: i === 0 && conValor.length === 0,
+            nota: '',
+          }))
+
+        return [...conValor, ...sumar]
+      })
+
+      setAviso(mensaje)
+    } catch (err) {
+      setError(mensajeDeError(err))
+    } finally {
+      setLeyendo(false)
+    }
+  }
 
   function cambiarMedio(i: number, cambios: Partial<MedioEditable>) {
     setMedios((prev) => prev.map((m, k) => (k === i ? { ...m, ...cambios } : m)))
@@ -92,11 +151,12 @@ export function ModalContacto({
     setError(null)
 
     try {
-      await guardarContacto(
+      const r = await guardarContacto(
         empresaId,
         {
           nombre,
           sector: sector || null,
+          cargo: cargo || null,
           principal,
           observacion: observacion || null,
           medios: medios
@@ -111,7 +171,8 @@ export function ModalContacto({
         contacto?.id,
       )
 
-      onGuardado(contacto ? 'Contacto modificado.' : 'Contacto agregado.')
+      // Si ya estaba, el servidor le sumo lo nuevo y dice cuanto.
+      onGuardado(contacto ? 'Contacto modificado.' : r.ya_estaba ? r.mensaje : 'Contacto agregado.')
       onCerrar()
     } catch (err) {
       setError(mensajeDeError(err))
@@ -124,7 +185,7 @@ export function ModalContacto({
     <Modal
       abierto={abierto}
       titulo={contacto ? `Modificar a ${contacto.nombre}` : 'Agregar contacto'}
-      bajada="Cada persona puede tener varios teléfonos, WhatsApp y mails."
+      bajada="Cada persona puede tener varios teléfonos, celulares, WhatsApp y mails."
       onCerrar={onCerrar}
       onGuardar={guardar}
       guardando={guardando}
@@ -132,13 +193,41 @@ export function ModalContacto({
       <div className="flex flex-col gap-4">
         {error && <Aviso tono="ambar">{error}</Aviso>}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        {/*
+          Pegar y que complete: el pie de un mail o la ficha de la web. Arriba
+          de todo porque es lo primero que se hace cuando llega alguien nuevo.
+        */}
+        <div className="flex flex-col gap-2 rounded-lg border border-brand-200 bg-[#f3f9fe] p-3">
+          <AreaTexto
+            etiqueta="Pegá el pie de un mail o la ficha de la web"
+            ayuda="completa lo vacío; si ya está en la empresa, le suma solo lo nuevo"
+            filas={3}
+            value={pegado}
+            onChange={(e) => setPegado(e.target.value)}
+            placeholder={'Juan J. Saccomanno\npanol@sulfoquimica.com.ar\nCel 1131061795'}
+          />
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Boton variante="suave" onClick={completarDesdeLoPegado} disabled={leyendo || !pegado.trim()}>
+              <Wand2 size={14} strokeWidth={2.2} />
+              {leyendo ? 'Leyendo…' : 'Completar'}
+            </Boton>
+            {aviso && <span className="text-[11.5px] text-brand-600">{aviso}</span>}
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
           <Texto
             etiqueta="Nombre"
             obligatorio
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
             placeholder="Nombre y apellido"
+          />
+          <Texto
+            etiqueta="Cargo"
+            value={cargo}
+            onChange={(e) => setCargo(e.target.value)}
+            placeholder="Supervisor de Mantenimiento"
           />
           <Texto
             etiqueta="Sector"
@@ -157,7 +246,7 @@ export function ModalContacto({
 
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2.5">
-            <Etiqueta>Telefonos, WhatsApp y mails</Etiqueta>
+            <Etiqueta ayuda="el celular aparte: se disca distinto">Telefonos, celulares, WhatsApp y mails</Etiqueta>
             <div className="ml-auto">
               <Accion
                 onClick={() =>
@@ -217,8 +306,8 @@ export function ModalContacto({
           ))}
 
           <p className="text-[11px] text-faint">
-            Marcá como principal el que se usa por defecto de cada tipo. Los medios se pueden ampliar:
-            hoy teléfono, WhatsApp y mail; mañana lo que aparezca.
+            Marcá como principal el que se usa por defecto de cada tipo. Un celular va como Celular y no
+            como Telefono: desde afuera se le agrega el 9 después del 54.
           </p>
         </div>
 

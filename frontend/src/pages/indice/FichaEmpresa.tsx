@@ -487,7 +487,7 @@ function Contactos({
             <tr>
               <Th>Nombre</Th>
               <Th ancho="150px">Sector</Th>
-              <Th ancho="160px">Telefono</Th>
+              <Th ancho="160px">Telefono y celular</Th>
               <Th ancho="160px">WhatsApp</Th>
               <Th>Mail</Th>
               <Th ancho="140px" />
@@ -502,10 +502,18 @@ function Contactos({
                     {c.principal && <Chip tono="verde">principal</Chip>}
                     {!c.activo && <Chip tono="neutro">ya no está</Chip>}
                   </span>
+                  {/* El cargo se guardaba y no se veia en ningun lado. */}
+                  {c.cargo && <span className="block text-[11px] text-muted">{c.cargo}</span>}
                 </Td>
                 <Td>{c.sector ?? <span className="text-faint">—</span>}</Td>
                 <Td>
-                  <Medios valores={c.telefonos.map((t) => t.valor)} />
+                  {/* El celular en la misma columna, marcado: se disca distinto. */}
+                  <Medios
+                    valores={[
+                      ...c.telefonos.map((t) => t.valor),
+                      ...(c.celulares ?? []).map((t) => `${t.valor} · cel`),
+                    ]}
+                  />
                 </Td>
                 <Td>
                   <Medios valores={c.whatsapps.map((t) => t.valor)} />

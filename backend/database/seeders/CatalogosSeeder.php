@@ -206,7 +206,9 @@ class CatalogosSeeder extends Seeder
         }
 
         // ------------------------------------------------------- medios y otros
-        foreach (['Telefono', 'WhatsApp', 'Mail'] as $t) {
+        // Celular aparte de Telefono: "el discado es distinto para celular que
+        // para linea fija". Pedido por Roberto el 30-09-2026.
+        foreach (['Telefono', 'Celular', 'WhatsApp', 'Mail'] as $t) {
             TipoMedio::firstOrCreate(['nombre' => $t]);
         }
 

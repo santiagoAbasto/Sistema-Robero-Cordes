@@ -2,14 +2,36 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Wand2 } from 'lucide-react'
 import { Boton, Card, PageHeader, Aviso } from '../../components/ui'
-import { AreaTexto, Guardado } from '../../components/ui/form'
+import { AreaTexto, Guardado, Lista, Texto } from '../../components/ui/form'
 import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
-import { crearEmpresa, leerFirmaDeMail, mensajeDeError } from '../../lib/indice'
+import { crearEmpresa, leerFirmaDeMail, mensajeDeError, useCatalogos } from '../../lib/indice'
 
 /** Alta de una empresa nueva. Antes era una pantalla aparte del índice. */
+/** El primer contacto de la empresa, tal como se lo carga en esta pantalla. */
+interface PrimerContacto {
+  nombre: string
+  cargo: string
+  telefono: string
+  /** Telefono, Celular o WhatsApp: se discan distinto. */
+  tipoTelefono: string
+  mail: string
+}
+
+const CONTACTO_VACIO: PrimerContacto = { nombre: '', cargo: '', telefono: '', tipoTelefono: 'Telefono', mail: '' }
+
 export default function NuevaEmpresa() {
   const navigate = useNavigate()
+  const catalogos = useCatalogos()
+  /*
+    El contacto se guarda junto con la empresa.
+
+    "Despues hay que agregar manualmente el contacto... tendria que poder
+    tomar los datos que pusimos al cargar la empresa". Antes quedaba anotado
+    en la observacion y habia que volver a tipearlo en la ficha.
+  */
+  const [contacto, setContacto] = useState<PrimerContacto>(CONTACTO_VACIO)
+  const idDelTipo = (nombre: string) => catalogos?.tipos_medio.find((t) => t.nombre === nombre)?.id
   const [valores, setValores] = useState<EstadoEmpresaForm>(estadoInicial())
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -44,19 +66,17 @@ export default function NuevaEmpresa() {
         pais_id: v.pais_id ?? datos.pais_id,
         provincia_id: v.provincia_id ?? datos.provincia_id,
         localidad_id: v.localidad_id ?? datos.localidad_id,
-        // El contacto se carga desde la ficha, que es donde viven sus
-        // teléfonos y sus mails. Acá queda anotado para no perderlo.
-        observacion_general:
-          v.observacion_general ||
-          [
-            datos.contacto && `Contacto: ${datos.contacto}`,
-            datos.cargo,
-            datos.telefono && `Tel: ${datos.telefono}`,
-            datos.mail,
-            datos.web,
-          ]
-            .filter(Boolean)
-            .join(' · '),
+        // La web no tiene campo en el alta: queda anotada para no perderla.
+        observacion_general: v.observacion_general || (datos.web ? `Web: ${datos.web}` : ''),
+      }))
+
+      // La persona que firma es el primer contacto. Solo lo vacio.
+      setContacto((c) => ({
+        nombre: c.nombre || (datos.contacto ?? ''),
+        cargo: c.cargo || (datos.cargo ?? ''),
+        telefono: c.telefono || (datos.telefono ?? ''),
+        tipoTelefono: c.telefono ? c.tipoTelefono : (datos.tipo_telefono ?? 'Telefono'),
+        mail: c.mail || (datos.mail ?? ''),
       }))
 
       setAviso(mensaje)
@@ -78,8 +98,25 @@ export default function NuevaEmpresa() {
     setError(null)
 
     try {
-      const empresa = await crearEmpresa(valores)
-      setAviso('Empresa creada.')
+      const medios = [
+        contacto.telefono.trim() && {
+          tipo_medio_id: idDelTipo(contacto.tipoTelefono) ?? idDelTipo('Telefono'),
+          valor: contacto.telefono.trim(),
+          principal: true,
+        },
+        contacto.mail.trim() && { tipo_medio_id: idDelTipo('Mail'), valor: contacto.mail.trim(), principal: true },
+      ].filter((m): m is { tipo_medio_id: number; valor: string; principal: boolean } =>
+        Boolean(m && m.tipo_medio_id),
+      )
+
+      const empresa = await crearEmpresa({
+        ...valores,
+        // Sin nombre no hay contacto: el resto solo no alcanza para saber quien es.
+        contacto: contacto.nombre.trim()
+          ? { nombre: contacto.nombre.trim(), cargo: contacto.cargo.trim() || null, medios }
+          : null,
+      })
+      setAviso(contacto.nombre.trim() ? 'Empresa creada, con su contacto.' : 'Empresa creada.')
       navigate(`/empresas/${empresa.id}`, { replace: true })
     } catch (err) {
       setError(mensajeDeError(err))
@@ -161,8 +198,57 @@ export default function NuevaEmpresa() {
         />
       </Card>
 
+      {/*
+        El primer contacto, a la vista y editable. Lo llena el pie del mail o la
+        ficha de la web; si queda sin nombre, no se crea ninguno.
+      */}
+      <Card className="flex flex-col gap-3 p-[22px]">
+        <div className="flex flex-wrap items-baseline gap-2.5">
+          <h2 className="text-[15px] font-semibold text-ink">Contacto</h2>
+          <span className="text-[11.5px] text-muted">
+            quien firma el mail o la consulta; se guarda con la empresa como el principal
+          </span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Texto
+            etiqueta="Nombre"
+            value={contacto.nombre}
+            onChange={(e) => setContacto({ ...contacto, nombre: e.target.value })}
+            placeholder="Nombre y apellido"
+          />
+          <Texto
+            etiqueta="Cargo"
+            value={contacto.cargo}
+            onChange={(e) => setContacto({ ...contacto, cargo: e.target.value })}
+            placeholder="Supervisor de Mantenimiento"
+          />
+          <div className="flex min-w-0 gap-2">
+            <Lista
+              etiqueta="Tipo"
+              className="w-[118px] shrink-0"
+              value={contacto.tipoTelefono}
+              onChange={(e) => setContacto({ ...contacto, tipoTelefono: e.target.value })}
+              opciones={['Telefono', 'Celular', 'WhatsApp'].map((t) => ({ valor: t, texto: t }))}
+            />
+            <Texto
+              etiqueta="Numero"
+              className="min-w-0 flex-1"
+              value={contacto.telefono}
+              onChange={(e) => setContacto({ ...contacto, telefono: e.target.value })}
+              placeholder="(2954) 15-584584"
+            />
+          </div>
+          <Texto
+            etiqueta="Mail"
+            value={contacto.mail}
+            onChange={(e) => setContacto({ ...contacto, mail: e.target.value })}
+            placeholder="gsack@apex.com.ar"
+          />
+        </div>
+      </Card>
+
       <Aviso tono="verde">
-        Después de guardarla vas a poder cargarle los contactos, las razones sociales a las que se
+        Después de guardarla vas a poder cargarle más contactos, las razones sociales a las que se
         factura y las condiciones de trabajo desde su propia ficha.
       </Aviso>
 

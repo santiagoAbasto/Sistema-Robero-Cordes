@@ -28,8 +28,16 @@ export interface Contacto {
   activo: boolean
   observacion: string | null
   telefonos: Medio[]
+  celulares?: Medio[]
   whatsapps: Medio[]
   mails: Medio[]
+  /**
+   * Todos los medios, de cualquier tipo, para editarlos.
+   *
+   * Los grupos de arriba no traen el fax: armar el modal con ellos y guardar
+   * borraba el fax de 128 contactos. Para editar se usa esta lista entera.
+   */
+  medios?: (Medio & { tipo_medio_id: number; tipo: string | null })[]
 }
 
 export interface RazonSocial {

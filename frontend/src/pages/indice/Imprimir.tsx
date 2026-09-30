@@ -138,12 +138,17 @@ function ElegirImpresion({
   // Al cambiar de persona, se proponen sus datos.
   useEffect(() => {
     if (!contacto) return
-    setTelefono(contacto.telefonos[0]?.valor ?? contacto.whatsapps[0]?.valor ?? '')
+    setTelefono(
+      contacto.telefonos[0]?.valor ?? contacto.celulares?.[0]?.valor ?? contacto.whatsapps[0]?.valor ?? '',
+    )
     setMail(contacto.mails[0]?.valor ?? '')
   }, [contactoId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const opcionesTelefono = contacto
-    ? [...contacto.telefonos, ...contacto.whatsapps].map((m) => ({ valor: m.valor, texto: m.valor }))
+    ? [...contacto.telefonos, ...(contacto.celulares ?? []), ...contacto.whatsapps].map((m) => ({
+        valor: m.valor,
+        texto: m.valor,
+      }))
     : []
   const opcionesMail = contacto?.mails.map((m) => ({ valor: m.valor, texto: m.valor })) ?? []
 
