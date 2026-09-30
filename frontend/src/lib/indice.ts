@@ -776,6 +776,23 @@ export async function interpretarTexto(texto: string) {
  * Se pide con axios y no con un link directo para que el token viaje en el
  * encabezado y no en la dirección. El servidor deja registrado que se mandó.
  */
+/**
+ * La hoja de una cotización para mirarla en la pantalla, sin mandarla.
+ *
+ * Es la misma que recibe el cliente, pero con registrar=0: mirarla no es
+ * imprimirla, y si cada vistazo quedara anotado el historial de impresiones
+ * diría que se le mandó veinte veces. Devuelve una dirección local que hay que
+ * liberar con URL.revokeObjectURL cuando ya no se muestra.
+ */
+export async function urlDeLaHojaPrevia(id: number): Promise<string> {
+  const { data } = await api.get(`/consultas/${id}/pdf`, {
+    responseType: 'blob',
+    params: { registrar: 0 },
+  })
+
+  return URL.createObjectURL(new Blob([data], { type: 'application/pdf' }))
+}
+
 export async function traerLaHoja(
   id: number,
   pestana: Window | null,
