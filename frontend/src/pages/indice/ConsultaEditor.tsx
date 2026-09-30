@@ -678,7 +678,14 @@ export default function ConsultaEditor() {
         return
       }
 
-      const nuevas: LineaForm[] = r.lineas.map((l) => ({
+      const nuevas: LineaForm[] = r.lineas.map((l) => {
+        // Las medidas que se entendieron, en los campos de su forma.
+        const medidas = medidasDeLaLinea(
+          { diametro_mm: l.diametro_mm, espesor_mm: l.espesor_mm, ancho_mm: l.ancho_mm, largo_mm: l.largo_mm },
+          catalogos?.formas.find((f) => f.id === l.forma_id) ?? null,
+        )
+
+        return {
         clave: crypto.randomUUID(),
         descripcion: l.descripcion,
         material_id: l.material_id,
@@ -693,7 +700,19 @@ export default function ConsultaEditor() {
         // Lo que el cliente escribió queda a la vista al lado de lo que se
         // cotiza: es la única forma de notar que pidió 316L y hay 316.
         pedido_material: l.pedido_material,
+        // De una ficha de la web viene la forma que pidio: con ella el bloque
+        // amarillo abre con Diametro, Largo y Piezas en vez de una caja suelta.
+        pedido_forma: l.pedido_forma ?? null,
         pedido_dimensiones: l.dimensiones,
+        /*
+          Si la linea ya viene distinta, lo que pidio arranca con las medidas
+          que se leyeron: salieron del pedido, asi que son las del cliente.
+          Sin esto el bloque amarillo abria con Diametro y Largo vacios aunque
+          el cliente hubiera escrito "Ø10mm x 3 metros". Destildar a mano ya
+          las copiaba; venir distinta desde el lector no.
+        */
+        pedido_medidas:
+          l.igual_a_lo_pedido === false && Object.keys(medidas).length > 0 ? { ...medidas } : null,
         precio_unitario: null,
         // Las variantes que pidió el cliente vienen armadas: quedan las
         // etiquetas y las cantidades, y solo hay que poner los precios.
@@ -704,12 +723,10 @@ export default function ConsultaEditor() {
           // Las piezas son las que se piden: 3 barras pesan 3 barras. Con
           // piezas en 1 el peso de la linea sale por una sola.
           piezas: String(l.cantidad ?? 1),
-          medidas: medidasDeLaLinea(
-            { diametro_mm: l.diametro_mm, espesor_mm: l.espesor_mm, ancho_mm: l.ancho_mm, largo_mm: l.largo_mm },
-            catalogos?.formas.find((f) => f.id === l.forma_id) ?? null,
-          ),
+          medidas,
         },
-      }))
+        }
+      })
 
       // Reemplaza las líneas vacías; conserva las que ya tenían datos.
       setLineas((prev) => [...prev.filter((l) => l.descripcion.trim() !== ''), ...nuevas])

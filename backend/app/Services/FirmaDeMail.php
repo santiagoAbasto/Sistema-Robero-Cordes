@@ -25,10 +25,44 @@ class FirmaDeMail
     private const ENCABEZADOS = '/^\s*(from|de|sent|enviado|to|para|cc|cco|subject|asunto|fecha)\s*:/i';
 
     /**
+     * Las etiquetas de la ficha de contacto que llega desde la web.
+     *
+     * ORIGEN esta para que se reconozca como etiqueta y no como dato: si no,
+     * "CONSULTA DESDE LA WEB" terminaba siendo el nombre de alguien.
+     */
+    private const ETIQUETAS = [
+        'empresa' => ['EMPRESA', 'RAZON SOCIAL', 'COMPAÑIA'],
+        'contacto' => ['NOMBRE Y APELLIDO', 'APELLIDO Y NOMBRE', 'NOMBRE', 'CONTACTO'],
+        'cargo' => ['CARGO', 'PUESTO'],
+        'mail' => ['CORREO ELECTRONICO', 'E-MAIL', 'EMAIL', 'MAIL', 'CORREO'],
+        'telefono' => ['TELEFONO', 'CELULAR', 'MOVIL', 'WHATSAPP', 'TEL'],
+        'direccion' => ['DIRECCION', 'DOMICILIO'],
+        'codigo_postal' => ['CODIGO POSTAL', 'C.P.', 'CP'],
+        'localidad' => ['LOCALIDAD', 'CIUDAD'],
+        'provincia' => ['PROVINCIA'],
+        'pais' => ['PAIS'],
+        'origen' => ['ORIGEN'],
+    ];
+
+    /**
      * @return array<string, mixed>
      */
     public function leer(string $texto): array
     {
+        /*
+          Primero, si es una ficha de la web.
+
+          Se reconoce porque trae el nombre o la empresa con su etiqueta: una
+          firma nunca escribe "Nombre:". Si se exigieran solo dos etiquetas
+          cualquiera, una firma con "Tel:" y "Mail:" pasaria por ficha y se
+          perderia el nombre de quien firma.
+        */
+        $ficha = CamposDeFormulario::leer($texto, self::ETIQUETAS)[0] ?? [];
+
+        if (isset($ficha['contacto']) || isset($ficha['empresa'])) {
+            return $this->deUnaFicha($ficha, $texto);
+        }
+
         $renglones = array_values(array_filter(
             array_map('trim', preg_split('/[\r\n]+/', $texto) ?: []),
             fn ($r) => $r !== '',
@@ -48,6 +82,45 @@ class FirmaDeMail
         ];
 
         return $datos + $this->deDonde($texto);
+    }
+
+    /**
+     * Los datos de una ficha de la web: cada uno en su campo, tal cual vino.
+     *
+     * Lo que la ficha no trae no se busca con las reglas de la firma: esas
+     * miran renglones sueltos y en una ficha se comen las etiquetas. Solo se
+     * completa con lo que se reconoce por su forma —un mail, un telefono, un
+     * codigo postal— que no se confunde con una etiqueta.
+     *
+     * @param  array<string, string>  $ficha
+     * @return array<string, mixed>
+     */
+    private function deUnaFicha(array $ficha, string $texto): array
+    {
+        $mail = $ficha['mail'] ?? $this->mail($texto);
+
+        $datos = [
+            'empresa' => $ficha['empresa'] ?? null,
+            'contacto' => $ficha['contacto'] ?? null,
+            'cargo' => $ficha['cargo'] ?? null,
+            'mail' => $mail,
+            'telefono' => isset($ficha['telefono']) ? $this->limpiar($ficha['telefono']) : $this->telefono($texto),
+            'web' => $this->web($texto, $mail),
+            'direccion' => $ficha['direccion'] ?? null,
+            'codigo_postal' => $ficha['codigo_postal'] ?? $this->codigoPostal($texto),
+        ];
+
+        /*
+          Donde queda: lo que dicen sus campos, no el texto entero. En el texto
+          estan el nombre de la persona y el de la empresa, y cualquiera de los
+          dos puede contener el nombre de una localidad.
+        */
+        $lugar = implode(' ', array_filter([
+            $ficha['localidad'] ?? null, $ficha['provincia'] ?? null,
+            $ficha['pais'] ?? null, $ficha['direccion'] ?? null,
+        ]));
+
+        return $datos + $this->deDonde($lugar);
     }
 
     private function mail(string $texto): ?string
@@ -78,6 +151,17 @@ class FirmaDeMail
 
             if (count($partes) > 1) {
                 return trim(end($partes));
+            }
+        }
+
+        /*
+          El renglon que termina en su forma societaria: "Sulfoquimica S.A.".
+          Es el nombre entero y legal; el dominio del mail es una abreviatura.
+        */
+        foreach ($renglones as $r) {
+            if (! str_contains($r, '@') && mb_strlen($r) <= 60
+                && preg_match('/\s(S\.?\s?A\.?(\s?I\.?\s?C\.?)?|S\.?\s?R\.?\s?L\.?|S\.?\s?A\.?\s?S\.?|LTDA\.?|INC\.?)$/iu', $r)) {
+                return $r;
             }
         }
 
@@ -119,9 +203,11 @@ class FirmaDeMail
                 continue;
             }
 
+            // Palabras capitalizadas o iniciales: "Juan J. Saccomanno". La
+            // inicial es una sola letra y su punto: "S.A." no pasa.
             $capitalizadas = array_filter(
                 $palabras,
-                fn ($p) => preg_match('/^\p{Lu}\p{L}+$/u', $p),
+                fn ($p) => preg_match('/^\p{Lu}(?:\p{L}+|\.)$/u', $p),
             );
 
             if (count($capitalizadas) === count($palabras)) {
@@ -216,13 +302,38 @@ class FirmaDeMail
             }
         }
 
+        /*
+          Sin palabra de calle, el nombre de la calle y su numero: "Panamá
+          8051". Es como se escribe la mayoria de las direcciones de aca.
+
+          ponytail: un renglon "Santa Rosa 6300" —localidad y CP sin rotular—
+          tambien tiene esta forma y se tomaria por direccion. Pasa poco y la
+          persona revisa antes de guardar; si molesta, descartar los renglones
+          cuyo texto sea una localidad del catalogo.
+        */
+        foreach ($renglones as $r) {
+            if (str_contains($r, '@') || str_contains($r, ':') || preg_match(self::ENCABEZADOS, $r)) {
+                continue;
+            }
+
+            if (preg_match('/\b(cel|tel|movil|móvil|whatsapp|c\.?\s*p\.?)\b/iu', $r)) {
+                continue;
+            }
+
+            // Letras, un espacio, y un numero de calle de hasta cinco cifras.
+            if (preg_match('/^\p{L}[\p{L}\s.\'°º-]{2,40}\s\d{1,5}$/u', $r)) {
+                return $r;
+            }
+        }
+
         return null;
     }
 
     /** "CP 6300" o un CPA argentino: B1646GEL. */
     private function codigoPostal(string $texto): ?string
     {
-        if (preg_match('/\bCP\.?\s*([A-Z]?\d{4}[A-Z]{0,3})\b/i', $texto, $m)) {
+        // "CP 6300", "C.P. (1682)", "CP: 1406".
+        if (preg_match('/\bC\.?\s?P\.?\s*:?\s*\(?\s*([A-Z]?\d{4}[A-Z]{0,3})\b/i', $texto, $m)) {
             return mb_strtoupper($m[1]);
         }
 
@@ -268,10 +379,28 @@ class FirmaDeMail
             return $mejor;
         };
 
+        $localidades = Localidad::query()->get(['id', 'nombre', 'provincia_id']);
+        $provinciaId = $buscar(Provincia::query()->get(['id', 'nombre']));
+        $localidadId = $buscar($localidades);
+
+        /*
+          La localidad tiene que ser de la provincia que se encontro.
+
+          "Martin Coronado C.P. (1682) - Prov. Buenos Aires": Martin Coronado
+          no esta cargada, y "Buenos Aires" —el nombre de la provincia— si
+          esta como localidad, pero de la Ciudad Autonoma. Salia una
+          localidad de CABA con provincia de Buenos Aires, que se contradice
+          sola. Una localidad vacia se elige a mano; una equivocada no se ve.
+        */
+        if ($localidadId !== null && $provinciaId !== null
+            && $localidades->firstWhere('id', $localidadId)?->provincia_id !== $provinciaId) {
+            $localidadId = null;
+        }
+
         return [
             'pais_id' => $buscar(Pais::query()->get(['id', 'nombre'])),
-            'provincia_id' => $buscar(Provincia::query()->get(['id', 'nombre'])),
-            'localidad_id' => $buscar(Localidad::query()->get(['id', 'nombre'])),
+            'provincia_id' => $provinciaId,
+            'localidad_id' => $localidadId,
         ];
     }
 }

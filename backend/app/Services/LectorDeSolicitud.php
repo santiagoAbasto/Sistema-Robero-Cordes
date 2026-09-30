@@ -79,6 +79,19 @@ class LectorDeSolicitud
         $lineas = [];
         $sinReconocer = [];
 
+        // Una ficha de la web trae cada dato rotulado: se lee por campo.
+        $fichas = $this->fichasDeLaWeb($texto);
+
+        if ($fichas !== []) {
+            foreach ($fichas as $ficha) {
+                $linea = $this->leerFicha($ficha, $materiales, $formas, $unidades);
+
+                $linea === null ? $sinReconocer[] = implode(' ', $ficha) : $lineas[] = $linea;
+            }
+
+            return ['lineas' => $lineas, 'sin_reconocer' => $sinReconocer];
+        }
+
         foreach ($this->separarRenglones($texto) as $renglon) {
             $linea = $this->leerRenglon($renglon, $materiales, $formas, $unidades);
 
@@ -92,6 +105,83 @@ class LectorDeSolicitud
         }
 
         return ['lineas' => $lineas, 'sin_reconocer' => $sinReconocer];
+    }
+
+    /**
+     * Las fichas de un "DETALLE SOLICITADO" de la web.
+     *
+     * Vienen asi, con las columnas aplanadas por el copiar y pegar:
+     *
+     *     MATERIAL
+     *     AISI 420        FORMA
+     *     barra redonda
+     *     DIMENSIONES
+     *     Ø10mm x 3 metros de largo      CANTIDAD
+     *     3 metros
+     *
+     * Leido renglon por renglon salian tres lineas: "Ø10mm" se tomaba por la
+     * cantidad, "CANTIDAD" quedaba pegado a la medida, y la aclaracion del
+     * cliente era una linea mas. Es UNA linea, y cada dato ya dice que es.
+     *
+     * Hacen falta dos de los datos del item. Un mail que diga "Material:
+     * titanio" en un renglon suelto sigue leyendose como mail.
+     *
+     * @return list<array<string, string>>
+     */
+    private function fichasDeLaWeb(string $texto): array
+    {
+        $fichas = CamposDeFormulario::leer($texto, [
+            'material' => ['MATERIAL'],
+            'forma' => ['FORMA'],
+            'dimensiones' => ['DIMENSIONES', 'MEDIDAS', 'MEDIDA'],
+            'cantidad' => ['CANTIDAD'],
+            // No arma la linea: se reconoce para que no se lea como una.
+            'aclaraciones' => ['ACLARACIONES / OBSERVACIONES', 'ACLARACIONES', 'OBSERVACIONES'],
+        ]);
+
+        // Las aclaraciones no cuentan: "Material: titanio" y "Observaciones:
+        // urgente" en un mail no hacen un item.
+        return array_values(array_filter(
+            $fichas,
+            fn ($f) => count(array_intersect_key($f, array_flip(['material', 'forma', 'dimensiones', 'cantidad']))) >= 2,
+        ));
+    }
+
+    /**
+     * Una ficha es una linea: se arma el renglon con los datos en el orden
+     * que el lector ya sabe leer —cantidad, forma, material, medida— y se lee
+     * como cualquier otro. Asi la forma, la cantidad y las medidas salen de
+     * las mismas reglas que un mail escrito a mano.
+     *
+     * Lo que cambia es el material: aca el cliente lo escribio en su campo, asi
+     * que se sabe exactamente que pidio aunque el catalogo no lo tenga tal cual.
+     * "AISI 420" no es ninguno de los cinco 420 cargados —B, C, F, M, J2— y
+     * elegir uno seria adivinar el acero. Queda escrito en lo que pidio el
+     * cliente, y la linea marcada como distinta para que alguien elija.
+     *
+     * @param  array<string, string>  $ficha
+     */
+    private function leerFicha(array $ficha, $materiales, $formas, $unidades): ?array
+    {
+        $renglon = implode(' ', array_filter([
+            $ficha['cantidad'] ?? null,
+            $ficha['forma'] ?? null,
+            $ficha['material'] ?? null,
+            $ficha['dimensiones'] ?? null,
+        ]));
+
+        $linea = $this->leerRenglon($renglon, $materiales, $formas, $unidades);
+
+        if ($linea === null || blank($ficha['material'] ?? null) || $linea['material_id'] !== null) {
+            return $linea;
+        }
+
+        return [
+            ...$linea,
+            'igual_a_lo_pedido' => false,
+            'pedido_material' => $ficha['material'],
+            'pedido_forma' => $linea['forma'] ?? ($ficha['forma'] ?? null),
+        ];
     }
 
     /**
@@ -124,7 +214,8 @@ class LectorDeSolicitud
         $this->vocabulario = [];
 
         foreach ($this->buscadorDeMaterial->vocabulario() as $token) {
-            if (ctype_alpha($token) && mb_strlen($token) >= 6) {
+            // Las claves numericas de un array llegan como int: "420" es 420.
+            if (ctype_alpha((string) $token) && mb_strlen((string) $token) >= 6) {
                 $this->vocabulario[$token] = true;
             }
         }
@@ -473,22 +564,34 @@ class LectorDeSolicitud
         $numeros = [];
         $marcado = false;
 
-        // "38.1 X 145 MM" · "2 X 1000 X 2000" · "DIA 65 X 145MM" · "Ø127mm x 25.4mm"
-        $serie = '/(DIA\s*|Ø\s*)?\d+(?:[.,]\d+)?(?:\s*(?:MM\s*)?[xX]\s*\d+(?:[.,]\d+)?){1,2}(?:\s*MM)?/iu';
+        /*
+          Cada numero con su unidad, si la tiene: "Ø10mm x 3 metros de largo".
+
+          Antes la unica unidad que se leia era MM, y al final de la serie. El
+          largo de "Ø10mm x 3 metros" entraba como 3 mm —una arandela— y el
+          peso salia mil veces mas chico. Sin unidad escrita, milimetros, que
+          es como escribe casi todo el mundo.
+        */
+        $unidad = '(?:\s*(?:MM|CM|MTS?|METROS?|M)(?![A-Z]))?';
+        $numero = '\d+(?:[.,]\d+)?';
+
+        // "38.1 X 145 MM" · "2 X 1000 X 2000" · "DIA 65 X 145MM" · "Ø127mm x 25.4mm" · "Ø10mm x 3 metros"
+        $serie = '/(DIA\s*|Ø\s*)?'.$numero.$unidad.'(?:\s*[xX]\s*'.$numero.$unidad.'){1,2}/iu';
 
         if (preg_match($serie, $renglon, $m)) {
             $medidas['texto'] = trim($m[0]);
             $marcado = trim($m[1] ?? '') !== '';
-            $limpio = preg_replace('/\s*(?:MM|DIA|Ø)\s*/iu', ' ', $m[0]) ?? '';
-            $numeros = array_values(array_filter(
-                array_map('trim', preg_split('/[xX]/', $limpio) ?: []),
-                fn ($n) => $n !== '',
-            ));
-        } elseif (preg_match('/(DIA\s*|Ø\s*)?(\d+(?:[.,]\d+)?)\s*MM/iu', $renglon, $m)) {
+
+            foreach (preg_split('/\s*[xX]\s*/', $m[0]) ?: [] as $pieza) {
+                if (preg_match('/('.$numero.')\s*(MM|CM|MTS?|METROS?|M)?/iu', $pieza, $q)) {
+                    $numeros[] = $this->aMilimetros($q[1], $q[2] ?? '');
+                }
+            }
+        } elseif (preg_match('/(DIA\s*|Ø\s*)?('.$numero.')\s*MM/iu', $renglon, $m)) {
             // Una sola medida, pero con su unidad puesta: "ALAMBRE 0,70 MM".
             $medidas['texto'] = trim($m[0]);
             $marcado = trim($m[1] ?? '') !== '';
-            $numeros = [$m[2]];
+            $numeros = [$this->aMilimetros($m[2], 'MM')];
         }
 
         /*
@@ -518,9 +621,21 @@ class LectorDeSolicitud
                 continue;
             }
 
-            $medidas[$columna] = (float) str_replace(',', '.', $n);
+            $medidas[$columna] = $n;
         }
 
         return $medidas;
+    }
+
+    /** "3" y "METROS" son 3000 mm. Sin unidad, ya esta en milimetros. */
+    private function aMilimetros(string $valor, string $unidad): float
+    {
+        $factor = match (true) {
+            (bool) preg_match('/^(M|MTS?|METROS?)$/i', $unidad) => 1000,
+            strcasecmp($unidad, 'CM') === 0 => 10,
+            default => 1,
+        };
+
+        return (float) str_replace(',', '.', $valor) * $factor;
     }
 }

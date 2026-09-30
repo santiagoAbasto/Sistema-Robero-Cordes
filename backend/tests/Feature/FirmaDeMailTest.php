@@ -121,4 +121,86 @@ class FirmaDeMailTest extends TestCase
         $this->assertNull($d['direccion']);
         $this->assertNull($d['mail']);
     }
+
+    /*
+     * Los tres ejemplos que mando Roberto el 30-09-2026, tal cual. Las fichas
+     * de la web traen TABs: son las columnas aplanadas al copiar y pegar.
+     */
+
+    private const SULFOQUIMICA = "Juan J. Saccomanno\npanol@sulfoquimica.com.ar\n                      \n"
+        ."Sulfoquimica S.A.\nPanamá 8051\nMartin Coronado C.P. (1682)\nProv. Buenos Aires - Argentina\nCel   1131061795";
+
+    private const FICHA_WEB = "DATOS DE CONTACTO\nNOMBRE\nCristian Obon\tEMAIL\ncobon@implantestraumatologicos.com\n"
+        ."PAÍS\nArgentina\tEMPRESA\nDGS ANTIPINA\nTELÉFONO\n011 4427-9394\tORIGEN\nCONSULTA DESDE LA WEB";
+
+    private const FICHA_WEB_REORDENADA = "EMPRESA DGS ANTIPINA\nDATOS DE CONTACTO\nNOMBRE Cristian Obon\t\n"
+        ."EMAIL cobon@implantestraumatologicos.com\n\nPAÍS Argentina\t\nTELÉFONO 011 4427-9394";
+
+    /**
+     * "En este ejemplo NO agrega dirección".
+     *
+     * Tres cosas que no se leian: el nombre con inicial, la direccion sin
+     * "Av" ni "Calle", y el codigo postal con puntos y parentesis.
+     */
+    public function test_la_firma_de_sulfoquimica_trae_la_direccion(): void
+    {
+        $d = $this->leer(self::SULFOQUIMICA);
+
+        $this->assertSame('Juan J. Saccomanno', $d['contacto']);
+        $this->assertSame('Sulfoquimica S.A.', $d['empresa'], 'el nombre legal, no el del dominio');
+        $this->assertSame('Panamá 8051', $d['direccion']);
+        $this->assertSame('1682', $d['codigo_postal']);
+        $this->assertSame('1131061795', $d['telefono']);
+    }
+
+    /**
+     * La localidad tiene que ser de la provincia que se encontro.
+     *
+     * Martin Coronado no esta cargada y "Buenos Aires" si, pero como localidad
+     * de la Ciudad Autonoma. Salia una localidad de CABA con provincia de
+     * Buenos Aires. Vacia se elige a mano; equivocada no se ve.
+     */
+    public function test_no_pone_una_localidad_de_otra_provincia(): void
+    {
+        $argentina = Pais::create(['nombre' => 'Argentina']);
+        $provincia = Provincia::create(['nombre' => 'Buenos Aires', 'pais_id' => $argentina->id]);
+        $caba = Provincia::create(['nombre' => 'Ciudad Autónoma de Buenos Aires', 'pais_id' => $argentina->id]);
+        Localidad::create(['nombre' => 'Buenos Aires', 'provincia_id' => $caba->id]);
+
+        $d = $this->leer(self::SULFOQUIMICA);
+
+        $this->assertSame($provincia->id, $d['provincia_id']);
+        $this->assertNull($d['localidad_id']);
+    }
+
+    /**
+     * La ficha de contacto de la web, en los dos ordenes en que la pegaron.
+     *
+     * Leida como firma, el contacto se llamaba "DATOS DE CONTACTO", tenia el
+     * cargo "NOMBRE" y la empresa salia del dominio del mail.
+     */
+    public function test_lee_la_ficha_de_contacto_de_la_web(): void
+    {
+        $argentina = Pais::create(['nombre' => 'Argentina']);
+
+        foreach ([self::FICHA_WEB, self::FICHA_WEB_REORDENADA] as $ficha) {
+            $d = $this->leer($ficha);
+
+            $this->assertSame('DGS ANTIPINA', $d['empresa']);
+            $this->assertSame('Cristian Obon', $d['contacto']);
+            $this->assertNull($d['cargo'], 'NOMBRE es una etiqueta, no un cargo');
+            $this->assertSame('cobon@implantestraumatologicos.com', $d['mail']);
+            $this->assertSame('011 4427-9394', $d['telefono']);
+            $this->assertSame($argentina->id, $d['pais_id']);
+        }
+    }
+
+    /** Una firma con "Tel:" y "Mail:" sigue siendo una firma: no pierde el nombre. */
+    public function test_una_firma_con_etiquetas_no_es_una_ficha(): void
+    {
+        $d = $this->leer("Juan Perez\nGerente de Compras\nTel: 4555-3700\nMail: jperez@acme.com.ar");
+
+        $this->assertSame('Juan Perez', $d['contacto']);
+        $this->assertSame('Gerente de Compras', $d['cargo']);
+    }
 }

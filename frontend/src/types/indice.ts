@@ -487,6 +487,11 @@ export interface LineaInterpretada {
   unidad: string | null
   /** Lo que el cliente escribió como material, antes de buscarlo en el catálogo. */
   pedido_material: string | null
+  /**
+   * La forma que pidio, si vino de una ficha de la web con el material sin
+   * reconocer. Sirve para abrir el bloque amarillo con sus medidas por campo.
+   */
+  pedido_forma?: string | null
   /** Falso cuando no se reconoció el material: hay que mirarlo antes de mandar. */
   igual_a_lo_pedido: boolean
   /**
