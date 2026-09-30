@@ -15,6 +15,7 @@ use App\Models\Forma;
 use App\Models\Impresion;
 use App\Models\Material;
 use App\Models\Observacion;
+use App\Models\Unidad;
 use App\Services\CalculadoraDePeso;
 use App\Services\CalculadoraFactor;
 use App\Services\InterpreteIA;
@@ -813,25 +814,80 @@ class ConsultaEscrituraController extends Controller
         $this->factorAMano($linea);
     }
 
+    /** @var array<int, string> Codigos de unidad ya buscados en este pedido. */
+    private array $codigosDeUnidad = [];
+
     /**
-     * Los kilos de UNA unidad de venta.
+     * El codigo de una unidad, buscado por id.
      *
-     * Si se vende por metro son los kilos de un metro. Si se vende por unidad
-     * son los de esa pieza, con su largo real: una barra Ø127 de titanio pesa
-     * 57,13 kg el metro y 1,451 kg si la pieza mide 25,4 mm.
+     * Por id y no por la relacion: al cambiar la unidad de una linea que ya
+     * estaba cargada, $linea->unidadVenta devuelve la vieja —la relacion quedo
+     * resuelta antes del fill()— y el factor saldria de la unidad equivocada.
+     */
+    private function codigoDeUnidad(?int $id): string
+    {
+        if ($id === null) {
+            return '';
+        }
+
+        return $this->codigosDeUnidad[$id] ??= (Unidad::find($id)?->codigo ?? '');
+    }
+
+    /** Milimetros que mide una unidad de largo. */
+    private const LARGO_EN_MM = ['MT' => 1000.0, 'M' => 1000.0, 'FT' => 304.8, 'INCH' => 25.4];
+
+    /** Kilos que pesa una unidad de peso. */
+    private const PESO_EN_KG = ['KG' => 1.0, 'TN' => 1000.0, 'G' => 0.001, 'LB' => 0.45359237];
+
+    /**
+     * Cuanto entra de la unidad en que se FACTURA dentro de UNA unidad de venta.
+     *
+     * Eso es lo que dice el rotulo del campo —"MT por UN"— y durante un tiempo
+     * no fue lo que devolvia: la cuenta daba kilos siempre, mirara lo que
+     * mirara la unidad de factura. Vendiendo por UN y facturando en MT, una
+     * barra de 3,21 m devolvia 2,0169, que eran sus kilos rotulados como
+     * metros, y de ahi salian mal la cantidad a facturar, el precio unitario y
+     * el importe de la linea.
+     *
+     * Se factura por largo  → el factor es el largo de la pieza (3,21 MT).
+     * Se factura por peso   → es lo que pesa, en la unidad que se factura.
+     * Cualquier otra cosa   → null, y se escribe a mano. No se inventa.
      */
     private function factorDeLaCuenta(ConsultaLinea $linea): ?float
     {
-        $porMetro = $linea->unidadVenta?->codigo === 'MT';
+        $venta = $this->codigoDeUnidad($linea->unidad_venta_id);
+        $factura = $this->codigoDeUnidad($linea->unidad_factura_id);
 
-        return app(CalculadoraFactor::class)->calcular(
+        // Milimetros que mide una unidad de venta, cuando se vende por largo.
+        $largoDeUnaVenta = self::LARGO_EN_MM[$venta] ?? null;
+
+        if ($enMm = self::LARGO_EN_MM[$factura] ?? null) {
+            // Se vende y se factura por largo: es pasar de una unidad a la otra.
+            if ($largoDeUnaVenta !== null) {
+                return round($largoDeUnaVenta / $enMm, 4);
+            }
+
+            $largo = (float) ($linea->largo_mm ?? 0);
+
+            return $largo > 0 ? round($largo / $enMm, 4) : null;
+        }
+
+        $enKg = self::PESO_EN_KG[$factura] ?? null;
+
+        if ($enKg === null) {
+            return null;
+        }
+
+        $kilos = app(CalculadoraFactor::class)->calcular(
             $linea->material_id ? Material::find($linea->material_id) : null,
             $linea->forma_id ? Forma::find($linea->forma_id) : null,
             $linea->diametro_mm ? (float) $linea->diametro_mm : null,
             $linea->espesor_mm ? (float) $linea->espesor_mm : null,
             $linea->ancho_mm ? (float) $linea->ancho_mm : null,
-            largoMm: $porMetro ? null : (float) ($linea->largo_mm ?? 0),
+            largoMm: $largoDeUnaVenta !== null ? null : (float) ($linea->largo_mm ?? 0),
         )['factor'];
+
+        return $kilos === null ? null : round($kilos / $enKg, 4);
     }
 
     /** Lo saco el servidor: sin responsable, porque no lo puso una persona. */
