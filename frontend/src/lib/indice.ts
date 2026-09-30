@@ -464,6 +464,14 @@ export interface DatosLinea {
   espesor_mm?: number | null
   ancho_mm?: number | null
   largo_mm?: number | null
+  /**
+   * Largo variable: las barras y los caños no vienen todos del mismo largo.
+   *
+   * Cargados los dos extremos, el peso y el factor se calculan con el promedio
+   * y el rango sale impreso. Sin los dos, el largo es uno solo como siempre.
+   */
+  largo_min_mm?: number | null
+  largo_max_mm?: number | null
   /** Medida y peso con tolerancia: sale "(aprox.)" en la hoja. */
   aprox?: boolean
   /** "idem al anterior": se imprime asi en vez de repetir la descripcion. */

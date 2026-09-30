@@ -62,6 +62,10 @@ class ConsultaLinea extends Model
         'importe' => 'decimal:2',
         'diametro_mm' => 'decimal:2',
         'largo_mm' => 'decimal:2',
+        // Los extremos del rango, cuando el largo es variable. El que usan el
+        // peso y el factor sigue siendo largo_mm, con el promedio adentro.
+        'largo_min_mm' => 'decimal:2',
+        'largo_max_mm' => 'decimal:2',
         'espesor_mm' => 'decimal:2',
         // La foto del calculo de peso: medidas, unidades, densidad y formula
         // usadas el dia que se cotizo.
@@ -150,6 +154,26 @@ class ConsultaLinea extends Model
     }
 
     /** ¿Se cotiza en una unidad y se factura en otra? */
+    /**
+     * El largo es variable cuando estan cargados los dos extremos del rango.
+     *
+     * Las barras y los canos no vienen todos del mismo largo: se ofrecen "de
+     * 2,80 a 3,20 m". No hay un tilde aparte para esto a proposito — podria
+     * quedar marcado con el rango vacio, y habria que decidir cual gana.
+     */
+    public function largoEsVariable(): bool
+    {
+        return $this->largo_min_mm !== null && $this->largo_max_mm !== null;
+    }
+
+    /** El largo con el que se calcula cuando hay rango: el promedio. */
+    public function largoPromedioMm(): ?float
+    {
+        return $this->largoEsVariable()
+            ? ((float) $this->largo_min_mm + (float) $this->largo_max_mm) / 2
+            : null;
+    }
+
     public function cambiaDeUnidad(): bool
     {
         return $this->unidad_factura_id !== null

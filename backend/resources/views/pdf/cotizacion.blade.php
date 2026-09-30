@@ -183,6 +183,15 @@
                             @if ($linea->motivo_cambio) &nbsp;·&nbsp; {{ $linea->motivo_cambio }} @endif
                         </div>
                     @endif
+                    {{-- Largos variables: el rango se imprime, no se deduce. --}}
+                    @if ($linea->largoEsVariable())
+                        <div class="pedido">
+                            Largos de {{ number_format((float) $linea->largo_min_mm / 1000, 2, ',', '.') }}
+                            a {{ number_format((float) $linea->largo_max_mm / 1000, 2, ',', '.') }} m
+                            &nbsp;·&nbsp; peso calculado sobre el promedio,
+                            {{ number_format((float) $linea->largoPromedioMm() / 1000, 2, ',', '.') }} m
+                        </div>
+                    @endif
                     {{-- Se cotiza por metro y se factura por kilo. --}}
                     @if ($linea->cambiaDeUnidad() && $linea->cantidad_facturar)
                         <div class="pedido" style="color:#0a6ca6">

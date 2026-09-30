@@ -70,7 +70,7 @@ import CalculadoraDePeso, {
 import AlternativasDeLinea from '../../components/AlternativasDeLinea'
 import { ModalContacto } from './modales'
 import Revisiones from './Revisiones'
-import { UNIDADES_MEDIDA, aMilimetros, calcularPeso } from '../../lib/calculadora'
+import { A_MILIMETROS, UNIDADES_MEDIDA, aMilimetros, calcularPeso } from '../../lib/calculadora'
 import { armarDescripcion, armarDimensiones } from '../../lib/descripcion'
 import type { Catalogos, Consulta, ConsultaLinea, Empresa, Forma } from '../../types/indice'
 
@@ -206,6 +206,8 @@ function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
     espesor_mm: l.espesor_mm ? Number(l.espesor_mm) : null,
     ancho_mm: l.ancho_mm ? Number(l.ancho_mm) : null,
     largo_mm: l.largo_mm ? Number(l.largo_mm) : null,
+    largo_min_mm: l.largo_min_mm ? Number(l.largo_min_mm) : null,
+    largo_max_mm: l.largo_max_mm ? Number(l.largo_max_mm) : null,
     calc,
     dimensionesAMano: Boolean(l.dimensiones) && l.dimensiones !== dimArmada,
     descripcionAMano: Boolean(l.descripcion) && l.descripcion !== descArmada,
@@ -1657,6 +1659,67 @@ function MedidasDeLaForma({
     })
   }
 
+  /*
+    Largos variables.
+
+    Las barras y los caños no vienen todos del mismo largo: se ofrecen "de 2,80
+    a 3,20 m". El peso, el factor y la cantidad a facturar necesitan UN largo, y
+    el que corresponde es el promedio: por arriba se cobra de más y por abajo se
+    entrega de más.
+
+    Que el largo sea variable es tener los dos extremos cargados; no hay un
+    campo aparte que pueda quedar marcado con el rango vacío.
+  */
+  const largoVariable = linea.largo_min_mm !== null || linea.largo_max_mm !== null
+
+  /** Pasa milímetros a la unidad en la que se está escribiendo. */
+  const desdeMm = (mm: number | null, unidad: string) =>
+    mm === null ? '' : String(Number((mm / (A_MILIMETROS[unidad] ?? 1)).toFixed(4)))
+
+  /**
+   * Deja el rango y el promedio de una sola vez.
+   *
+   * Los extremos se guardan siempre en milímetros y el promedio va a la
+   * calculadora en la unidad que se está usando, así cambiar de mm a m no
+   * mueve el largo: sólo cambia cómo se lee.
+   */
+  function ponerRango(minMm: number | null, maxMm: number | null, unidad: string) {
+    const promedioMm = minMm !== null && maxMm !== null ? (minMm + maxMm) / 2 : (minMm ?? maxMm)
+
+    const medidas =
+      promedioMm === null
+        ? linea.calc.medidas
+        : {
+            ...linea.calc.medidas,
+            length: {
+              valor: String(Number((promedioMm / (A_MILIMETROS[unidad] ?? 1)).toFixed(4))),
+              unidad,
+            },
+          }
+
+    onCambio({
+      largo_min_mm: minMm,
+      largo_max_mm: maxMm,
+      calc: { ...linea.calc, medidas },
+      ...planasDeLasMedidas(medidas),
+    })
+  }
+
+  function alternarLargoVariable(prende: boolean) {
+    if (!prende) {
+      onCambio({ largo_min_mm: null, largo_max_mm: null })
+
+      return
+    }
+
+    // Arranca con el largo que ya estaba en los dos extremos: el promedio no
+    // se mueve y sólo queda abrir el rango.
+    const cargada = linea.calc.medidas.length
+    const mm = cargada ? aMilimetros(cargada.valor, cargada.unidad) : 0
+
+    ponerRango(mm, mm, cargada?.unidad ?? 'mm')
+  }
+
   /** Elegir un caño completa el diámetro exterior y la pared. */
   /** Cambiar de medida elige el primer schedule de esa medida. */
   function elegirMedidaDeCano(nombre: string) {
@@ -1755,6 +1818,62 @@ function MedidasDeLaForma({
           const cargada = linea.calc.medidas[campo.clave] ?? { valor: '', unidad: 'mm' }
           const puestoPorCano = Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')
 
+          // Con largo variable, en lugar del largo van los dos extremos.
+          if (campo.clave === 'length' && largoVariable) {
+            const leer = (v: string) => (v === '' ? null : aMilimetros(v, cargada.unidad))
+
+            return (
+              <div key={campo.clave} className="lg:col-span-2">
+                <Etiqueta ayuda="el peso se saca del promedio">Largo, de mínimo a máximo</Etiqueta>
+                <div className="flex">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    aria-label="Largo mínimo"
+                    value={desdeMm(linea.largo_min_mm ?? null, cargada.unidad)}
+                    onChange={(e) =>
+                      ponerRango(leer(e.target.value), linea.largo_max_mm ?? null, cargada.unidad)
+                    }
+                    className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                  />
+                  <span className="flex h-[36px] items-center border-y border-line-strong bg-app px-2 text-[11px] text-muted">
+                    a
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    aria-label="Largo máximo"
+                    value={desdeMm(linea.largo_max_mm ?? null, cargada.unidad)}
+                    onChange={(e) =>
+                      ponerRango(linea.largo_min_mm ?? null, leer(e.target.value), cargada.unidad)
+                    }
+                    className="h-[36px] min-w-0 flex-1 border-y border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                  />
+                  <select
+                    aria-label="Unidad del largo"
+                    value={cargada.unidad}
+                    onChange={(e) =>
+                      ponerRango(
+                        linea.largo_min_mm ?? null,
+                        linea.largo_max_mm ?? null,
+                        e.target.value,
+                      )
+                    }
+                    className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                  >
+                    {UNIDADES_MEDIDA.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )
+          }
+
           return (
             <div key={campo.clave}>
               <Etiqueta ayuda={puestoPorCano ? 'lo pone el caño' : undefined}>{campo.label}</Etiqueta>
@@ -1797,6 +1916,21 @@ function MedidasDeLaForma({
           />
         </div>
       </div>
+
+      {/* Sólo donde tiene sentido: un disco o una esfera no llevan largo. */}
+      {campos.some((c) => c.clave === 'length') && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <Casilla marcada={largoVariable} onChange={alternarLargoVariable}>
+            Largos variables
+          </Casilla>
+          {linea.largo_min_mm != null && linea.largo_max_mm != null && (
+            <span className="text-[11px] text-muted">
+              Se calcula con {fmtCantidad((linea.largo_min_mm + linea.largo_max_mm) / 2 / 1000)} m, el
+              promedio del rango. El rango sale impreso en la hoja del cliente.
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

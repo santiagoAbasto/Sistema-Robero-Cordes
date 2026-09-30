@@ -27,6 +27,8 @@ class ConsultaLineaResource extends JsonResource
             'espesor_mm' => $this->espesor_mm,
             'ancho_mm' => $this->ancho_mm,
             'largo_mm' => $this->largo_mm,
+            'largo_min_mm' => $this->largo_min_mm,
+            'largo_max_mm' => $this->largo_max_mm,
 
             // el peso, con la foto de como se saco
             'peso_kg' => $this->peso_kg,
