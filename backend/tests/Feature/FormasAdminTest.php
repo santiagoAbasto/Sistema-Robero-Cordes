@@ -640,23 +640,25 @@ class FormasAdminTest extends TestCase
         $sinFormula = $formas->where('estado_formula', 'sin_formula')->pluck('nombre')->sort()->values();
 
         $this->assertSame(['BRIDA', 'PERFIL'], $sinFormula->all());
-        // 17 formas: las 16 de siempre mas ARANDELA, que CORDES pidio como
-        // denominacion comercial propia aunque calcule igual que ANILLO.
-        $this->assertCount(15, $formas->where('estado_formula', 'valida'));
-        $this->assertCount(17, $formas);
+        // 16 formas: las 15 de siempre mas ARANDELA, que CORDES pidio como
+        // denominacion comercial propia aunque calcule igual que ANILLO. Eran
+        // 17 hasta el 30-09-2026: BARRA se unifico con BARRA REDONDA.
+        $this->assertCount(14, $formas->where('estado_formula', 'valida'));
+        $this->assertCount(16, $formas);
     }
 
     /**
-     * "BARRA" a secas queda, pero fuera de la lista de cotizacion.
+     * "BARRA" a secas ya no es una forma: es BARRA REDONDA.
      *
-     * CORDES confirmo que no es una denominacion que usen. No se borra porque
-     * las cotizaciones viejas la nombran y tienen que poder abrirse.
+     * Hasta el 30-09-2026 quedaba apagada y no se borraba, porque las
+     * cotizaciones viejas la nombraban y tenian que poder abrirse. CORDES
+     * resolvio que es la misma que BARRA REDONDA: las lineas se pasaron a esa
+     * y abren igual. Ningun seeder la vuelve a crear.
      */
-    public function test_barra_sola_ya_no_se_ofrece_al_cotizar(): void
+    public function test_barra_sola_no_existe_es_barra_redonda(): void
     {
-        $barra = Forma::where('nombre', 'BARRA')->firstOrFail();
-
-        $this->assertFalse((bool) $barra->activo);
+        $this->assertFalse(Forma::where('nombre', 'BARRA')->exists());
+        $this->assertFalse(Forma::where('nombre', 'BARRA RED. / VARILLA')->exists());
 
         $ofrecidas = collect($this->getJson('/api/catalogos')->json('formas'))->pluck('nombre');
 

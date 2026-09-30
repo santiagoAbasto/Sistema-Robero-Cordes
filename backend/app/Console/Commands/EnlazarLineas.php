@@ -41,7 +41,8 @@ class EnlazarLineas extends Command
         // La forma tolera mas ruido: su nombre es una palabra comun y no hay
         // designaciones que la distingan.
         $formas = new EnlazadorDeLineas(
-            Forma::query()->get(['id', 'nombre'])->map(fn ($f) => [$f->id, $f->nombre])->all(),
+            // Con sus otros nombres: "BARRA" a secas es BARRA REDONDA.
+            Forma::nombresParaEnlazar(),
             material: false,
             // La forma exige menos: su nombre es una palabra comun.
             exigencia: 0.42,

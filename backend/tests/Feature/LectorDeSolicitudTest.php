@@ -338,14 +338,43 @@ class LectorDeSolicitudTest extends TestCase
         $this->assertSame('BARRA REDONDA', $this->leer('4 un barra DIA 65 X 145MM')['forma']);
     }
 
-    /** Sin el diametro marcado, "barra" no dice cual es y queda vacia. */
-    public function test_barra_sin_diametro_marcado_queda_sin_forma(): void
+    /**
+     * "Barra" sola tambien es redonda.
+     *
+     * Antes quedaba vacia: no se sabia si era BARRA REDONDA o BARRA RED. /
+     * VARILLA, y lo tenia que decir CORDES. Lo dijo el 30-09-2026: "todo lo
+     * que dice barra, convertilo en barra redonda".
+     */
+    public function test_barra_sin_diametro_marcado_tambien_es_redonda(): void
     {
         $linea = $this->leer('3 barras de titanio gr2 de 127 x 25.4 mm');
 
-        $this->assertNotNull($linea);
-        $this->assertNull($linea['forma_id']);
-        $this->assertSame(3.0, $linea['cantidad'], 'lo demas se carga igual');
+        $this->assertSame('BARRA REDONDA', $linea['forma']);
+        $this->assertSame(3.0, $linea['cantidad']);
+    }
+
+    /** Pero una hexagonal o una cuadrada no se vuelven redondas. */
+    public function test_la_barra_hexagonal_sigue_siendo_hexagonal(): void
+    {
+        $this->assertSame('BARRA HEXAGONAL', $this->leer('2 barras hexagonales de 20 x 3000')['forma']);
+        $this->assertSame('BARRA CUADRADA', $this->leer('2 barra cuadrada 30 x 1000')['forma']);
+    }
+
+    /**
+     * Si dice de que otro tipo es, no se la vuelve redonda.
+     *
+     * Una barra vacia se completa a mano; una redonda equivocada se factura
+     * con el peso de otra pieza.
+     */
+    public function test_una_barra_de_otro_tipo_no_se_vuelve_redonda(): void
+    {
+        $this->assertNotSame('BARRA REDONDA', $this->leer('2 barras octogonales de 20 x 1000')['forma'] ?? null);
+    }
+
+    /** "Varilla" es barra redonda: Barra Red / Varilla es lo mismo. */
+    public function test_la_varilla_es_barra_redonda(): void
+    {
+        $this->assertSame('BARRA REDONDA', $this->leer('5 varillas de 6 x 1000 mm')['forma']);
     }
 
     /**

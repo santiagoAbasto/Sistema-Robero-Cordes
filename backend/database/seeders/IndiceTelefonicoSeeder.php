@@ -366,12 +366,12 @@ class IndiceTelefonicoSeeder extends Seeder
         ]);
 
         $this->linea($cot, 2, [
-            'material' => 'AISI 316TI', 'forma' => 'BARRA',
+            'material' => 'AISI 316TI', 'forma' => 'BARRA REDONDA',
             'dimensiones' => 'DIA 65 X 145 MM',
             'cantidad' => 4, 'unidad' => 'UN', 'precio_unitario' => 56.58,
             'descripcion' => 'AISI 316TI BARRA DIA 65 X 145MM',
             'igual' => false, 'motivo' => 'Se sugiere otra calidad',
-            'pedido' => ['AISI 316', 'BARRA', 'DIA 65 X 145 MM', 4, 'UN'],
+            'pedido' => ['AISI 316', 'BARRA REDONDA', 'DIA 65 X 145 MM', 4, 'UN'],
         ]);
 
         $this->linea($cot, 3, [
@@ -449,14 +449,14 @@ class IndiceTelefonicoSeeder extends Seeder
         ]);
 
         $this->linea($pedido, 1, [
-            'material' => 'NIQUEL 201', 'forma' => 'BARRA', 'dimensiones' => '38.1 X 110 MM',
+            'material' => 'NIQUEL 201', 'forma' => 'BARRA REDONDA', 'dimensiones' => '38.1 X 110 MM',
             'cantidad' => 4, 'unidad' => 'UN', 'precio_unitario' => 206.00,
             'descripcion' => '4 UN NIQUEL 201 BARRA 38.1 X 110 MM', 'igual' => true,
             'stock' => ['Deposito Palpa', 'H-88421'],
         ]);
 
         $this->linea($pedido, 2, [
-            'material' => 'TITANIO GR2', 'forma' => 'BARRA', 'dimensiones' => '50.0 X 125 MM',
+            'material' => 'TITANIO GR2', 'forma' => 'BARRA REDONDA', 'dimensiones' => '50.0 X 125 MM',
             'cantidad' => 2, 'unidad' => 'UN', 'precio_unitario' => 165.00,
             'descripcion' => '2 UN TIT GR2 BARRA 50.0 X 125 MM', 'igual' => true,
             'stock' => ['Deposito Palpa', 'T-22190'],
@@ -493,9 +493,9 @@ class IndiceTelefonicoSeeder extends Seeder
 
         $lineas = [
             ['HASTELLOY C-276', 'BARRA REDONDA', '38.1 X 145 MM', 6, 142.00, 'HASTELLOY C-276 BAR RED 38.1 X 145MM'],
-            ['AISI 316TI', 'BARRA', 'DIA 65 X 145 MM', 4, 56.58, 'AISI 316TI BARRA DIA 65 X 145MM'],
+            ['AISI 316TI', 'BARRA REDONDA', 'DIA 65 X 145 MM', 4, 56.58, 'AISI 316TI BARRA DIA 65 X 145MM'],
             ['NIQUEL 201', 'CAÑO', '4" SCH 40 X 3000 MM', 2, 1980.40, 'NIQUEL 201 CANO 4" SCH 40 X 3000 MM'],
-            ['TITANIO GR2', 'BARRA', '50.0 X 125 MM', 3, 165.00, 'TITANIO GR2 BARRA 50.0 X 125 MM'],
+            ['TITANIO GR2', 'BARRA REDONDA', '50.0 X 125 MM', 3, 165.00, 'TITANIO GR2 BARRA 50.0 X 125 MM'],
         ];
 
         foreach ($lineas as $i => [$mat, $forma, $dim, $cant, $precio, $desc]) {
