@@ -585,6 +585,55 @@ export async function confirmarConsulta(id: number) {
   return data.data
 }
 
+/* ------------------------------------------------------------ revisiones */
+
+/** La emite: le da numero y revision (2026-0001 R0) y la congela. */
+export async function emitirConsulta(id: number) {
+  const { data } = await api.post<{ data: Consulta }>(`/consultas/${id}/emitir`)
+
+  return data.data
+}
+
+/**
+ * Hace una revision de una emitida: un borrador nuevo con todo lo de la base.
+ *
+ * Si ya hay una revision a medio hacer de la misma cotizacion, el servidor
+ * contesta 409 con su id: se abre esa en vez de crear otra.
+ */
+export async function nuevaRevision(id: number): Promise<number> {
+  try {
+    const { data } = await api.post<{ data: Consulta }>(`/consultas/${id}/revision`)
+
+    return data.data.id
+  } catch (err) {
+    const abierta = (err as { response?: { status?: number; data?: { id?: number } } }).response
+
+    if (abierta?.status === 409 && abierta.data?.id) return abierta.data.id
+
+    throw err
+  }
+}
+
+/** Una de las versiones de una cotizacion, para elegir cual abrir. */
+export interface VersionDeCotizacion {
+  id: number
+  numero: string | null
+  revision: number
+  emitida: boolean
+  emitida_el: string | null
+  emitida_por: string | null
+  cargada_por: string | null
+  fecha: string | null
+  total: number
+  estado: string
+}
+
+export async function versionesDe(id: number) {
+  const { data } = await api.get<VersionDeCotizacion[]>(`/consultas/${id}/versiones`)
+
+  return data
+}
+
 export async function copiarConsulta(id: number, empresas: number[]) {
   const { data } = await api.post<{ mensaje: string; borradores: { data: Consulta[] } }>(
     `/consultas/${id}/copiar`,

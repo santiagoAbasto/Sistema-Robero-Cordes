@@ -26,6 +26,8 @@ class Consulta extends Model
         'solicitud_fecha' => 'date',
         'tipo_cambio' => 'decimal:4',
         'ajuste_dif_cambio' => 'boolean',
+        'revision' => 'integer',
+        'emitida_el' => 'datetime',
     ];
 
     protected $appends = ['total', 'esta_vencida', 'dias_para_vencer', 'lineas_iguales_a_lo_pedido', 'total_kilos'];
@@ -50,6 +52,12 @@ class Consulta extends Model
     {
         if (filled($this->numero)) {
             return $this->numero;
+        }
+
+        // Una revision no se gana un numero nuevo: lleva el de su familia.
+        // Numerarla aparte partiria la misma cotizacion en dos.
+        if ($this->revision_de_id) {
+            return $this->numerarComoRevision();
         }
 
         $anio = ($this->fecha ?? now())->format('Y');
@@ -79,6 +87,90 @@ class Consulta extends Model
         }
 
         throw new \RuntimeException('No se pudo asignar un numero de cotizacion.');
+    }
+
+    /**
+     * El numero de la familia y la revision siguiente: 2026-0001 R1, R2.
+     *
+     * Dos personas emitiendo revisiones de la misma cotizacion a la vez piden
+     * la misma revision. El par numero+revision es unico, asi que la segunda
+     * choca y se reintenta con la siguiente.
+     */
+    private function numerarComoRevision(): string
+    {
+        $numero = static::find($this->revision_de_id)?->numerar()
+            ?? throw new \RuntimeException('La revision no tiene de que cotizacion salio.');
+
+        for ($intento = 0; $intento < 5; $intento++) {
+            $revision = (int) static::where('numero', $numero)->max('revision') + 1 + $intento;
+
+            try {
+                static::whereKey($this->id)->update(['numero' => $numero, 'revision' => $revision]);
+                $this->numero = $numero;
+                $this->revision = $revision;
+
+                return $numero;
+            } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+                continue;
+            }
+        }
+
+        throw new \RuntimeException('No se pudo asignar la revision de la cotizacion.');
+    }
+
+    // ------------------------------------------------------------- revisiones
+
+    /**
+     * Si ya salio. Emitida no se toca: para cambiarla se hace una revision.
+     *
+     * "Si ya la emitiste no la podes modificar, pero si te deja como base y
+     * hace un borrador". Lo que se le mando al cliente tiene que quedar como
+     * se mando: si se pudiera editar, la hoja que tiene el cliente y la que
+     * esta en el sistema dejarian de coincidir sin que nadie lo note.
+     */
+    public function estaEmitida(): bool
+    {
+        return $this->emitida_el !== null;
+    }
+
+    /** "2026-0001 R0". Null mientras no tenga numero. */
+    public function numeroConRevision(): ?string
+    {
+        return filled($this->numero) ? $this->numero.' R'.(int) $this->revision : null;
+    }
+
+    /** El id de la R0: la primera de la familia. */
+    public function raizId(): int
+    {
+        return $this->revision_de_id ?? $this->id;
+    }
+
+    /** Todas las revisiones de esta cotizacion, de la R0 a la ultima. */
+    public function versiones(): Builder
+    {
+        $raiz = $this->raizId();
+
+        return static::query()
+            ->where(fn ($q) => $q->whereKey($raiz)->orWhere('revision_de_id', $raiz))
+            ->orderBy('revision')
+            ->orderBy('id');
+    }
+
+    /**
+     * La emite: le pone el numero y la revision, y la congela.
+     *
+     * Emitir es mandarla. Por eso va junto con imprimir: "Emitir e imprimir".
+     * Se guarda quien y cuando, que es lo que despues se pregunta.
+     */
+    public function emitir(?int $usuarioId): void
+    {
+        if ($this->estaEmitida()) {
+            return;
+        }
+
+        $this->numerar();
+
+        $this->forceFill(['emitida_el' => now(), 'emitida_por' => $usuarioId])->save();
     }
 
     /** Días de validez por defecto. Se define una sola vez y se puede pisar por cotización. */
@@ -130,6 +222,12 @@ class Consulta extends Model
     public function usuario(): BelongsTo
     {
         return $this->belongsTo(User::class, 'usuario_id');
+    }
+
+    /** Quien la emitio. Puede no ser quien la cargo. */
+    public function emisor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'emitida_por');
     }
 
     public function moneda(): BelongsTo

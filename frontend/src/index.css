@@ -85,3 +85,13 @@
     background-clip: content-box;
   }
 }
+
+/*
+  Lo emitido se ve pero no se toca. El fieldset deshabilitado ya apaga los
+  botones de adentro, pero no les cambia la cara: un boton que parece activo
+  y no hace nada se lee como roto. Asi se ven como lo que son.
+*/
+fieldset:disabled button {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

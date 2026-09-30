@@ -89,13 +89,22 @@
             <div class="razon">ROBERTO CORDES S.A.</div>
             <div class="datos-casa">
                 Palpa 3551, Buenos Aires (C1427EBA) &nbsp;·&nbsp; Tel (+54) 11 4555-3700 &nbsp;·&nbsp; www.cordes.ar
+                &nbsp;·&nbsp; ventas@cordes.ar
             </div>
         </td>
         <td class="doc">
             <div class="tipo">{{ mb_strtoupper($titulo) }}</div>
-            {{-- El numero de la cotizacion: es por el que pregunta el cliente. --}}
-            @if ($consulta->numero)
-                <div class="num"><strong>N° {{ $consulta->numero }}</strong></div>
+            {{--
+                El numero con su revision: 2026-0001 R0, R1. Es por el que
+                pregunta el cliente, y la revision le dice cual de las hojas
+                que tiene es la ultima.
+            --}}
+            @if ($consulta->numeroConRevision())
+                <div class="num"><strong>N° {{ $consulta->numeroConRevision() }}</strong></div>
+            @endif
+            {{-- Sin emitir no es una cotizacion todavia: que no se confunda con una. --}}
+            @if (! $consulta->estaEmitida())
+                <div class="num" style="color:#b45309"><strong>BORRADOR</strong></div>
             @endif
             <div class="num">{{ $fecha }}</div>
             @if ($consulta->id_sistema)

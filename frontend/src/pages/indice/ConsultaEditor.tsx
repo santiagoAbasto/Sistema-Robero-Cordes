@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Calculator, Check, Eye, EyeOff, Plus, Ruler, Trash2, Wand2, Scale } from 'lucide-react'
+import { Calculator, Check, Eye, EyeOff, Lock, Plus, Ruler, Trash2, Wand2, Scale } from 'lucide-react'
 import {
   Accion,
   Aviso,
@@ -19,10 +19,12 @@ import {
   agregarObservacion,
   cantidad as fmtCantidad,
   crearConsulta,
+  emitirConsulta,
   fecha as fmtFecha,
   mensajeDeError,
   plata,
   interpretarTexto,
+  nuevaRevision,
   traerConsulta,
   traerEmpresa,
   useCarga,
@@ -70,6 +72,7 @@ import CalculadoraDePeso, {
 import AlternativasDeLinea from '../../components/AlternativasDeLinea'
 import { ModalContacto } from './modales'
 import Revisiones from './Revisiones'
+import Versiones from './Versiones'
 import { A_MILIMETROS, UNIDADES_MEDIDA, aMilimetros, calcularPeso } from '../../lib/calculadora'
 import { armarDescripcion, armarDimensiones } from '../../lib/descripcion'
 import type { Catalogos, Consulta, ConsultaLinea, Empresa, Forma } from '../../types/indice'
@@ -247,6 +250,9 @@ export default function ConsultaEditor() {
     () => (consultaId ? traerConsulta(consultaId) : Promise.resolve(null)),
     [consultaId],
   )
+
+  // Emitida es que ya salió: se lee, no se edita. Para cambiarla, una revisión.
+  const emitida = existente?.emitida ?? false
 
   // Al abrir una cotización existente hay que traer la ficha completa de su
   // empresa: la consulta sólo trae el id y el nombre, y acá hacen falta los
@@ -575,23 +581,70 @@ export default function ConsultaEditor() {
       sinGuardar.current = null
 
       if (imprimir) {
-        // Se guarda primero y recién ahí se pide la hoja: así sale con lo
-        // último que se cargó y no con lo que había antes de guardar.
+        /*
+          Emitir es mandarla: se numera y se congela ANTES de pedir la hoja.
+
+          Se guarda primero, así sale con lo último que se cargó; después se
+          emite, así la hoja sale con su número y no como borrador; y recién
+          ahí se pide. Emitida, no se edita más: para cambiarla se hace una
+          revisión.
+        */
+        const emitida = await emitirConsulta(id)
+
         const donde = await traerLaHoja(
           id,
           pestana,
-          `${tipo}-${empresaActual!.nombre}-${cabecera.fecha}`,
+          `${tipo}-${emitida.numero_con_revision ?? empresaActual!.nombre}`,
         )
 
         setAviso(
-          donde === 'pestana'
-            ? 'Guardado. La hoja se abrió en otra pestaña y quedó registrada.'
-            : 'Guardado. La hoja se descargó: el navegador no dejó abrir la pestaña.',
+          `Emitida como ${emitida.numero_con_revision}. ` +
+            (donde === 'pestana'
+              ? 'La hoja se abrió en otra pestaña.'
+              : 'La hoja se descargó: el navegador no dejó abrir la pestaña.'),
         )
+
+        if (!esNueva) recargar()
       }
     } catch (err) {
       // Si algo falló no queda una pestaña en blanco dando vueltas.
       pestana?.close()
+      setError(mensajeDeError(err))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  /** Vuelve a sacar la hoja de una emitida. No guarda nada: no hay qué. */
+  async function reimprimir(pestana: Window | null) {
+    try {
+      await traerLaHoja(
+        Number(consultaId),
+        pestana,
+        `${tipo}-${existente?.numero_con_revision ?? empresaActual!.nombre}`,
+      )
+    } catch (err) {
+      pestana?.close()
+      setError(mensajeDeError(err))
+    }
+  }
+
+  /**
+   * Hace una revisión: un borrador nuevo con todo lo de ésta.
+   *
+   * "Si está emitida no deja editar, pero sí te deja como base, y hace un
+   * borrador". Si ya había una revisión a medio hacer, se abre esa: dos a la
+   * vez de la misma cotización terminan emitidas con cambios que se pisan.
+   */
+  async function hacerRevision() {
+    setGuardando(true)
+    setError(null)
+
+    try {
+      const id = await nuevaRevision(Number(consultaId))
+
+      navigate(`/consultas/${id}`)
+    } catch (err) {
       setError(mensajeDeError(err))
     } finally {
       setGuardando(false)
@@ -734,10 +787,37 @@ export default function ConsultaEditor() {
             : `${tipo} de ${empresa.nombre}`
         }
         chips={
-          existente?.estado === 'Borrador' ? <Chip tono="ambar">Borrador</Chip> : undefined
+          esNueva ? undefined : emitida ? (
+            <Chip tono="verde">{existente?.numero_con_revision ?? 'Emitida'}</Chip>
+          ) : (
+            <Chip tono="ambar">
+              {existente?.revision_de_id ? 'Revisión en borrador' : 'Borrador'}
+            </Chip>
+          )
         }
         bajada="Se carga lo que pidió el cliente y lo que se le cotiza. Cuando es lo mismo, se completa solo. Lo que se escribe en NOTA y en las observaciones queda para adentro."
         acciones={
+          emitida ? (
+            /*
+              Emitida: se lee, se vuelve a imprimir, o se revisa. No hay
+              "Guardar" porque no hay nada que guardar.
+            */
+            <>
+              <Boton variante="suave" onClick={() => navigate(`/empresas/${idFicha}`)}>
+                Volver
+              </Boton>
+              <Boton
+                variante="suave"
+                // La pestaña se abre dentro del clic, o el navegador la bloquea.
+                onClick={() => reimprimir(window.open('', '_blank'))}
+              >
+                Imprimir
+              </Boton>
+              <Boton variante="primario" onClick={hacerRevision} disabled={guardando}>
+                {guardando ? 'Abriendo…' : 'Hacer una revisión'}
+              </Boton>
+            </>
+          ) : (
           <>
             {/*
               Cancelar es salir sin guardar, que es lo que preguntaban. Con
@@ -761,23 +841,60 @@ export default function ConsultaEditor() {
             </Boton>
             {/*
               Al terminar una cotización lo que sigue es mandarla, así que este
-              es el botón principal: guarda y abre la hoja. "Guardar" a secas
-              queda para cuando se deja a medias.
+              es el botón principal. Se llama "Emitir" y no "Guardar" porque
+              no se puede deshacer: la numera y la congela. Por eso pregunta
+              antes. "Guardar" a secas queda para cuando se deja a medias.
             */}
             <Boton
               variante="primario"
-              // La pestaña se abre acá, dentro del clic. Si se abriera después
-              // de guardar, el navegador la bloquearía por emergente.
-              onClick={() => guardar(true, window.open('', '_blank'))}
+              onClick={() => {
+                const seguro = window.confirm(
+                  'Se va a emitir: toma su número y ya no se puede modificar. ' +
+                    'Para cambiarla después hay que hacer una revisión. ¿Emitimos?',
+                )
+
+                // La pestaña se abre acá, dentro del clic. Si se abriera después
+                // de guardar, el navegador la bloquearía por emergente.
+                if (seguro) guardar(true, window.open('', '_blank'))
+              }}
               disabled={guardando}
             >
-              {guardando ? 'Guardando…' : 'Guardar e imprimir'}
+              {guardando ? 'Emitiendo…' : 'Emitir e imprimir'}
             </Boton>
           </>
+          )
         }
       />
 
       {error && <Aviso tono="ambar">{error}</Aviso>}
+
+      {/* R0, R1, R2: las versiones de esta cotización, como solapas. */}
+      {!esNueva && <Versiones consultaId={Number(consultaId)} />}
+
+      {/*
+        Emitida: se dice por qué no se puede tocar y qué hacer en su lugar.
+        Un formulario que no responde sin explicar por qué parece roto.
+      */}
+      {emitida && (
+        <Aviso tono="verde">
+          <span className="inline-flex items-center gap-1.5 font-semibold">
+            <Lock size={13} strokeWidth={2.4} />
+            Emitida como {existente?.numero_con_revision}
+          </span>
+          {existente?.emitida_el && ` el ${fmtFecha(existente.emitida_el)}`}
+          {existente?.emitida_por && ` por ${existente.emitida_por}`}. Así la tiene el cliente, y
+          así queda: no se modifica. Para cambiarla, hacé una revisión.
+        </Aviso>
+      )}
+
+      {/*
+        Lo emitido se ve pero no se toca. Un fieldset deshabilitado apaga
+        todos los campos y botones de adentro de una vez: no hay que acordarse
+        de marcar cada uno, y uno nuevo que se agregue mañana ya nace
+        bloqueado. El servidor lo rechaza igual; esto es para que no se
+        pueda empezar a escribir algo que después no se va a guardar.
+      */}
+      <fieldset disabled={emitida} className="m-0 flex min-w-0 flex-col gap-[18px] border-0 p-0">
 
       {/* tipo */}
       <div className="flex flex-wrap items-center gap-2.5">
@@ -863,6 +980,13 @@ export default function ConsultaEditor() {
         </>
       )}
 
+      </fieldset>
+
+      {/*
+        De acá para abajo sigue habilitado aunque esté emitida: las
+        observaciones son el seguimiento —"quedó en confirmar el lunes"— y no
+        cambian lo que se le mandó al cliente.
+      */}
       {!esNueva && <Relacionadas consultaId={Number(consultaId)} />}
 
       {/* Qué se cambió después de la primera vez, y quién. */}

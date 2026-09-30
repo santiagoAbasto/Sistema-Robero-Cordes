@@ -859,6 +859,17 @@ function EntradaHistorial({
           className={`shrink-0 text-faint transition-transform ${abierto ? 'rotate-90' : ''}`}
         />
         <span className="text-[12.5px] font-semibold text-ink">{fecha(consulta.fecha)}</span>
+        {/*
+          El número con su revisión: es por el que pregunta el cliente, y cada
+          versión aparece con la suya. Sin emitir no tiene número todavía.
+        */}
+        {consulta.numero_con_revision ? (
+          <span className="rounded-md bg-app px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-slate-600">
+            {consulta.numero_con_revision}
+          </span>
+        ) : (
+          !consulta.emitida && !consulta.id_sistema && <Chip tono="ambar">Borrador</Chip>
+        )}
         {/* De que era, para no tener que abrirla para saberlo. */}
         {! abierto && (
           <span className="min-w-0 max-w-[40%] flex-1 truncate text-[11.5px] text-slate-600">
@@ -985,7 +996,8 @@ function EntradaHistorial({
           {!sinImprimir && (
             <Accion to={`/imprimir?empresa=${empresaId}&consulta=${consulta.id}`}>Imprimir</Accion>
           )}
-          <Accion to={`/consultas/${consulta.id}`}>Modificar</Accion>
+          {/* Emitida no se modifica: se abre para verla o para revisarla. */}
+          <Accion to={`/consultas/${consulta.id}`}>{consulta.emitida ? 'Ver' : 'Modificar'}</Accion>
         </div>
       </div>
         </>
