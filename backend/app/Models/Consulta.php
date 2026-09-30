@@ -202,6 +202,15 @@ class Consulta extends Model
     /** Los dos finales de los que no se vuelve solo: los cierra una persona. */
     public const ESTADOS_DE_CIERRE = [self::CERRADA, self::VENCIDA];
 
+    /**
+     * Por donde llego la consulta.
+     *
+     * Una sola lista: la que se ofrece en la pantalla y la que acepta el
+     * guardado. Estaban escritas por separado, y al sumar "Web" a la de la
+     * pantalla la otra la rechazaba: elegirla y guardar daba error.
+     */
+    public const VIAS = ['Mail', 'WhatsApp', 'Web', 'Telefono', 'En persona'];
+
     // ------------------------------------------------------------- relaciones
 
     public function empresa(): BelongsTo

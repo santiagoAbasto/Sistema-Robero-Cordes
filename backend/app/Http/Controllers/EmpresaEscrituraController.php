@@ -30,9 +30,31 @@ class EmpresaEscrituraController extends Controller
     {
         $datos = $this->validar($request);
 
-        $empresa = DB::transaction(function () use ($datos, $request) {
+        /*
+          La empresa puede llegar con su primer contacto.
+
+          "Despues hay que agregar manualmente el contacto... tendria que poder
+          tomar los datos que pusimos al cargar la empresa". Al pegar el pie de
+          un mail salen la empresa Y la persona que firma: se guardan juntas,
+          en la misma operacion, y ese contacto nace como el principal.
+        */
+        $contacto = $request->validate([
+            'contacto' => ['nullable', 'array'],
+            'contacto.nombre' => ['required_with:contacto', 'string', 'max:120'],
+            'contacto.cargo' => ['nullable', 'string', 'max:60'],
+            'contacto.sector' => ['nullable', 'string', 'max:60'],
+            'contacto.medios' => ['array'],
+            'contacto.medios.*.tipo_medio_id' => ['required', 'exists:tipos_medio,id'],
+            'contacto.medios.*.valor' => ['required', 'string', 'max:120'],
+        ])['contacto'] ?? null;
+
+        $empresa = DB::transaction(function () use ($datos, $request, $contacto) {
             $empresa = Empresa::create($datos + ['creada_por' => $request->user()->id]);
             $this->sincronizarRelaciones($empresa, $request->input('relaciones', []));
+
+            if (filled($contacto['nombre'] ?? null)) {
+                $this->escribirContacto($empresa, null, $contacto + ['principal' => true]);
+            }
 
             return $empresa;
         });
@@ -91,7 +113,11 @@ class EmpresaEscrituraController extends Controller
         ]);
 
         $leido = $firma->leer($datos['texto']);
-        $cuantos = count(array_filter($leido, fn ($v) => filled($v)));
+        // El tipo de telefono dice que es el telefono: no es un dato mas.
+        $cuantos = count(array_filter(
+            array_diff_key($leido, ['tipo_telefono' => true]),
+            fn ($v) => filled($v),
+        ));
 
         return [
             'datos' => $leido,
@@ -117,24 +143,140 @@ class EmpresaEscrituraController extends Controller
             'medios.*.nota' => ['nullable', 'string', 'max:80'],
         ]);
 
-        $contacto = DB::transaction(function () use ($empresa, $contacto, $datos) {
-            $contacto = $contacto?->exists
-                ? tap($contacto)->update(collect($datos)->except('medios')->all())
-                : $empresa->contactos()->create(collect($datos)->except('medios')->all());
+        [$contacto, $yaEstaba, $nuevos] = DB::transaction(
+            fn () => $this->escribirContacto($empresa, $contacto, $datos),
+        );
 
-            // Un solo principal por empresa.
-            if (! empty($datos['principal'])) {
-                $empresa->contactos()->where('id', '!=', $contacto->id)->update(['principal' => false]);
-            }
+        return response()->json([
+            'id' => $contacto->id,
+            'ya_estaba' => $yaEstaba,
+            'mensaje' => match (true) {
+                ! $yaEstaba => 'Contacto guardado.',
+                $nuevos > 0 => "{$contacto->nombre} ya estaba: "
+                    .($nuevos === 1 ? 'se le sumo 1 dato nuevo' : "se le sumaron {$nuevos} datos nuevos")
+                    .'. Lo que ya tenia no se repitio.',
+                default => "{$contacto->nombre} ya estaba con esos mismos datos: no se repitio nada.",
+            },
+        ]);
+    }
+
+    /**
+     * Crea el contacto, lo modifica, o le suma lo nuevo si ya estaba.
+     *
+     * "Si la empresa existe pero solo queremos agregar un nuevo contacto" y
+     * "solo guardo datos nuevos, no repetidos": pegar dos veces la firma de
+     * Juan Saccomanno no puede dejar dos Juan Saccomanno con el mismo celular.
+     * Si ya hay alguien con ese nombre, se le suman los telefonos y mails que
+     * no tenia y se completa lo que estaba vacio. Lo escrito no se pisa.
+     *
+     * @return array{0: Contacto, 1: bool, 2: int} el contacto, si ya estaba, y cuantos datos se sumaron
+     */
+    private function escribirContacto(Empresa $empresa, ?Contacto $contacto, array $datos): array
+    {
+        if ($contacto?->exists) {
+            $contacto->update(collect($datos)->except('medios')->all());
+            $this->unSoloPrincipal($empresa, $contacto, $datos);
 
             if (array_key_exists('medios', $datos)) {
                 $this->sincronizarMedios($contacto, $datos['medios']);
             }
 
-            return $contacto;
-        });
+            return [$contacto, false, 0];
+        }
 
-        return response()->json(['id' => $contacto->id, 'mensaje' => 'Contacto guardado.']);
+        $existente = $this->mismaPersona($empresa, $datos['nombre']);
+
+        if ($existente) {
+            $completados = 0;
+
+            foreach (['sector', 'cargo', 'observacion'] as $campo) {
+                if (blank($existente->{$campo}) && filled($datos[$campo] ?? null)) {
+                    $existente->{$campo} = $datos[$campo];
+                    $completados++;
+                }
+            }
+
+            $existente->save();
+
+            return [$existente, true, $completados + $this->sumarMedios($existente, $datos['medios'] ?? [])];
+        }
+
+        $nuevo = $empresa->contactos()->create(collect($datos)->except('medios')->all());
+        $this->unSoloPrincipal($empresa, $nuevo, $datos);
+        $this->sincronizarMedios($nuevo, $datos['medios'] ?? []);
+
+        return [$nuevo, false, 0];
+    }
+
+    /** Un solo principal por empresa. */
+    private function unSoloPrincipal(Empresa $empresa, Contacto $contacto, array $datos): void
+    {
+        if (! empty($datos['principal'])) {
+            $empresa->contactos()->where('id', '!=', $contacto->id)->update(['principal' => false]);
+        }
+    }
+
+    /**
+     * El contacto activo de la empresa con ese mismo nombre, si hay.
+     *
+     * Sin mayusculas, acentos ni espacios de mas: "Juan J. Saccomanno" y
+     * "juan j.  saccomanno" son la misma persona. Nombres distintos no se
+     * juntan aunque se parezcan: dos Juan en la misma empresa pasa.
+     */
+    private function mismaPersona(Empresa $empresa, string $nombre): ?Contacto
+    {
+        $plano = fn (?string $t) => preg_replace('/\s+/', ' ', trim(strtr(mb_strtolower((string) $t), [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n',
+        ])));
+
+        return $empresa->contactos()->where('activo', true)->get()
+            ->first(fn (Contacto $c) => $plano($c->nombre) === $plano($nombre));
+    }
+
+    /**
+     * Le suma los medios que no tenia. Devuelve cuantos sumo.
+     *
+     * El mismo numero escrito distinto es el mismo: "(011) 4427-9394",
+     * "+54 11 4427-9394" y "1144279394" no se repiten.
+     */
+    private function sumarMedios(Contacto $contacto, array $medios): int
+    {
+        $plano = function (string $valor): string {
+            $valor = mb_strtolower(trim($valor));
+
+            if (str_contains($valor, '@')) {
+                return $valor;
+            }
+
+            // Solo los digitos, sin el 54 del pais —con el 9 de los celulares—
+            // ni el 0 de larga distancia.
+            return preg_replace('/^(549?)?0?/', '', preg_replace('/\D/', '', $valor) ?? '') ?? '';
+        };
+
+        $tiene = $contacto->medios()->where('activo', true)->pluck('valor')->map($plano)->all();
+        $sumados = 0;
+
+        foreach ($medios as $medio) {
+            $valor = trim((string) ($medio['valor'] ?? ''));
+
+            if ($valor === '' || in_array($plano($valor), $tiene, true)) {
+                continue;
+            }
+
+            ContactoMedio::create([
+                'contacto_id' => $contacto->id,
+                'tipo_medio_id' => $medio['tipo_medio_id'],
+                'valor' => $valor,
+                // El que ya tenia sigue siendo el principal.
+                'principal' => false,
+                'nota' => $medio['nota'] ?? null,
+            ]);
+
+            $tiene[] = $plano($valor);
+            $sumados++;
+        }
+
+        return $sumados;
     }
 
     public function archivarContacto(Contacto $contacto)
@@ -306,7 +448,9 @@ class EmpresaEscrituraController extends Controller
 
     private function sincronizarMedios(Contacto $contacto, array $medios): void
     {
-        $contacto->medios()->delete();
+        // Solo los activos, que son los que se ven y se editan. Los dados de
+        // baja no llegan a la pantalla: borrarlos aca los perdia de verdad.
+        $contacto->medios()->where('activo', true)->delete();
 
         foreach ($medios as $medio) {
             if (trim((string) ($medio['valor'] ?? '')) === '') {

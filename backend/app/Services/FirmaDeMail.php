@@ -35,7 +35,10 @@ class FirmaDeMail
         'contacto' => ['NOMBRE Y APELLIDO', 'APELLIDO Y NOMBRE', 'NOMBRE', 'CONTACTO'],
         'cargo' => ['CARGO', 'PUESTO'],
         'mail' => ['CORREO ELECTRONICO', 'E-MAIL', 'EMAIL', 'MAIL', 'CORREO'],
-        'telefono' => ['TELEFONO', 'CELULAR', 'MOVIL', 'WHATSAPP', 'TEL'],
+        // Separados: el rotulo dice que tipo de telefono es.
+        'celular' => ['CELULAR', 'MOVIL', 'CEL'],
+        'whatsapp' => ['WHATSAPP'],
+        'telefono' => ['TELEFONO', 'TEL'],
         'direccion' => ['DIRECCION', 'DOMICILIO'],
         'codigo_postal' => ['CODIGO POSTAL', 'C.P.', 'CP'],
         'localidad' => ['LOCALIDAD', 'CIUDAD'],
@@ -75,7 +78,8 @@ class FirmaDeMail
             'contacto' => $this->contacto($renglones),
             'cargo' => $this->cargo($renglones),
             'mail' => $mail,
-            'telefono' => $this->telefono($texto),
+            'telefono' => $this->telefono($texto)[0],
+            'tipo_telefono' => $this->telefono($texto)[1],
             'web' => $this->web($texto, $mail),
             'direccion' => $this->direccion($renglones),
             'codigo_postal' => $this->codigoPostal($texto),
@@ -104,7 +108,7 @@ class FirmaDeMail
             'contacto' => $ficha['contacto'] ?? null,
             'cargo' => $ficha['cargo'] ?? null,
             'mail' => $mail,
-            'telefono' => isset($ficha['telefono']) ? $this->limpiar($ficha['telefono']) : $this->telefono($texto),
+            ...$this->telefonoDeLaFicha($ficha, $texto),
             'web' => $this->web($texto, $mail),
             'direccion' => $ficha['direccion'] ?? null,
             'codigo_postal' => $ficha['codigo_postal'] ?? $this->codigoPostal($texto),
@@ -121,6 +125,27 @@ class FirmaDeMail
         ]));
 
         return $datos + $this->deDonde($lugar);
+    }
+
+    /**
+     * El telefono de la ficha y su tipo: el rotulo lo dice.
+     *
+     * @param  array<string, string>  $ficha
+     * @return array{telefono: ?string, tipo_telefono: ?string}
+     */
+    private function telefonoDeLaFicha(array $ficha, string $texto): array
+    {
+        [$valor, $tipo] = match (true) {
+            isset($ficha['celular']) => [$ficha['celular'], 'Celular'],
+            isset($ficha['whatsapp']) => [$ficha['whatsapp'], 'WhatsApp'],
+            isset($ficha['telefono']) => [
+                $ficha['telefono'],
+                $this->pareceCelular($ficha['telefono']) ? 'Celular' : 'Telefono',
+            ],
+            default => $this->telefono($texto),
+        };
+
+        return ['telefono' => $valor === null ? null : $this->limpiar($valor), 'tipo_telefono' => $tipo];
     }
 
     private function mail(string $texto): ?string
@@ -244,21 +269,45 @@ class FirmaDeMail
      * en una firma hay codigos postales, numeros de calle y anios, y todos
      * son numeros.
      */
-    private function telefono(string $texto): ?string
+    /**
+     * @return array{0: ?string, 1: ?string} el numero y su tipo de medio:
+     *                                        Celular, WhatsApp o Telefono
+     */
+    private function telefono(string $texto): array
     {
-        $conEtiqueta = '/(?:cel|tel|telefono|teléfono|movil|móvil|whatsapp|wpp)\.?\s*:?\s*'
+        $conEtiqueta = '/(cel|tel|telefono|teléfono|movil|móvil|whatsapp|wpp)\.?\s*:?\s*'
             .'((?:\+?\d{1,3}[\s.-]*)?(?:\(\d{2,5}\)[\s.-]*)?[\d\s.-]{6,18})/iu';
 
         if (preg_match($conEtiqueta, $texto, $m)) {
-            return $this->limpiar($m[1]);
+            $rotulo = mb_strtolower($m[1]);
+
+            $tipo = match (true) {
+                in_array($rotulo, ['cel', 'movil', 'móvil'], true) => 'Celular',
+                in_array($rotulo, ['whatsapp', 'wpp'], true) => 'WhatsApp',
+                default => $this->pareceCelular($m[2]) ? 'Celular' : 'Telefono',
+            };
+
+            return [$this->limpiar($m[2]), $tipo];
         }
 
         // "(2954) 15-584584" se reconoce solo por la forma.
         if (preg_match('/\(\d{2,5}\)\s*[\d\s.-]{6,15}/', $texto, $m)) {
-            return $this->limpiar($m[0]);
+            return [$this->limpiar($m[0]), $this->pareceCelular($m[0]) ? 'Celular' : 'Telefono'];
         }
 
-        return null;
+        return [null, null];
+    }
+
+    /**
+     * Un celular escrito como se escriben aca: "(2954) 15-584584" —el 15
+     * despues de la caracteristica— o con el 9 internacional, "+54 9 11".
+     *
+     * Solo se usa cuando el rotulo no lo dice. Sin 15 ni 9 no se sabe: un
+     * 11 4555-3700 y un 11 3106-1795 tienen el mismo largo, y queda Telefono.
+     */
+    private function pareceCelular(string $numero): bool
+    {
+        return (bool) preg_match('/(?:^|[\s)(-])15[\s.-]?\d{3,4}[\s.-]?\d{2,4}\b|\+?54\s*9\s*\d/u', $numero);
     }
 
     private function limpiar(string $t): ?string
