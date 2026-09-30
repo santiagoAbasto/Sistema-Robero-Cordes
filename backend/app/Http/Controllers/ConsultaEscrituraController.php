@@ -457,6 +457,11 @@ class ConsultaEscrituraController extends Controller
             // Faltaba: sin el largo no hay factor por pieza, y la pantalla
             // avisaba "falta el largo" con el largo cargado a la vista.
             'lineas.*.largo_mm' => ['nullable', 'numeric'],
+            // Los dos extremos del rango, cuando el largo es variable. El
+            // maximo no puede ser menor que el minimo: un rango al reves da un
+            // promedio que parece razonable y no lo es.
+            'lineas.*.largo_min_mm' => ['nullable', 'numeric', 'min:0'],
+            'lineas.*.largo_max_mm' => ['nullable', 'numeric', 'min:0', 'gte:lineas.*.largo_min_mm'],
             'lineas.*.cantidad' => ['nullable', 'numeric'],
             'lineas.*.unidad_venta_id' => ['nullable', 'exists:unidades,id'],
             'lineas.*.unidad_factura_id' => ['nullable', 'exists:unidades,id'],
@@ -622,6 +627,7 @@ class ConsultaEscrituraController extends Controller
             $linea->consulta_id = $consulta->id;
             $linea->orden = $i + 1;
 
+            $this->promediarElLargo($linea, $calculo);
             $this->calcularElPeso($linea, $calculo);
 
             // Cuando se cotiza tal cual lo pidieron, lo pedido se completa solo.
@@ -917,6 +923,33 @@ class ConsultaEscrituraController extends Controller
         $linea->origen_factor = null;
         $linea->factor_cargado_por = null;
         $linea->factor_cargado_el = null;
+    }
+
+    /**
+     * Con largo variable, el largo que se calcula es el promedio del rango.
+     *
+     * Las barras y los canos se ofrecen "de 2,80 a 3,20 m". El peso, el factor
+     * y la cantidad a facturar necesitan UN largo, y el que corresponde es el
+     * del medio: por arriba se cobra de mas y por abajo se entrega de mas.
+     *
+     * Se pisa en los dos lados —la columna suelta y la medida de la
+     * calculadora— porque el peso sale de la calculadora y el factor de la
+     * columna. Dejando uno solo, las dos cuentas darian largos distintos.
+     */
+    private function promediarElLargo(ConsultaLinea $linea, array &$calculo): void
+    {
+        $promedio = $linea->largoPromedioMm();
+
+        if ($promedio === null) {
+            return;
+        }
+
+        $linea->largo_mm = $promedio;
+
+        // Solo si la forma lleva largo: a un disco no se le inventa uno.
+        if (isset($calculo['medidas']['length'])) {
+            $calculo['medidas']['length'] = ['valor' => $promedio, 'unidad' => 'mm'];
+        }
     }
 
     /**

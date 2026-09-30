@@ -137,6 +137,12 @@ export interface ConsultaLinea {
   espesor_mm: string | null
   ancho_mm: string | null
   largo_mm: string | null
+  /**
+   * Los extremos del rango, cuando la barra o el caño vienen de largo variable.
+   * Cargados los dos, largo_mm guarda el promedio: es con el que se calcula.
+   */
+  largo_min_mm: string | null
+  largo_max_mm: string | null
   /** Lo que pesa lo cotizado, si se calculó. */
   peso_kg: string | null
   /** Alternativas: el mismo item cotizado de otra manera. */
@@ -454,6 +460,9 @@ export interface LineaInterpretada {
   espesor_mm: number | null
   ancho_mm: number | null
   largo_mm: number | null
+  /** Los extremos del rango, cuando la barra o el caño vienen de largo variable. */
+  largo_min_mm: number | null
+  largo_max_mm: number | null
   cantidad: number | null
   unidad_venta_id: number | null
   unidad: string | null
