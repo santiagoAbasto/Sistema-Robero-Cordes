@@ -70,6 +70,9 @@ class ConsultaLinea extends Model
         // La foto del calculo de peso: medidas, unidades, densidad y formula
         // usadas el dia que se cotizo.
         'calculo' => 'array',
+        // Las medidas de lo que pidio el cliente, con la misma estructura que
+        // las de la calculadora: clave, valor y unidad.
+        'pedido_medidas' => 'array',
         'peso_kg' => 'decimal:3',
         'factor_cargado_el' => 'datetime',
     ];
