@@ -57,6 +57,7 @@ class ConsultaEscrituraController extends Controller
     public function update(Request $request, Consulta $consulta)
     {
         $this->soloSiPuedeModificar($request);
+        $this->soloSiNoEstaEmitida($consulta);
         $datos = $this->validar($request, $consulta);
 
         DB::transaction(function () use ($consulta, $datos) {
@@ -118,6 +119,110 @@ class ConsultaEscrituraController extends Controller
             403,
             'No tenés permiso para modificar cotizaciones. Pedíselo a un administrador.',
         );
+    }
+
+    /**
+     * Lo emitido no se toca: se hace una revision.
+     *
+     * Se controla en el servidor y no solo escondiendo el boton: la hoja que
+     * tiene el cliente y la que esta en el sistema tienen que coincidir, y un
+     * boton escondido no lo garantiza.
+     */
+    private function soloSiNoEstaEmitida(Consulta $consulta): void
+    {
+        abort_if(
+            $consulta->estaEmitida(),
+            422,
+            'Esta cotizacion ya se emitio como '.$consulta->numeroConRevision()
+                .' y no se puede modificar. Para cambiarla, hace una revision.',
+        );
+    }
+
+    /**
+     * La emite: le da numero y revision, y la congela.
+     *
+     * Emitir es mandarla, por eso la pantalla lo hace junto con imprimir. Lo
+     * que se emite es lo que ya esta guardado: se guarda antes y despues se
+     * emite, para que la hoja salga con lo ultimo que se escribio.
+     */
+    public function emitir(Request $request, Consulta $consulta)
+    {
+        $this->soloSiPuedeModificar($request);
+
+        $consulta->emitir($request->user()?->id);
+
+        return new ConsultaResource($this->recargar($consulta));
+    }
+
+    /**
+     * Hace una revision: un borrador nuevo a partir de una emitida.
+     *
+     * "Si esta emitida no deja editar, pero si te deja como base, y hace un
+     * borrador". La revision nace con todo lo de la base —lineas, precios y
+     * condiciones— porque es la misma cotizacion corregida, no una nueva para
+     * otro cliente. Recien se numera como R1, R2 al emitirla: un borrador que
+     * se descarta no deja un hueco en las revisiones.
+     */
+    public function nuevaRevision(Request $request, Consulta $consulta)
+    {
+        $this->soloSiPuedeModificar($request);
+
+        abort_unless(
+            $consulta->estaEmitida(),
+            422,
+            'Una cotizacion que todavia no se emitio se modifica directamente: no hace falta una revision.',
+        );
+
+        // Un solo borrador por familia: dos revisiones a medio hacer de la
+        // misma cotizacion terminan emitidas con cambios que se pisan.
+        $abierta = $consulta->versiones()->whereNull('emitida_el')->first();
+
+        if ($abierta) {
+            return response()->json([
+                'message' => 'Ya hay una revision en borrador de esta cotizacion. Seguí esa.',
+                'id' => $abierta->id,
+            ], 409);
+        }
+
+        $consulta->load('lineas.opciones', 'condiciones');
+
+        $revision = DB::transaction(function () use ($consulta, $request) {
+            $nueva = $consulta->replicate([
+                'id', 'numero', 'revision', 'emitida_el', 'emitida_por',
+                'created_at', 'updated_at', 'copiada_de_id',
+            ]);
+            $nueva->revision_de_id = $consulta->raizId();
+            $nueva->usuario_id = $request->user()->id;
+            $nueva->estado = 'Borrador';
+            // Se le vuelve a mandar al cliente: fecha de hoy y la validez corre
+            // de nuevo. Con la fecha de la original, una revision de hace un
+            // mes naceria ya vencida.
+            $nueva->fecha = now()->toDateString();
+            $nueva->recalcularVencimiento();
+            $nueva->save();
+
+            foreach ($consulta->lineas as $linea) {
+                $copia = $linea->replicate(['id', 'consulta_id', 'created_at', 'updated_at']);
+                $copia->consulta_id = $nueva->id;
+                $copia->save();
+
+                foreach ($linea->opciones as $opcion) {
+                    $otra = $opcion->replicate(['id', 'consulta_linea_id', 'created_at', 'updated_at']);
+                    $otra->consulta_linea_id = $copia->id;
+                    $otra->save();
+                }
+            }
+
+            foreach ($consulta->condiciones as $condicion) {
+                $otra = $condicion->replicate(['id', 'consulta_id', 'created_at', 'updated_at']);
+                $otra->consulta_id = $nueva->id;
+                $otra->save();
+            }
+
+            return $nueva;
+        });
+
+        return (new ConsultaResource($this->recargar($revision)))->response()->setStatusCode(201);
     }
 
     /**
@@ -1102,7 +1207,7 @@ class ConsultaEscrituraController extends Controller
             'lineas.material', 'lineas.forma', 'lineas.unidadVenta', 'lineas.opciones.material',
             'lineas.unidadFactura', 'lineas.unidadPedida',
             'condiciones', 'observaciones.usuario', 'impresiones.contacto',
-            'impresiones.usuario', 'copiadaDe.empresa',
+            'impresiones.usuario', 'copiadaDe.empresa', 'emisor',
         ]);
     }
 }

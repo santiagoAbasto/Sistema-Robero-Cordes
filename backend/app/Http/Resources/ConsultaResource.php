@@ -46,8 +46,15 @@ class ConsultaResource extends JsonResource
 
             'nro_factura' => $this->nro_factura,
             'id_sistema' => $this->id_sistema,
-            // Se lo pone el sistema al imprimir o al dejar de ser borrador.
+            // Se lo pone el sistema al emitirla.
             'numero' => $this->numero,
+            // Versiones: 2026-0001 R0, R1. Emitida no se edita, se revisa.
+            'revision' => (int) $this->revision,
+            'numero_con_revision' => $this->numeroConRevision(),
+            'revision_de_id' => $this->revision_de_id,
+            'emitida' => $this->estaEmitida(),
+            'emitida_el' => $this->emitida_el?->toIso8601String(),
+            'emitida_por' => $this->whenLoaded('emisor', fn () => $this->emisor?->name),
             'condicion_pago' => $this->condicion_pago,
             'lista_precios' => $this->lista_precios,
 

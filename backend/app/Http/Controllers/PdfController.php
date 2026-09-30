@@ -77,9 +77,15 @@ class PdfController extends Controller
         $incluyeImportes = $datos['incluye_importes'] ?? true;
         $incluyeNota = $datos['incluye_nota'] ?? false;
 
-        // La hoja sale numerada. Si todavia no tenia numero, se lo gana ahora:
-        // esta saliendo de la empresa.
-        $consulta->numerar();
+        /*
+          Imprimir no numera: numera emitir.
+
+          Antes la hoja se numeraba al imprimirla. Con revisiones eso ya no
+          alcanza: un borrador impreso se llevaba un numero sin quedar
+          congelado, y se podia seguir editando despues de que el cliente
+          tuviera la hoja. Ahora la pantalla emite antes de imprimir, y un
+          borrador que se imprima igual sale marcado como BORRADOR.
+        */
 
         $lineas = $consulta->lineas->where('quitada', false);
 

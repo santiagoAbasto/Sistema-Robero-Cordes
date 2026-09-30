@@ -11,8 +11,12 @@ import type { Revision } from '../../lib/indice'
    de las otras cien cotizaciones, y llegaba una fila por campo cambiado:
    corregir tres precios y guardar daba tres renglones sueltos.
 
-   Una revisión es UN GUARDADO: lo que cambió la misma persona en el mismo
-   momento, con una línea que dice qué pasó. El detalle —qué decía antes y qué
+   Una entrada es UN GUARDADO: lo que cambió la misma persona en el mismo
+   momento, con una línea que dice qué pasó.
+
+   Se llama "cambios" y no "revisiones" porque revisión ya es otra cosa: la R0,
+   R1, R2 del número de cotización. Cada versión tiene sus propios cambios,
+   porque cada una es su propia cotización. El detalle —qué decía antes y qué
    dice ahora— está adentro, para quien lo necesite.
 --------------------------------------------------------------------------- */
 
@@ -25,7 +29,7 @@ export default function Revisiones({ consultaId }: { consultaId: number }) {
   return (
     <Card className="overflow-hidden">
       <CardHeader
-        titulo="Revisiones de esta cotizacion"
+        titulo="Cambios de esta version"
         cuenta={datos.total}
         chips={<Chip tono="neutro">uso interno</Chip>}
         ayuda="Cada renglón es un guardado: quién lo hizo, cuándo y qué cambió. La última arriba."

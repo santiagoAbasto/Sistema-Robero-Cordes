@@ -15,6 +15,8 @@ class ConsultaController extends Controller
         'condiciones', 'observaciones.usuario',
         'impresiones.contacto', 'impresiones.usuario',
         'copiadaDe.empresa',
+        // Quien la emitio: sale en el aviso de "emitida como 2026-0001 R0".
+        'emisor',
     ];
 
     /**
@@ -100,5 +102,31 @@ class ConsultaController extends Controller
             ->get();
 
         return ConsultaResource::collection($borradores);
+    }
+
+    /**
+     * Todas las revisiones de una cotizacion, de la R0 a la ultima.
+     *
+     * "Ver todas las versiones que sufrio la cotizacion". Vuelve una lista
+     * corta —numero, cuando, quien, cuanto— y no las cotizaciones enteras:
+     * es para elegir cual abrir, no para leerlas todas juntas.
+     */
+    public function versiones(Consulta $consulta)
+    {
+        return $consulta->versiones()
+            ->with('emisor:id,name', 'usuario:id,name', 'lineas:id,consulta_id,importe,quitada')
+            ->get()
+            ->map(fn (Consulta $v) => [
+                'id' => $v->id,
+                'numero' => $v->numeroConRevision(),
+                'revision' => (int) $v->revision,
+                'emitida' => $v->estaEmitida(),
+                'emitida_el' => $v->emitida_el?->toIso8601String(),
+                'emitida_por' => $v->emisor?->name,
+                'cargada_por' => $v->usuario?->name,
+                'fecha' => $v->fecha?->toDateString(),
+                'total' => $v->total,
+                'estado' => $v->estado,
+            ]);
     }
 }

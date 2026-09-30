@@ -129,6 +129,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/consultas/{consulta}/relacionadas', [ConsultaController::class, 'relacionadas']);
     Route::post('/consultas/{consulta}/copiar', [ConsultaEscrituraController::class, 'copiar']);
     Route::post('/consultas/{consulta}/confirmar', [ConsultaEscrituraController::class, 'confirmar']);
+    // Versiones: 2026-0001 R0, R1, R2. Lo emitido no se edita, se revisa.
+    Route::post('/consultas/{consulta}/emitir', [ConsultaEscrituraController::class, 'emitir']);
+    Route::post('/consultas/{consulta}/revision', [ConsultaEscrituraController::class, 'nuevaRevision']);
+    Route::get('/consultas/{consulta}/versiones', [ConsultaController::class, 'versiones']);
     Route::post('/consultas/{consulta}/estado', [ConsultaEscrituraController::class, 'cambiarEstado']);
     Route::post('/consultas/{consulta}/observaciones', [ConsultaEscrituraController::class, 'agregarObservacion']);
     Route::delete('/observaciones/{observacion}', [ConsultaEscrituraController::class, 'borrarObservacion']);

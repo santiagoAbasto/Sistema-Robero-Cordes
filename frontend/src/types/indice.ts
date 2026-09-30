@@ -254,6 +254,20 @@ export interface Consulta {
   ajuste_dif_cambio_detalle: string | null
   nro_factura: string | null
   id_sistema: string | null
+  /** 2026-0001. Se lo pone el sistema al emitirla. */
+  numero: string | null
+  /**
+   * Versiones: 2026-0001 R0, R1, R2.
+   *
+   * Emitida es que ya salió: no se edita, se revisa. La revisión nace como un
+   * borrador con todo lo de la base y se numera recién al emitirse.
+   */
+  revision: number
+  numero_con_revision: string | null
+  revision_de_id: number | null
+  emitida: boolean
+  emitida_el: string | null
+  emitida_por?: string | null
   condicion_pago: string | null
   lista_precios: string | null
   nota: string | null
