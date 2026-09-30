@@ -224,4 +224,23 @@ class RevisionesDeCotizacionTest extends TestCase
 
         $this->assertNull($this->consulta->fresh()->numero);
     }
+
+    /**
+     * Mirar la hoja no es mandarla.
+     *
+     * La pantalla muestra la hoja de una emitida en lugar del formulario, y la
+     * pide cada vez que se abre. Si cada vistazo quedara anotado, el historial
+     * diria que se le mando al cliente veinte veces.
+     */
+    public function test_mirar_la_hoja_no_la_anota_como_impresion(): void
+    {
+        $this->emitir($this->consulta)->assertOk();
+
+        $this->get("/api/consultas/{$this->consulta->id}/pdf?registrar=0")->assertOk();
+        $this->assertSame(0, $this->consulta->impresiones()->count());
+
+        // Imprimirla de verdad si queda anotado.
+        $this->get("/api/consultas/{$this->consulta->id}/pdf")->assertOk();
+        $this->assertSame(1, $this->consulta->impresiones()->count());
+    }
 }

@@ -73,6 +73,7 @@ import AlternativasDeLinea from '../../components/AlternativasDeLinea'
 import { ModalContacto } from './modales'
 import Revisiones from './Revisiones'
 import Versiones from './Versiones'
+import HojaPrevia from './HojaPrevia'
 import { A_MILIMETROS, UNIDADES_MEDIDA, aMilimetros, calcularPeso } from '../../lib/calculadora'
 import { armarDescripcion, armarDimensiones } from '../../lib/descripcion'
 import type { Catalogos, Consulta, ConsultaLinea, Empresa, Forma } from '../../types/indice'
@@ -253,6 +254,20 @@ export default function ConsultaEditor() {
 
   // Emitida es que ya salió: se lee, no se edita. Para cambiarla, una revisión.
   const emitida = existente?.emitida ?? false
+
+  /*
+    Que se muestra: la hoja, o los datos cargados.
+
+    Una emitida abre en la hoja —es lo que tiene el cliente, y ya no hay nada
+    que cargar—. Un borrador abre para editar, con la hoja a un clic para ver
+    como va quedando. Se vuelve a elegir cada vez que cambia la cotizacion:
+    al pasar de la R0 a una revision en borrador, lo que corresponde cambia.
+  */
+  const [vista, setVista] = useState<'hoja' | 'datos'>('datos')
+
+  useEffect(() => {
+    setVista(emitida ? 'hoja' : 'datos')
+  }, [existente?.id, emitida])
 
   // Al abrir una cotización existente hay que traer la ficha completa de su
   // empresa: la consulta sólo trae el id y el nombre, y acá hacen falta los
@@ -896,7 +911,8 @@ export default function ConsultaEditor() {
         <Aviso tono="verde">
           <span className="inline-flex items-center gap-1.5 font-semibold">
             <Lock size={13} strokeWidth={2.4} />
-            Emitida como {existente?.numero_con_revision}
+            {/* Las del Access no tienen numero propio: no se deja el hueco. */}
+            {existente?.numero_con_revision ? `Emitida como ${existente.numero_con_revision}` : 'Emitida'}
           </span>
           {existente?.emitida_el && ` el ${fmtFecha(existente.emitida_el)}`}
           {existente?.emitida_por && ` por ${existente.emitida_por}`}. Así la tiene el cliente, y
@@ -911,7 +927,56 @@ export default function ConsultaEditor() {
         bloqueado. El servidor lo rechaza igual; esto es para que no se
         pueda empezar a escribir algo que después no se va a guardar.
       */}
-      <fieldset disabled={emitida} className="m-0 flex min-w-0 flex-col gap-[18px] border-0 p-0">
+      {/*
+        La hoja o los datos. Sin guardar todavia no hay hoja que mostrar, y una
+        observacion no es una hoja que se mande.
+      */}
+      {!esNueva && tipo !== 'Observacion' && (
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div role="tablist" aria-label="Como ver la cotizacion" className="inline-flex rounded-[10px] border border-line-strong bg-white p-1">
+            {(
+              [
+                ['hoja', emitida ? 'La hoja' : 'Vista previa'],
+                ['datos', emitida ? 'Datos cargados' : 'Editar'],
+              ] as const
+            ).map(([clave, texto]) => (
+              <button
+                key={clave}
+                type="button"
+                role="tab"
+                aria-selected={vista === clave}
+                onClick={() => setVista(clave)}
+                className={`rounded-[7px] px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                  vista === clave ? 'bg-brand text-white' : 'text-slate-600 hover:bg-app'
+                }`}
+              >
+                {texto}
+              </button>
+            ))}
+          </div>
+          <span className="text-[11.5px] text-muted">
+            {vista === 'hoja'
+              ? emitida
+                ? 'Así la tiene el cliente.'
+                : hayCambios
+                  ? 'Muestra lo último guardado: tenés cambios sin guardar.'
+                  : 'Así va a salir. Dice BORRADOR hasta que se emita.'
+              : emitida
+                ? 'Todo lo que se cargó, sin poder cambiarlo.'
+                : 'Se guarda con Guardar; la hoja sale al emitir.'}
+          </span>
+        </div>
+      )}
+
+      {vista === 'hoja' && !esNueva && tipo !== 'Observacion' && (
+        <HojaPrevia consultaId={Number(consultaId)} recarga={existente} />
+      )}
+
+      <fieldset
+        disabled={emitida}
+        hidden={vista === 'hoja' && !esNueva && tipo !== 'Observacion'}
+        className="m-0 flex min-w-0 flex-col gap-[18px] border-0 p-0"
+      >
 
       {/* tipo */}
       <div className="flex flex-wrap items-center gap-2.5">
