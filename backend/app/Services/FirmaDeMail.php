@@ -446,8 +446,16 @@ class FirmaDeMail
             $localidadId = null;
         }
 
+        /*
+          Lo que falta se completa hacia arriba: la localidad dice su provincia
+          y la provincia su pais. Casi ninguna firma de aca escribe
+          "Argentina", y el pais quedaba vacio.
+        */
+        $provinciaId ??= $localidades->firstWhere('id', $localidadId)?->provincia_id;
+
         return [
-            'pais_id' => $buscar(Pais::query()->get(['id', 'nombre'])),
+            'pais_id' => $buscar(Pais::query()->get(['id', 'nombre']))
+                ?? ($provinciaId ? Provincia::whereKey($provinciaId)->value('pais_id') : null),
             'provincia_id' => $provinciaId,
             'localidad_id' => $localidadId,
         ];

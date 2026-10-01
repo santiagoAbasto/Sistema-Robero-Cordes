@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { Check, ChevronRight, Plus, Printer, Pencil, History, Trash2, MapPin } from 'lucide-react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { ChevronRight, Plus, Printer, Pencil, History, Trash2 } from 'lucide-react'
 import {
   Accion,
   Aviso,
@@ -35,18 +35,25 @@ import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
 import { ModalCampo, ModalContacto, ModalRazonSocial } from './modales'
 import Enlaces from './Enlaces'
-import type { CampoEmpresa, Consulta, Contacto, Empresa, RazonSocial, Relacion } from '../../types/indice'
+import type { CampoEmpresa, Consulta, Contacto, Empresa, RazonSocial } from '../../types/indice'
 
-const RELACIONES: Relacion[] = ['Cliente', 'Proveedor', 'Servicio', 'Empleado', 'Agenda general']
 
 /**
  * La ficha de la empresa: es la pantalla que reemplaza a la hoja del índice.
- * Se lee de arriba hacia abajo — datos, contactos, a quién se le factura,
- * condiciones, la observación general, y el historial separado en tres.
+ *
+ * Arriba los datos, la web y la observación general, que se miran siempre.
+ * Abajo una solapa por sección —contactos, a quién se le factura,
+ * condiciones, cotizaciones, pedidos, observaciones— y se ve una sola.
  */
 export default function FichaEmpresa() {
   const { id } = useParams<{ id: string }>()
   const { datos: empresa, cargando, error, recargar } = useCarga(() => traerEmpresa(id!), [id])
+
+  // La solapa abierta va en el #: "/empresas/12#cotizaciones" desde la lista
+  // abre directo ahi, y volver atras vuelve a la misma.
+  const { hash } = useLocation()
+  const navigate = useNavigate()
+  const solapa = (SOLAPAS.find((s) => `#${s}` === hash) ?? 'cotizaciones') as Solapa
 
   // Modo modificar de los datos de la ficha.
   const [editando, setEditando] = useState(false)
@@ -160,7 +167,6 @@ export default function FichaEmpresa() {
             {r}
           </Chip>
         ))}
-        bajada="Toda la relación con esta empresa: sus datos, sus contactos, a quién se le factura y todo lo que se le cotizó."
         acciones={
           <>
             <Link to={`/empresas/${empresa.id}/cambios`}>
@@ -209,58 +215,61 @@ export default function FichaEmpresa() {
           <EmpresaForm valores={valores} onChange={setValores} />
         </Card>
       ) : (
-        <DatosDeLaEmpresa empresa={empresa} activas={activas} />
+        <DatosDeLaEmpresa empresa={empresa} onModificar={abrirEdicion}>
+          <Enlaces
+            empresa={empresa}
+            onCambio={(m) => {
+              setAviso(m)
+              recargar()
+            }}
+          />
+        </DatosDeLaEmpresa>
       )}
 
-      <IndiceDeLaFicha empresa={empresa} />
-
-      <Enlaces
+      <Solapas
         empresa={empresa}
-        onCambio={(m) => {
-          setAviso(m)
-          recargar()
-        }}
+        abierta={solapa}
+        onAbrir={(s) => navigate({ hash: s }, { replace: true })}
       />
 
-      <Contactos
+      {solapa === 'contactos' && <Contactos
         contactos={empresa.contactos}
         onAgregar={() => setContactoEdit(null)}
         onModificar={(c) => setContactoEdit(c)}
         onArchivar={(c) => setAArchivar({ tipo: 'contacto', id: c.id, nombre: c.nombre })}
-      />
-      <SeFacturaA
+      />}
+      {solapa === 'facturacion' && <SeFacturaA
         empresa={empresa}
         onAgregar={() => setRazonEdit(null)}
         onModificar={(r) => setRazonEdit(r)}
         onArchivar={(r) => setAArchivar({ tipo: 'razon', id: r.id, nombre: r.razon_social })}
-      />
-      <CondicionesDeTrabajo
+      />}
+      {solapa === 'condiciones' && <CondicionesDeTrabajo
         empresa={empresa}
         onAgregar={() => setCampoEdit(null)}
         onModificar={(c) => setCampoEdit(c)}
         onQuitar={(c) => setAArchivar({ tipo: 'campo', id: c.id, nombre: c.titulo })}
-      />
-      <ObservacionGeneral empresa={empresa} onModificar={abrirEdicion} />
+      />}
 
-      <Historial
+      {solapa === 'cotizaciones' && <Historial
         id="cotizaciones"
         titulo="Cotizaciones"
         consultas={empresa.cotizaciones}
         ayuda="Todo lo que se le cotizó a esta empresa. Cada una guarda su moneda, el tipo de cambio, quién la hizo y su observación interna."
         accion={{ texto: '+ Agregar cotizacion', to: `/empresas/${empresa.id}/agregar?tipo=Cotizacion` }}
         empresaId={empresa.id}
-      />
+      />}
 
-      <Historial
+      {solapa === 'pedidos' && <Historial
         id="pedidos"
         titulo="Pedidos"
         consultas={empresa.pedidos}
         ayuda="Ventas de material que ya está en stock. Se descuentan del depósito al confirmarse."
         accion={{ texto: '+ Agregar pedido', to: `/empresas/${empresa.id}/agregar?tipo=Pedido` }}
         empresaId={empresa.id}
-      />
+      />}
 
-      <Historial
+      {solapa === 'observaciones' && <Historial
         id="observaciones"
         titulo="Observaciones"
         consultas={empresa.observaciones_empresa}
@@ -268,7 +277,7 @@ export default function FichaEmpresa() {
         accion={{ texto: '+ Agregar observacion', to: `/empresas/${empresa.id}/agregar?tipo=Observacion` }}
         empresaId={empresa.id}
         sinImprimir
-      />
+      />}
 
       <ModalContacto
         abierto={contactoEdit !== undefined}
@@ -324,127 +333,115 @@ export default function FichaEmpresa() {
 
 /* ---------------------------------------------------------------- los datos */
 
+const SOLAPAS = ['contactos', 'facturacion', 'condiciones', 'cotizaciones', 'pedidos', 'observaciones'] as const
+type Solapa = (typeof SOLAPAS)[number]
+
 /**
- * Saltar a una sección sin recorrer la ficha entera.
+ * Una solapa por sección, y se ve una sola.
  *
- * La ficha son ocho tarjetas apiladas y lo que casi siempre se busca —las
- * cotizaciones— está al final: había que pasar de largo los contactos, las
- * razones sociales y las condiciones para llegar. Queda pegado arriba, así que
- * también sirve para volver.
+ * Eran ocho tarjetas apiladas, la mayoría vacías, y lo que casi siempre se
+ * busca —las cotizaciones— quedaba al final: "la saturacion es esta
+ * pantalla, hacen mucho scroll". Cada solapa dice cuántos tiene, así se sabe
+ * qué hay sin abrirla.
  */
-function IndiceDeLaFicha({ empresa }: { empresa: Empresa }) {
-  const secciones = [
-    { a: 'contactos', texto: 'Contactos', n: empresa.contactos?.length ?? 0 },
-    { a: 'facturacion', texto: 'Se factura a', n: empresa.razones_sociales?.length ?? 0 },
-    { a: 'cotizaciones', texto: 'Cotizaciones', n: empresa.cotizaciones?.length ?? 0 },
-    { a: 'pedidos', texto: 'Pedidos', n: empresa.pedidos?.length ?? 0 },
-    { a: 'observaciones', texto: 'Observaciones', n: empresa.observaciones_empresa?.length ?? 0 },
+function Solapas({
+  empresa,
+  abierta,
+  onAbrir,
+}: {
+  empresa: Empresa
+  abierta: Solapa
+  onAbrir: (s: Solapa) => void
+}) {
+  const solapas: { s: Solapa; texto: string; n: number }[] = [
+    { s: 'contactos', texto: 'Contactos', n: empresa.contactos?.length ?? 0 },
+    { s: 'facturacion', texto: 'Se factura a', n: empresa.razones_sociales?.length ?? 0 },
+    { s: 'condiciones', texto: 'Condiciones', n: empresa.campos?.length ?? 0 },
+    { s: 'cotizaciones', texto: 'Cotizaciones', n: empresa.cotizaciones?.length ?? 0 },
+    { s: 'pedidos', texto: 'Pedidos', n: empresa.pedidos?.length ?? 0 },
+    { s: 'observaciones', texto: 'Observaciones', n: empresa.observaciones_empresa?.length ?? 0 },
   ]
 
   return (
-    <div className="sticky top-2 z-30 flex flex-wrap items-center gap-1.5 rounded-[10px] border border-line bg-white/95 px-2.5 py-2 shadow-sm backdrop-blur">
-      {secciones.map(({ a, texto, n }) => (
-        <a
-          key={a}
-          href={`#${a}`}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium text-slate-600 transition-colors hover:bg-app hover:text-ink"
-        >
-          {texto}
-          <span
-            className={`rounded-full px-1.5 py-0.5 text-[10.5px] font-bold tabular-nums ${
-              n > 0 ? 'bg-brand-50 text-brand-600' : 'bg-app text-faint'
+    <div
+      role="tablist"
+      className="sticky top-2 z-30 -mb-2 flex flex-wrap items-center gap-1 rounded-[10px] border border-line bg-white/95 p-1.5 shadow-sm backdrop-blur"
+    >
+      {solapas.map(({ s, texto, n }) => {
+        const activa = s === abierta
+
+        return (
+          <button
+            key={s}
+            type="button"
+            role="tab"
+            aria-selected={activa}
+            onClick={() => onAbrir(s)}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] transition-colors ${
+              activa ? 'bg-brand text-white font-semibold' : 'font-medium text-slate-600 hover:bg-app hover:text-ink'
             }`}
           >
-            {n}
-          </span>
-        </a>
-      ))}
+            {texto}
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10.5px] font-bold tabular-nums ${
+                activa ? 'bg-white/20 text-white' : n > 0 ? 'bg-brand-50 text-brand-600' : 'bg-app text-faint'
+              }`}
+            >
+              {n}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
 
-function DatosDeLaEmpresa({ empresa, activas }: { empresa: Empresa; activas: Relacion[] }) {
+/**
+ * Los datos, la web y la observación general en una sola tarjeta.
+ *
+ * El nombre y la relación ya están en el título; el aviso de "puede ser
+ * cliente y proveedor" se ve al modificar, que es cuando sirve.
+ */
+function DatosDeLaEmpresa({
+  empresa,
+  onModificar,
+  children,
+}: {
+  empresa: Empresa
+  onModificar: () => void
+  children: React.ReactNode
+}) {
   return (
-    <Card className="flex flex-col gap-3.5 p-[22px]">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <h2 className="text-[15px] font-semibold text-ink">Datos de la empresa</h2>
-        <span className="ml-auto text-[11px] text-faint">
-          Los mismos campos del índice, sin los que ya no se usan
-        </span>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr]">
-        <Campo etiqueta="EMPRESA" valor={<span className="font-semibold">{empresa.nombre}</span>} />
+    <Card className="flex flex-col gap-3 p-[18px]">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Campo etiqueta="Rubro" valor={empresa.rubro} />
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Campo etiqueta="CUIT" valor={empresa.cuit} />
         <Campo etiqueta="Codigo ISIS" valor={empresa.codigo_isis} />
         <Campo etiqueta="ID del indice" valor={empresa.codigo_indice} />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Campo etiqueta="Direccion" valor={empresa.direccion} className="lg:col-span-2" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr]">
+        <Campo etiqueta="Direccion" valor={empresa.direccion} />
         <Campo etiqueta="Localidad" valor={empresa.localidad} />
         <Campo etiqueta="Provincia" valor={empresa.provincia} />
-        <Campo
-          etiqueta="Pais"
-          valor={
-            empresa.mapa ? (
-              <a
-                href={empresa.mapa}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-brand-600 hover:underline"
-              >
-                {empresa.pais ?? 'Ver en el mapa'}
-                <MapPin size={12} strokeWidth={2.2} />
-              </a>
-            ) : (
-              empresa.pais
-            )
-          }
-        />
+        <Campo etiqueta="Pais" valor={empresa.pais} />
       </div>
 
-      {/* La relación admite varias a la vez. */}
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[10.5px] font-medium text-slate-500">Relacion</span>
-          <span className="text-[10px] text-faint">se puede marcar mas de una</span>
-        </div>
-        <div className="flex flex-wrap gap-2.5">
-          {RELACIONES.map((r) => {
-            const marcada = activas.includes(r)
+      {children}
 
-            return (
-              <span
-                key={r}
-                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[12.5px] ${
-                  marcada
-                    ? 'border-brand-200 bg-brand-50 font-semibold text-brand-600'
-                    : 'border-line-strong bg-white font-medium text-muted'
-                }`}
-              >
-                <span
-                  className={`grid h-4 w-4 place-items-center rounded-[5px] border ${
-                    marcada ? 'border-brand bg-brand text-white' : 'border-slate-300 bg-white'
-                  }`}
-                >
-                  {marcada && <Check size={10} strokeWidth={3.5} />}
-                </span>
-                {r}
-              </span>
-            )
-          })}
-        </div>
+      {/* Lo que hay que saber antes de atenderla: siempre a la vista. */}
+      <div className="flex flex-col gap-1 rounded-[9px] border border-[#e4dcf7] bg-[#fbfafe] px-3.5 py-2.5 sm:flex-row sm:items-start sm:gap-3">
+        <span className="shrink-0 pt-px text-[10.5px] font-semibold text-[#6d28d9]">Observacion general</span>
+        <p
+          className={`min-w-0 flex-1 text-[12.5px] leading-relaxed ${
+            empresa.observacion_general ? 'text-slate-700' : 'text-faint'
+          }`}
+        >
+          {empresa.observacion_general ||
+            'Sin observación. Acá va lo que hay que saber de esta empresa antes de atenderla.'}
+        </p>
+        <Accion onClick={onModificar}>Modificar</Accion>
       </div>
-
-      <Aviso tono="info">
-        Una misma empresa puede ser cliente y proveedor a la vez. Cuando no es ninguna de las
-        comerciales —la usan sólo como agenda— va marcada como Agenda general.
-      </Aviso>
     </Card>
   )
 }
@@ -712,39 +709,6 @@ function CondicionesDeTrabajo({
           Se escribe el título y abajo el dato. Los que no se usan no aparecen.
         </span>
       </div>
-    </Card>
-  )
-}
-
-/* --------------------------------------------------- observación general */
-
-function ObservacionGeneral({ empresa, onModificar }: { empresa: Empresa; onModificar: () => void }) {
-  return (
-    <Card className="flex flex-col gap-3 p-[22px]">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <h2 className="text-[15px] font-semibold text-ink">Observacion general de la empresa</h2>
-        <Chip tono="violeta">siempre visible</Chip>
-        <div className="ml-auto">
-          <Accion onClick={onModificar}>Modificar</Accion>
-        </div>
-      </div>
-
-      <div className="rounded-[9px] border border-[#e4dcf7] bg-[#fbfafe] px-[15px] py-3.5">
-        {empresa.observacion_general ? (
-          <p className="text-[12.5px] leading-relaxed text-slate-700">
-            {empresa.observacion_general}
-          </p>
-        ) : (
-          <p className="text-[12.5px] text-faint">
-            Sin observación. Acá va lo que hay que saber de esta empresa antes de atenderla.
-          </p>
-        )}
-      </div>
-
-      <p className="text-[11px] text-faint">
-        Ésta es la observación de la empresa. Además, cada cotización o pedido tiene la suya propia,
-        que se escribe al abrirla.
-      </p>
     </Card>
   )
 }
