@@ -79,6 +79,25 @@ class FirmaDeMailTest extends TestCase
         $this->assertSame($santaRosa->id, $d['localidad_id']);
     }
 
+    /**
+     * Sin "Argentina" en la firma, el pais sale de la provincia.
+     *
+     * Casi nadie lo escribe y quedaba vacio. Y si solo dice la ciudad, la
+     * ciudad dice su provincia.
+     */
+    public function test_el_pais_sale_de_la_provincia_y_la_provincia_de_la_ciudad(): void
+    {
+        $argentina = Pais::create(['nombre' => 'Argentina']);
+        $santaFe = Provincia::create(['nombre' => 'Santa Fe', 'pais_id' => $argentina->id]);
+        Localidad::create(['nombre' => 'Rosario', 'provincia_id' => $santaFe->id]);
+
+        $d = $this->leer("Pedro Gomez\nCompras\nAv. Pellegrini 1234 - Rosario\nTel 0341 456-7890");
+
+        $this->assertSame($santaFe->id, $d['provincia_id']);
+        $this->assertSame($argentina->id, $d['pais_id']);
+        $this->assertSame('Av. Pellegrini 1234 - Rosario', $d['direccion']);
+    }
+
     /** Una localidad que no está cargada queda vacía: se elige a mano. */
     public function test_lo_que_no_esta_en_el_catalogo_queda_vacio(): void
     {

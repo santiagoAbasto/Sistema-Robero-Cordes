@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Globe, MessageCircle, MapPin, Link2, ExternalLink, Trash2, Plus } from 'lucide-react'
-import { Accion, Aviso, Card, CardHeader, Chip, NotaPie } from '../../components/ui'
+import { Accion, Aviso, Chip } from '../../components/ui'
 import { Modal, Texto, Lista } from '../../components/ui/form'
 import { borrarEnlace, guardarEnlace, mensajeDeError, useCatalogos } from '../../lib/indice'
 import type { Empresa, Enlace } from '../../types/indice'
@@ -80,100 +80,66 @@ export default function Enlaces({
 }) {
   const [editando, setEditando] = useState<Enlace | null | undefined>(undefined)
 
+  /*
+    Un renglon dentro de los datos, no una tarjeta propia.
+
+    Era una tarjeta con titulo, aclaracion y pie para dos o tres enlaces: la
+    ficha entera hacia mucho scroll ("la saturacion es esta pantalla").
+  */
   return (
-    <Card className="overflow-hidden">
-      <CardHeader
-        titulo="Web y redes"
-        cuenta={empresa.enlaces.length}
-        acciones={
-          <>
-            <span className="text-[11px] text-faint">Se aprieta y abre la pagina</span>
-            <Accion onClick={() => setEditando(null)}>
-              <span className="inline-flex items-center gap-1">
-                <Plus size={12} strokeWidth={2.6} />
-                Agregar enlace
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="mr-1 text-[10.5px] font-medium text-slate-500">Web y redes</span>
+
+      {/* El mapa se arma con la dirección: no hay que pegar nada. */}
+      {empresa.mapa && (
+        <a
+          href={empresa.mapa}
+          target="_blank"
+          rel="noreferrer"
+          title="Se arma con la direccion de la ficha"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-app px-2.5 py-1 text-[12px] font-medium text-ink transition-colors hover:border-brand-200 hover:bg-white"
+        >
+          <MapPin size={13} strokeWidth={2} className="text-warning-ink" />
+          Mapa
+          <ExternalLink size={11} strokeWidth={2} className="text-faint" />
+        </a>
+      )}
+
+      {empresa.enlaces.map((e) => {
+        const { icono: Icono, clase } = ICONOS[e.tipo] ?? ICONOS.Otro
+
+        return (
+          <span key={e.id} className="group inline-flex items-center rounded-lg border border-line bg-app transition-colors hover:border-brand-200 hover:bg-white">
+            <a
+              href={e.url_completa}
+              target="_blank"
+              rel="noreferrer"
+              title={e.url}
+              className="inline-flex items-center gap-1.5 py-1 pl-1.5 pr-2 text-[12px] font-medium text-ink"
+            >
+              <span className={`grid h-5 w-5 place-items-center rounded-md ${clase}`}>
+                <Icono size={12} />
               </span>
-            </Accion>
-          </>
-        }
-      />
+              {e.etiqueta || e.tipo}
+            </a>
+            <button
+              type="button"
+              aria-label={`Modificar ${e.tipo}`}
+              onClick={() => setEditando(e)}
+              className="hidden pr-2 text-faint hover:text-brand-600 group-hover:block"
+            >
+              <Link2 size={12} strokeWidth={2} />
+            </button>
+          </span>
+        )
+      })}
 
-      <div className="flex flex-wrap gap-2.5 px-[22px] pb-4">
-        {/* El mapa se arma con la dirección: no hay que pegar nada. */}
-        {empresa.mapa && (
-          <a
-            href={empresa.mapa}
-            target="_blank"
-            rel="noreferrer"
-            className="group inline-flex items-center gap-2.5 rounded-[10px] border border-line bg-app px-3 py-2 transition-colors hover:border-brand-200 hover:bg-white"
-          >
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-warning-bg text-warning-ink">
-              <MapPin size={15} strokeWidth={2} />
-            </span>
-            <span className="flex flex-col">
-              <span className="text-[12px] font-semibold text-ink">Ver en el mapa</span>
-              <span className="text-[10px] text-faint">Se arma con la direccion</span>
-            </span>
-            <ExternalLink
-              size={13}
-              strokeWidth={2}
-              className="ml-1 text-faint transition-colors group-hover:text-brand-600"
-            />
-          </a>
-        )}
-
-        {empresa.enlaces.map((e) => {
-          const { icono: Icono, clase } = ICONOS[e.tipo] ?? ICONOS.Otro
-
-          return (
-            <span key={e.id} className="group relative inline-flex">
-              <a
-                href={e.url_completa}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2.5 rounded-[10px] border border-line bg-app py-2 pl-3 pr-9 transition-colors hover:border-brand-200 hover:bg-white"
-              >
-                <span className={`grid h-7 w-7 place-items-center rounded-lg ${clase}`}>
-                  <Icono size={15} />
-                </span>
-                <span className="flex flex-col">
-                  <span className="text-[12px] font-semibold text-ink">
-                    {e.etiqueta || e.tipo}
-                  </span>
-                  <span className="max-w-[220px] truncate text-[10px] text-faint">{e.url}</span>
-                </span>
-                <ExternalLink
-                  size={13}
-                  strokeWidth={2}
-                  className="ml-1 text-faint transition-colors group-hover:text-brand-600"
-                />
-              </a>
-
-              <span className="absolute right-1.5 top-1.5 hidden gap-1 group-hover:flex">
-                <button
-                  type="button"
-                  aria-label={`Modificar ${e.tipo}`}
-                  onClick={() => setEditando(e)}
-                  className="rounded p-0.5 text-faint hover:text-brand-600"
-                >
-                  <Link2 size={12} strokeWidth={2} />
-                </button>
-              </span>
-            </span>
-          )
-        })}
-
-        {empresa.enlaces.length === 0 && !empresa.mapa && (
-          <p className="py-3 text-[12.5px] text-muted">
-            Todavía no hay enlaces. Cargá la web, el Instagram o lo que usen.
-          </p>
-        )}
-      </div>
-
-      <NotaPie>
-        Los enlaces se abren en otra pestaña. El del mapa se arma solo con la dirección cargada
-        arriba: si se corrige la dirección, el mapa se corrige con ella.
-      </NotaPie>
+      <Accion onClick={() => setEditando(null)}>
+        <span className="inline-flex items-center gap-1">
+          <Plus size={12} strokeWidth={2.6} />
+          Agregar enlace
+        </span>
+      </Accion>
 
       <ModalEnlace
         abierto={editando !== undefined}
@@ -182,7 +148,7 @@ export default function Enlaces({
         onCerrar={() => setEditando(undefined)}
         onGuardado={onCambio}
       />
-    </Card>
+    </div>
   )
 }
 
