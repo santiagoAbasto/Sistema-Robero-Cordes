@@ -11,8 +11,25 @@ use Illuminate\Validation\Rule;
 /** Qué fichas ve y qué puede hacer cada usuario. */
 class PermisoController extends Controller
 {
-    public function index()
+    /**
+     * Los permisos los toca un administrador.
+     *
+     * Cualquiera que entraba podia cambiar los de los demas, y tildarse a si
+     * mismo "Modifica".
+     */
+    private function soloAdministradores(Request $request): void
     {
+        abort_unless(
+            $request->user()?->role === 'Administrador',
+            403,
+            'Solo un administrador puede ver y cambiar los permisos.',
+        );
+    }
+
+    public function index(Request $request)
+    {
+        $this->soloAdministradores($request);
+
         $usuarios = User::with('permiso')->where('activo', true)->orderBy('name')->get();
 
         return [
@@ -41,6 +58,8 @@ class PermisoController extends Controller
 
     public function actualizar(Request $request, User $usuario)
     {
+        $this->soloAdministradores($request);
+
         // Los dueños ven todo siempre, para que nunca quede una ficha que
         // nadie pueda abrir.
         if ($usuario->role === 'Administrador') {
@@ -67,6 +86,8 @@ class PermisoController extends Controller
     /** Reservar o liberar una ficha puntual. */
     public function visibilidad(Request $request, Empresa $empresa)
     {
+        $this->soloAdministradores($request);
+
         $datos = $request->validate([
             'visible_para' => ['required', Rule::in(['Todos', 'Solo los dueños', 'Un grupo'])],
         ]);

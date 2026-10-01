@@ -165,7 +165,7 @@ class EmpresaEscrituraController extends Controller
      *
      * "Si la empresa existe pero solo queremos agregar un nuevo contacto" y
      * "solo guardo datos nuevos, no repetidos": pegar dos veces la firma de
-     * Juan Saccomanno no puede dejar dos Juan Saccomanno con el mismo celular.
+     * Pedro Quiroga no puede dejar dos Pedro Quiroga con el mismo celular.
      * Si ya hay alguien con ese nombre, se le suman los telefonos y mails que
      * no tenia y se completa lo que estaba vacio. Lo escrito no se pisa.
      *
@@ -219,8 +219,8 @@ class EmpresaEscrituraController extends Controller
     /**
      * El contacto activo de la empresa con ese mismo nombre, si hay.
      *
-     * Sin mayusculas, acentos ni espacios de mas: "Juan J. Saccomanno" y
-     * "juan j.  saccomanno" son la misma persona. Nombres distintos no se
+     * Sin mayusculas, acentos ni espacios de mas: "Pedro A. Quiroga" y
+     * "pedro a.  quiroga" son la misma persona. Nombres distintos no se
      * juntan aunque se parezcan: dos Juan en la misma empresa pasa.
      */
     private function mismaPersona(Empresa $empresa, string $nombre): ?Contacto
@@ -236,8 +236,8 @@ class EmpresaEscrituraController extends Controller
     /**
      * Le suma los medios que no tenia. Devuelve cuantos sumo.
      *
-     * El mismo numero escrito distinto es el mismo: "(011) 4427-9394",
-     * "+54 11 4427-9394" y "1144279394" no se repiten.
+     * El mismo numero escrito distinto es el mismo: "(011) 4812-3365",
+     * "+54 11 4812-3365" y "1148123365" no se repiten.
      */
     private function sumarMedios(Contacto $contacto, array $medios): int
     {

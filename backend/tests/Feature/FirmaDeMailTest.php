@@ -22,9 +22,9 @@ class FirmaDeMailTest extends TestCase
 
     /** El mail que mandó CORDES en su repaso, tal cual. */
     private const MAIL = <<<'TEXTO'
-        From: Gonzalo Sack - Apex Metalurgica <gsack@apex.com.ar>
+        From: Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.com.ar>
         Sent: Friday, September 25, 2026 10:32 AM
-        To: Roberto Cordes <roberto.cordes@cordes.ar>; Marcos Sebastián Fiorucci <mfiorucci@apex.com.ar>
+        To: Roberto Cordes <roberto.cordes@cordes.ar>; Lucía Benítez <lbenitez@apex.com.ar>
         Cc: ventas@cordes.ar
         Subject: RE: Nuevo Pedido de Cotización - AISI 310S (22/9)
 
@@ -32,9 +32,9 @@ class FirmaDeMailTest extends TestCase
 
         Vamos por la opción de 2 chapas 10x1500x3000 Acero 310S chino
 
-        Gonzalo Sack
+        Pablo Ferreyra
         Supervisor de Mantenimiento
-        Cel: (2954) 15-584584
+        Cel: (2954) 15-412233
 
         Parque Industrial, Calle 9 esq. 10 | CP 6300
         Santa Rosa, La Pampa, Argentina
@@ -51,10 +51,10 @@ class FirmaDeMailTest extends TestCase
         $d = $this->leer(self::MAIL);
 
         $this->assertSame('Apex Metalurgica', $d['empresa']);
-        $this->assertSame('Gonzalo Sack', $d['contacto']);
+        $this->assertSame('Pablo Ferreyra', $d['contacto']);
         $this->assertSame('Supervisor de Mantenimiento', $d['cargo']);
-        $this->assertSame('gsack@apex.com.ar', $d['mail']);
-        $this->assertSame('(2954) 15-584584', $d['telefono']);
+        $this->assertSame('pferreyra@apex.com.ar', $d['mail']);
+        $this->assertSame('(2954) 15-412233', $d['telefono']);
         $this->assertSame('www.apex.com.ar', $d['web']);
         $this->assertSame('Parque Industrial, Calle 9 esq. 10', $d['direccion']);
         $this->assertSame('6300', $d['codigo_postal']);
@@ -146,14 +146,14 @@ class FirmaDeMailTest extends TestCase
      * de la web traen TABs: son las columnas aplanadas al copiar y pegar.
      */
 
-    private const SULFOQUIMICA = "Juan J. Saccomanno\npanol@sulfoquimica.com.ar\n                      \n"
-        ."Sulfoquimica S.A.\nPanamá 8051\nMartin Coronado C.P. (1682)\nProv. Buenos Aires - Argentina\nCel   1131061795";
+    private const SULFOQUIMICA = "Pedro A. Quiroga\ndeposito@sulfoquimica.com.ar\n                      \n"
+        ."Sulfoquimica S.A.\nPanamá 8051\nMartin Coronado C.P. (1682)\nProv. Buenos Aires - Argentina\nCel   1145672389";
 
-    private const FICHA_WEB = "DATOS DE CONTACTO\nNOMBRE\nCristian Obon\tEMAIL\ncobon@implantestraumatologicos.com\n"
-        ."PAÍS\nArgentina\tEMPRESA\nDGS ANTIPINA\nTELÉFONO\n011 4427-9394\tORIGEN\nCONSULTA DESDE LA WEB";
+    private const FICHA_WEB = "DATOS DE CONTACTO\nNOMBRE\nDiego Arce\tEMAIL\ndarce@implantestraumatologicos.com\n"
+        ."PAÍS\nArgentina\tEMPRESA\nDGS ANTIPINA\nTELÉFONO\n011 4812-3365\tORIGEN\nCONSULTA DESDE LA WEB";
 
-    private const FICHA_WEB_REORDENADA = "EMPRESA DGS ANTIPINA\nDATOS DE CONTACTO\nNOMBRE Cristian Obon\t\n"
-        ."EMAIL cobon@implantestraumatologicos.com\n\nPAÍS Argentina\t\nTELÉFONO 011 4427-9394";
+    private const FICHA_WEB_REORDENADA = "EMPRESA DGS ANTIPINA\nDATOS DE CONTACTO\nNOMBRE Diego Arce\t\n"
+        ."EMAIL darce@implantestraumatologicos.com\n\nPAÍS Argentina\t\nTELÉFONO 011 4812-3365";
 
     /**
      * "En este ejemplo NO agrega dirección".
@@ -165,11 +165,11 @@ class FirmaDeMailTest extends TestCase
     {
         $d = $this->leer(self::SULFOQUIMICA);
 
-        $this->assertSame('Juan J. Saccomanno', $d['contacto']);
+        $this->assertSame('Pedro A. Quiroga', $d['contacto']);
         $this->assertSame('Sulfoquimica S.A.', $d['empresa'], 'el nombre legal, no el del dominio');
         $this->assertSame('Panamá 8051', $d['direccion']);
         $this->assertSame('1682', $d['codigo_postal']);
-        $this->assertSame('1131061795', $d['telefono']);
+        $this->assertSame('1145672389', $d['telefono']);
     }
 
     /**
@@ -206,10 +206,10 @@ class FirmaDeMailTest extends TestCase
             $d = $this->leer($ficha);
 
             $this->assertSame('DGS ANTIPINA', $d['empresa']);
-            $this->assertSame('Cristian Obon', $d['contacto']);
+            $this->assertSame('Diego Arce', $d['contacto']);
             $this->assertNull($d['cargo'], 'NOMBRE es una etiqueta, no un cargo');
-            $this->assertSame('cobon@implantestraumatologicos.com', $d['mail']);
-            $this->assertSame('011 4427-9394', $d['telefono']);
+            $this->assertSame('darce@implantestraumatologicos.com', $d['mail']);
+            $this->assertSame('011 4812-3365', $d['telefono']);
             $this->assertSame($argentina->id, $d['pais_id']);
         }
     }

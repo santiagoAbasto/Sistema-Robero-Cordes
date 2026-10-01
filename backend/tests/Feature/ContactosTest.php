@@ -66,18 +66,18 @@ class ContactosTest extends TestCase
         $r = $this->postJson('/api/empresas', [
             'nombre' => 'Apex Metalurgica',
             'contacto' => [
-                'nombre' => 'Gonzalo Sack',
+                'nombre' => 'Pablo Ferreyra',
                 'cargo' => 'Supervisor de Mantenimiento',
                 'medios' => [
-                    ['tipo_medio_id' => $this->tipo('Celular'), 'valor' => '(2954) 15-584584'],
-                    ['tipo_medio_id' => $this->tipo('Mail'), 'valor' => 'gsack@apex.com.ar'],
+                    ['tipo_medio_id' => $this->tipo('Celular'), 'valor' => '(2954) 15-412233'],
+                    ['tipo_medio_id' => $this->tipo('Mail'), 'valor' => 'pferreyra@apex.com.ar'],
                 ],
             ],
         ])->assertCreated();
 
         $contacto = Contacto::where('empresa_id', $r->json('data.id'))->with('medios.tipoMedio')->sole();
 
-        $this->assertSame('Gonzalo Sack', $contacto->nombre);
+        $this->assertSame('Pablo Ferreyra', $contacto->nombre);
         $this->assertSame('Supervisor de Mantenimiento', $contacto->cargo);
         $this->assertTrue((bool) $contacto->principal);
         $this->assertSame(
@@ -104,16 +104,16 @@ class ContactosTest extends TestCase
     public function test_la_misma_persona_no_se_repite_y_suma_solo_lo_nuevo(): void
     {
         $this->alta([
-            'nombre' => 'Juan J. Saccomanno',
-            'medios' => [['tipo_medio_id' => $this->tipo('Celular'), 'valor' => '11 3106-1795']],
+            'nombre' => 'Pedro A. Quiroga',
+            'medios' => [['tipo_medio_id' => $this->tipo('Celular'), 'valor' => '11 4567-2389']],
         ])->assertOk();
 
         $r = $this->alta([
-            'nombre' => 'juan j.  saccomanno',
+            'nombre' => 'pedro a.  quiroga',
             'cargo' => 'Pañol',
             'medios' => [
-                ['tipo_medio_id' => $this->tipo('Celular'), 'valor' => '+54 9 11 3106 1795'],
-                ['tipo_medio_id' => $this->tipo('Mail'), 'valor' => 'panol@sulfoquimica.com.ar'],
+                ['tipo_medio_id' => $this->tipo('Celular'), 'valor' => '+54 9 11 4567 2389'],
+                ['tipo_medio_id' => $this->tipo('Mail'), 'valor' => 'deposito@sulfoquimica.com.ar'],
             ],
         ])->assertOk();
 
@@ -129,8 +129,8 @@ class ContactosTest extends TestCase
     /** Lo que ya tenia escrito no se pisa. */
     public function test_lo_escrito_no_se_pisa_al_sumar(): void
     {
-        $this->alta(['nombre' => 'Juan Saccomanno', 'cargo' => 'Jefe de Pañol', 'medios' => []]);
-        $this->alta(['nombre' => 'Juan Saccomanno', 'cargo' => 'Otra cosa', 'medios' => []]);
+        $this->alta(['nombre' => 'Pedro Quiroga', 'cargo' => 'Jefe de Pañol', 'medios' => []]);
+        $this->alta(['nombre' => 'Pedro Quiroga', 'cargo' => 'Otra cosa', 'medios' => []]);
 
         $this->assertSame('Jefe de Pañol', Contacto::where('empresa_id', $this->empresa->id)->sole()->cargo);
     }
@@ -138,7 +138,7 @@ class ContactosTest extends TestCase
     /** Dos personas distintas siguen siendo dos. */
     public function test_nombres_distintos_no_se_juntan(): void
     {
-        $this->alta(['nombre' => 'Juan Saccomanno', 'medios' => []]);
+        $this->alta(['nombre' => 'Pedro Quiroga', 'medios' => []]);
         $this->alta(['nombre' => 'Juan Perez', 'medios' => []]);
 
         $this->assertSame(2, Contacto::where('empresa_id', $this->empresa->id)->count());
@@ -193,15 +193,15 @@ class ContactosTest extends TestCase
     {
         $firma = new FirmaDeMail;
 
-        $this->assertSame('Celular', $firma->leer("Juan J. Saccomanno\nCel   1131061795")['tipo_telefono']);
-        $this->assertSame('Celular', $firma->leer("Gonzalo Sack\n(2954) 15-584584")['tipo_telefono']);
-        $this->assertSame('Telefono', $firma->leer("EMPRESA DGS ANTIPINA\nNOMBRE Cristian Obon\nTELÉFONO 011 4427-9394")['tipo_telefono']);
+        $this->assertSame('Celular', $firma->leer("Pedro A. Quiroga\nCel   1145672389")['tipo_telefono']);
+        $this->assertSame('Celular', $firma->leer("Pablo Ferreyra\n(2954) 15-412233")['tipo_telefono']);
+        $this->assertSame('Telefono', $firma->leer("EMPRESA DGS ANTIPINA\nNOMBRE Diego Arce\nTELÉFONO 011 4812-3365")['tipo_telefono']);
     }
 
     /** Leer una firma no cuenta el tipo de telefono como un dato mas. */
     public function test_el_tipo_de_telefono_no_suma_datos_reconocidos(): void
     {
-        $this->postJson('/api/empresas/leer-firma', ['texto' => "Juan Perez\nCel 1131061795"])
+        $this->postJson('/api/empresas/leer-firma', ['texto' => "Juan Perez\nCel 1145672389"])
             ->assertOk()
             ->assertJsonPath('mensaje', '2 datos reconocidos. Revisalos antes de guardar.');
     }

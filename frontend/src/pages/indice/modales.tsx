@@ -204,7 +204,7 @@ export function ModalContacto({
             filas={3}
             value={pegado}
             onChange={(e) => setPegado(e.target.value)}
-            placeholder={'Juan J. Saccomanno\npanol@sulfoquimica.com.ar\nCel 1131061795'}
+            placeholder={'Pedro A. Quiroga\ndeposito@sulfoquimica.com.ar\nCel 1145672389'}
           />
           <div className="flex flex-wrap items-center gap-2.5">
             <Boton variante="suave" onClick={completarDesdeLoPegado} disabled={leyendo || !pegado.trim()}>

@@ -142,4 +142,68 @@ class UsuariosAbmTest extends TestCase
         $this->getJson('/api/usuarios')->assertForbidden();
         $this->postJson('/api/usuarios', $this->nuevo())->assertForbidden();
     }
+
+    /** "El usuario deja de entrar": la pantalla lo prometia y no pasaba. */
+    public function test_un_dado_de_baja_no_entra(): void
+    {
+        User::factory()->create([
+            'email' => 'baja@cordes.com',
+            'password' => Hash::make('una-clave-larga'),
+            'activo' => false,
+        ]);
+
+        $this->postJson('/api/login', ['email' => 'baja@cordes.com', 'password' => 'una-clave-larga'])
+            ->assertStatus(422)
+            ->assertJsonFragment(['email' => ['Este usuario esta dado de baja. Pedile a un administrador que lo vuelva a activar.']]);
+    }
+
+    /** La sesion que ya tenia abierta deja de valer en el momento de la baja. */
+    public function test_la_sesion_abierta_de_un_dado_de_baja_deja_de_valer(): void
+    {
+        $usuario = User::factory()->create(['activo' => true]);
+        $token = $usuario->createToken('cordes-spa')->plainTextToken;
+
+        $this->withToken($token)->getJson('/api/me')->assertOk();
+
+        $usuario->update(['activo' => false]);
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($token)->getJson('/api/me')->assertUnauthorized();
+    }
+
+    /** Modificar a alguien dado de baja no lo vuelve a activar sin avisar. */
+    public function test_modificar_no_reactiva(): void
+    {
+        $this->admin();
+        $baja = User::factory()->create(['email' => 'baja@cordes.com', 'role' => 'Vendedor', 'activo' => false]);
+
+        $this->putJson("/api/usuarios/{$baja->id}", [
+            'nombre' => 'Otro nombre', 'email' => 'baja@cordes.com', 'rol' => 'Vendedor',
+        ])->assertOk();
+
+        $this->assertFalse((bool) $baja->fresh()->activo);
+    }
+
+    /** Cambiarle el rol al unico administrador dejaria el sistema sin ninguno. */
+    public function test_no_deja_al_sistema_sin_administradores_cambiando_el_rol(): void
+    {
+        $admin = $this->admin();
+
+        $this->putJson("/api/usuarios/{$admin->id}", [
+            'nombre' => $admin->name, 'email' => $admin->email, 'rol' => 'Ventas',
+        ])->assertStatus(422);
+
+        $this->assertSame('Administrador', $admin->fresh()->role);
+    }
+
+    /** Los permisos los cambia un administrador, no cada uno los suyos. */
+    public function test_solo_un_administrador_toca_los_permisos(): void
+    {
+        $vendedor = User::factory()->create(['role' => 'Vendedor', 'activo' => true]);
+        Sanctum::actingAs($vendedor);
+
+        $this->getJson('/api/permisos')->assertForbidden();
+        $this->putJson("/api/permisos/{$vendedor->id}", ['ve_fichas' => 'Todas', 'puede_modificar' => true])
+            ->assertForbidden();
+    }
 }

@@ -81,12 +81,27 @@ class UsuarioController extends Controller
 
         $usuario = $usuario?->exists ? $usuario : new User;
 
+        // Modificar a alguien dado de baja lo dejaba activo sin avisar: la
+        // pantalla no manda "activo" y se tomaba como si.
+        $activo = $datos['activo'] ?? ($usuario->exists ? (bool) $usuario->activo : true);
+
+        // Sacarle el rol al ultimo administrador deja el sistema sin nadie que
+        // pueda volver a entrar a esta pantalla, igual que darlo de baja.
+        $dejaDeSerAdmin = $usuario->exists && $usuario->role === 'Administrador' && $usuario->activo
+            && ($datos['rol'] !== 'Administrador' || ! $activo);
+
+        if ($dejaDeSerAdmin && ! User::where('role', 'Administrador')->where('activo', true)->whereKeyNot($usuario->id)->exists()) {
+            return response()->json([
+                'message' => 'Es el unico administrador activo: el sistema quedaria sin nadie que pueda administrarlo.',
+            ], 422);
+        }
+
         $usuario->fill([
             'name' => $datos['nombre'],
             'iniciales' => $datos['iniciales'] ?? null,
             'email' => $datos['email'],
             'role' => $datos['rol'],
-            'activo' => $datos['activo'] ?? true,
+            'activo' => $activo,
         ]);
 
         if (filled($datos['clave'] ?? null)) {

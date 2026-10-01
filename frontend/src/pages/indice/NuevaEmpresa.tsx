@@ -175,7 +175,7 @@ export default function NuevaEmpresa() {
           filas={4}
           value={firma}
           onChange={(e) => setFirma(e.target.value)}
-          placeholder={'From: Gonzalo Sack - Apex Metalurgica <gsack@apex.com.ar>\n\nGonzalo Sack\nSupervisor de Mantenimiento\nCel: (2954) 15-584584\nParque Industrial, Calle 9 esq. 10 | CP 6300\nSanta Rosa, La Pampa, Argentina'}
+          placeholder={'From: Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.com.ar>\n\nPablo Ferreyra\nSupervisor de Mantenimiento\nCel: (2954) 15-412233\nParque Industrial, Calle 9 esq. 10 | CP 6300\nSanta Rosa, La Pampa, Argentina'}
         />
 
         <div className="flex flex-wrap items-center gap-3">
@@ -235,14 +235,14 @@ export default function NuevaEmpresa() {
               className="min-w-0 flex-1"
               value={contacto.telefono}
               onChange={(e) => setContacto({ ...contacto, telefono: e.target.value })}
-              placeholder="(2954) 15-584584"
+              placeholder="(2954) 15-412233"
             />
           </div>
           <Texto
             etiqueta="Mail"
             value={contacto.mail}
             onChange={(e) => setContacto({ ...contacto, mail: e.target.value })}
-            placeholder="gsack@apex.com.ar"
+            placeholder="pferreyra@apex.com.ar"
           />
         </div>
       </Card>
