@@ -82,6 +82,21 @@ import type { Catalogos, Consulta, ConsultaLinea, Empresa, Forma } from '../../t
    Carga y modificación de una cotización, un pedido o una observación.
 --------------------------------------------------------------------------- */
 
+/**
+ * Los pasos de un borrador, en el orden de la hoja: "lo que pidio el cliente
+ * debajo del encabezado y arriba de las lineas". La vista previa es el ultimo:
+ * es como va a salir.
+ */
+type Paso = 'encabezado' | 'pedido' | 'lineas' | 'condiciones' | 'hoja'
+
+const PASOS: { clave: Paso; titulo: string }[] = [
+  { clave: 'encabezado', titulo: 'Encabezado' },
+  { clave: 'pedido', titulo: 'Lo que pidió' },
+  { clave: 'lineas', titulo: 'Líneas' },
+  { clave: 'condiciones', titulo: 'Condiciones' },
+  { clave: 'hoja', titulo: 'Vista previa' },
+]
+
 interface LineaForm extends DatosLinea {
   clave: string
   /** Lo cargado en la calculadora de peso de esta linea. */
@@ -268,6 +283,26 @@ export default function ConsultaEditor() {
   useEffect(() => {
     setVista(emitida ? 'hoja' : 'datos')
   }, [existente?.id, emitida])
+
+  /*
+    Un borrador se carga paso a paso.
+
+    "Hay mucho scroll, o hacerlo paso a paso, y asi no saturar los datos". El
+    editor era una pantalla larga con todo a la vez. Ahora cada parte va en su
+    paso, y se puede saltar a cualquiera: no es un camino obligado, es no
+    tener todo encima al mismo tiempo.
+
+    Un borrador que se reabre ya tiene sus lineas: se sigue desde ahi, que es
+    lo que se estaba haciendo. Uno nuevo arranca por el encabezado.
+  */
+  const [paso, setPaso] = useState<Paso>('encabezado')
+  const barraDePasos = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (!existente) return
+
+    setPaso((existente.lineas?.length ?? 0) > 0 ? 'lineas' : 'encabezado')
+  }, [existente?.id])
 
   // Al abrir una cotización existente hay que traer la ficha completa de su
   // empresa: la consulta sólo trae el id y el nombre, y acá hacen falta los
@@ -746,6 +781,9 @@ export default function ConsultaEditor() {
       // Reemplaza las líneas vacías; conserva las que ya tenían datos.
       setLineas((prev) => [...prev.filter((l) => l.descripcion.trim() !== ''), ...nuevas])
 
+      // Lo que sigue es revisarlas y ponerles precio.
+      setPaso('lineas')
+
       // Se avisa si lo leyó la IA o las reglas, para que sepan qué revisar.
       const como = r.con_ia ? 'Lo leyó la IA' : 'Se leyó con las reglas'
       const pendientes =
@@ -798,6 +836,23 @@ export default function ConsultaEditor() {
   }
 
   const idFicha = empresaActual.id
+
+  // Un borrador se recorre por pasos; una emitida o una observacion, no.
+  const porPasos = !emitida && tipo !== 'Observacion'
+  // Sin guardar no hay hoja todavia: la vista previa aparece despues.
+  const pasosVisibles = PASOS.filter((p) => p.clave !== 'hoja' || !esNueva)
+  const ver = (seccion: Paso) => !porPasos || paso === seccion
+  const mostrarHoja =
+    !esNueva && tipo !== 'Observacion' && (emitida ? vista === 'hoja' : paso === 'hoja')
+  const enCual = pasosVisibles.findIndex((p) => p.clave === paso)
+  const anterior = pasosVisibles[enCual - 1]
+  const siguiente = pasosVisibles[enCual + 1]
+
+  /** Cambia de paso y lo pone arriba: el boton de siguiente queda abajo de todo. */
+  function irAlPaso(destino: Paso) {
+    setPaso(destino)
+    barraDePasos.current?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  }
 
   return (
     <div className="flex flex-col gap-[18px]">
@@ -928,10 +983,11 @@ export default function ConsultaEditor() {
         pueda empezar a escribir algo que después no se va a guardar.
       */}
       {/*
-        La hoja o los datos. Sin guardar todavia no hay hoja que mostrar, y una
-        observacion no es una hoja que se mande.
+        Como se recorre la cotizacion. Emitida: la hoja o los datos cargados.
+        Borrador: paso a paso, con la vista previa al final. Una observacion es
+        un solo texto: no tiene pasos ni hoja.
       */}
-      {!esNueva && tipo !== 'Observacion' && (
+      {emitida && tipo !== 'Observacion' && (
         <div className="flex flex-wrap items-center gap-2.5">
           <div role="tablist" aria-label="Como ver la cotizacion" className="inline-flex rounded-[10px] border border-line-strong bg-white p-1">
             {(
@@ -968,35 +1024,85 @@ export default function ConsultaEditor() {
         </div>
       )}
 
-      {vista === 'hoja' && !esNueva && tipo !== 'Observacion' && (
-        <HojaPrevia consultaId={Number(consultaId)} recarga={existente} />
+      {porPasos && (
+        <nav ref={barraDePasos} aria-label="Pasos de la cotizacion" className="flex flex-wrap items-center gap-1.5">
+          {pasosVisibles.map((p, n) => {
+            const actual = paso === p.clave
+            // Cuantas hay, para saber de un vistazo si el paso tiene algo. La
+            // linea en blanco con que nace una cotizacion no cuenta.
+            const cuenta =
+              p.clave === 'lineas'
+                ? lineas.filter((l) => !l.quitada && l.descripcion.trim() !== '').length
+                : p.clave === 'condiciones'
+                  ? condiciones.filter((c) => c.texto.trim()).length
+                  : 0
+
+            return (
+              <button
+                key={p.clave}
+                type="button"
+                onClick={() => irAlPaso(p.clave)}
+                aria-current={actual ? 'step' : undefined}
+                className={`inline-flex items-center gap-2 rounded-[9px] border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                  actual ? 'border-brand bg-brand text-white' : 'border-line-strong bg-white text-slate-600 hover:bg-app'
+                }`}
+              >
+                <span
+                  className={`grid h-5 w-5 place-items-center rounded-full text-[11px] tabular-nums ${
+                    actual ? 'bg-white/20' : 'bg-app text-muted'
+                  }`}
+                >
+                  {n + 1}
+                </span>
+                {p.titulo}
+                {cuenta > 0 && <span className={actual ? 'text-white/75' : 'text-faint'}>· {cuenta}</span>}
+              </button>
+            )
+          })}
+        </nav>
       )}
 
-      <fieldset
-        disabled={emitida}
-        hidden={vista === 'hoja' && !esNueva && tipo !== 'Observacion'}
-        className="m-0 flex min-w-0 flex-col gap-[18px] border-0 p-0"
-      >
+      {mostrarHoja && (
+        <>
+          {/* La hoja sale de lo guardado: si hay cambios, todavia no los muestra. */}
+          {!emitida && hayCambios && (
+            <Aviso tono="ambar">
+              La hoja muestra lo último guardado y tenés cambios sin guardar.{' '}
+              <button type="button" className="font-semibold underline" onClick={() => guardar()}>
+                Guardar y actualizarla
+              </button>
+            </Aviso>
+          )}
+          <HojaPrevia consultaId={Number(consultaId)} recarga={existente} />
+        </>
+      )}
 
-      {/* tipo */}
-      <div className="flex flex-wrap items-center gap-2.5">
-        {(['Cotizacion', 'Pedido', 'Observacion'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTipo(t)}
-            className={`rounded-[9px] border px-4 py-2.5 text-[13px] font-semibold transition-colors ${
-              tipo === t
-                ? 'border-brand bg-brand text-white'
-                : 'border-line-strong bg-white text-slate-600 hover:bg-app'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-        <span className="ml-auto text-[11.5px] text-faint">
-          Los tres se guardan en el historial de la empresa, separados.
-        </span>
+      {/*
+        Las partes se ocultan, no se sacan: lo escrito en un paso sigue ahi al
+        volver, y el guardado de arriba guarda todo, este donde este.
+      */}
+      <fieldset disabled={emitida} hidden={mostrarHoja} className="m-0 flex min-w-0 flex-col gap-[18px] border-0 p-0">
+      <div hidden={!ver('encabezado')}>
+        {/* tipo */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          {(['Cotizacion', 'Pedido', 'Observacion'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTipo(t)}
+              className={`rounded-[9px] border px-4 py-2.5 text-[13px] font-semibold transition-colors ${
+                tipo === t
+                  ? 'border-brand bg-brand text-white'
+                  : 'border-line-strong bg-white text-slate-600 hover:bg-app'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+          <span className="ml-auto text-[11.5px] text-faint">
+            Los tres se guardan en el historial de la empresa, separados.
+          </span>
+        </div>
       </div>
 
       {tipo === 'Observacion' ? (
@@ -1012,57 +1118,102 @@ export default function ConsultaEditor() {
         </Card>
       ) : (
         <>
-          <Encabezado
-            tipo={tipo}
-            cabecera={cabecera}
-            setCabecera={setCabecera}
-            empresa={empresaActual}
-            catalogos={catalogos}
-            venceEl={venceEl}
-            onContactoNuevo={recargarEmpresa}
-          />
-          {/*
-            Lo que pidió el cliente va entre el encabezado y las líneas.
+          <div hidden={!ver('encabezado')}>
+            <Encabezado
+              tipo={tipo}
+              cabecera={cabecera}
+              setCabecera={setCabecera}
+              empresa={empresaActual}
+              catalogos={catalogos}
+              venceEl={venceEl}
+              onContactoNuevo={recargarEmpresa}
+            />
+          </div>
+          <div hidden={!ver('pedido')}>
+            <Solicitud
+              cabecera={cabecera}
+              setCabecera={setCabecera}
+              catalogos={catalogos}
+              onPrecargar={precargarDesdeTexto}
+              precargando={precargando}
+            />
+          </div>
 
-            "Bajaría LO QUE PIDIÓ EL CLIENTE debajo de ENCABEZADO y arriba de
-            LÍNEAS". Estaba primero de todo, así que al cargar las líneas
-            quedaba fuera de la pantalla y había que subir para releer el
-            pedido. Acá queda pegado a las líneas, que es contra lo que hay
-            que compararlo.
+          {/*
+            En el paso de las lineas, lo que pidio el cliente sigue a la vista.
+
+            Para eso lo subieron arriba de las lineas: para compararlo mientras
+            se cotiza, sin ir a buscarlo. Un paso que lo escondiera desharia
+            justo eso.
           */}
-          <Solicitud
-            cabecera={cabecera}
-            setCabecera={setCabecera}
-            catalogos={catalogos}
-            onPrecargar={precargarDesdeTexto}
-            precargando={precargando}
-          />
-          <Lineas
-            lineas={lineas}
-            setLineas={setLineas}
-            cambiarLinea={cambiarLinea}
-            catalogos={catalogos}
-            total={total}
-            sinImporte={sinImporte}
-            totalKilos={totalKilos}
-            iguales={iguales}
-            vigentes={vigentes}
-          />
-          <Condiciones
-            condiciones={condiciones}
-            setCondiciones={setCondiciones}
-            validez={cabecera.validez_dias}
-            vence={venceComoSeEscribe}
-            juego={cabecera.juego_condiciones}
-            onJuego={(j) => setCabecera({ ...cabecera, juego_condiciones: j })}
-            nota={cabecera.nota}
-            onNota={(v) => setCabecera({ ...cabecera, nota: v })}
-            catalogos={catalogos}
-          />
+          {porPasos && paso === 'lineas' && cabecera.solicitud_texto.trim() !== '' && (
+            <Card className="border-brand-200 bg-[#f3f9fe] px-[22px] py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[10.5px] font-bold uppercase tracking-wide text-brand-600">
+                  Lo que pidió el cliente
+                </span>
+                <button
+                  type="button"
+                  onClick={() => irAlPaso('pedido')}
+                  className="ml-auto text-[11.5px] font-medium text-brand-600 hover:underline"
+                >
+                  Verlo entero o cambiarlo
+                </button>
+              </div>
+              <p className="mt-1.5 max-h-[132px] overflow-y-auto whitespace-pre-wrap text-[12.5px] leading-relaxed text-slate-700">
+                {cabecera.solicitud_texto}
+              </p>
+            </Card>
+          )}
+
+          <div hidden={!ver('lineas')}>
+            <Lineas
+              lineas={lineas}
+              setLineas={setLineas}
+              cambiarLinea={cambiarLinea}
+              catalogos={catalogos}
+              total={total}
+              sinImporte={sinImporte}
+              totalKilos={totalKilos}
+              iguales={iguales}
+              vigentes={vigentes}
+            />
+          </div>
+          <div hidden={!ver('condiciones')}>
+            <Condiciones
+              condiciones={condiciones}
+              setCondiciones={setCondiciones}
+              validez={cabecera.validez_dias}
+              vence={venceComoSeEscribe}
+              juego={cabecera.juego_condiciones}
+              onJuego={(j) => setCabecera({ ...cabecera, juego_condiciones: j })}
+              nota={cabecera.nota}
+              onNota={(v) => setCabecera({ ...cabecera, nota: v })}
+              catalogos={catalogos}
+            />
+          </div>
         </>
       )}
 
       </fieldset>
+
+      {/* Anterior y siguiente, abajo, donde termina lo que se estaba mirando. */}
+      {porPasos && (anterior || siguiente) && (
+        <div className="flex flex-wrap items-center gap-2.5">
+          {anterior && (
+            <Boton variante="suave" onClick={() => irAlPaso(anterior.clave)}>
+              ← {anterior.titulo}
+            </Boton>
+          )}
+          {siguiente && (
+            <div className="ml-auto">
+              <Boton variante="primario" onClick={() => irAlPaso(siguiente.clave)}>
+                {siguiente.titulo} →
+              </Boton>
+            </div>
+          )}
+        </div>
+      )}
 
       {/*
         De acá para abajo sigue habilitado aunque esté emitida: las
