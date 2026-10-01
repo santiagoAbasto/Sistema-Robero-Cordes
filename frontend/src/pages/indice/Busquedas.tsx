@@ -22,6 +22,7 @@ import {
   useCarga,
   useCatalogos,
   useDebounce,
+  hoy,
 } from '../../lib/indice'
 
 /* ===========================================================================
@@ -208,12 +209,11 @@ export function EmpresasPorCondicion() {
 
 export function ConsultasPorFecha() {
   const catalogos = useCatalogos()
-  const hoy = new Date().toISOString().slice(0, 10)
-  const haceUnAnio = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10)
+  const haceUnAnio = hoy(-365)
 
   const [f, setF] = useState({
     desde: haceUnAnio,
-    hasta: hoy,
+    hasta: hoy(),
     material_id: '',
     usuario_id: '',
     tipo: '',

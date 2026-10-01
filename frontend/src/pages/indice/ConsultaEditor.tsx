@@ -29,6 +29,7 @@ import {
   traerEmpresa,
   useCarga,
   useCatalogos,
+  hoy,
 } from '../../lib/indice'
 import { JUEGOS_DE_CONDICIONES } from '../../types/indice'
 import type { CanoEstandar, JuegoDeCondiciones } from '../../types/indice'
@@ -319,7 +320,7 @@ export default function ConsultaEditor() {
 
   const [tipo, setTipo] = useState(params.get('tipo') ?? 'Cotizacion')
   const [cabecera, setCabecera] = useState({
-    fecha: new Date().toISOString().slice(0, 10),
+    fecha: hoy(),
     validez_dias: 7,
     contacto_id: '' as string | number,
     moneda_id: '' as string | number,
@@ -335,7 +336,7 @@ export default function ConsultaEditor() {
     solicitud_via: '',
     // El pedido llegó hoy salvo que digan otra cosa: es lo que pasa casi
     // siempre, y tipear la fecha del día en cada cotización es trabajo al pedo.
-    solicitud_fecha: new Date().toISOString().slice(0, 10),
+    solicitud_fecha: hoy(),
     solicitud_texto: '',
     juego_condiciones: '' as '' | JuegoDeCondiciones,
   })
