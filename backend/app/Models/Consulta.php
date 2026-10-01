@@ -170,7 +170,17 @@ class Consulta extends Model
 
         $this->numerar();
 
-        $this->forceFill(['emitida_el' => now(), 'emitida_por' => $usuarioId])->save();
+        /*
+          Lo emitido ya es firme. Una revision o una copia nacen en Borrador, y
+          si quedaran asi despues de emitirse, la ficha, Consultas por fecha y
+          Seguimiento —que esconden los borradores— no las mostrarian: una R1
+          mandada al cliente no aparecia en ningun lado.
+        */
+        $this->forceFill([
+            'emitida_el' => now(),
+            'emitida_por' => $usuarioId,
+            'estado' => $this->estado === 'Borrador' ? 'Confirmada' : $this->estado,
+        ])->save();
     }
 
     /** Días de validez por defecto. Se define una sola vez y se puede pisar por cotización. */

@@ -16,8 +16,8 @@ const BULLETS = [
 export default function Login() {
   const { user, loading, login } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('roberto@cordes.com')
-  const [password, setPassword] = useState('cordes2026')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -121,7 +121,7 @@ export default function Login() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="jroberti@cordes.com.ar"
+                  placeholder="nombre@cordes.ar"
                   className="h-11 w-full rounded-lg border border-line-strong pl-10 pr-3.5 text-[14px] text-ink outline-none transition-shadow placeholder:text-faint focus:border-brand focus:ring-4 focus:ring-brand-50"
                 />
               </div>

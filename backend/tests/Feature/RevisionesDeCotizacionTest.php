@@ -243,4 +243,24 @@ class RevisionesDeCotizacionTest extends TestCase
         $this->get("/api/consultas/{$this->consulta->id}/pdf")->assertOk();
         $this->assertSame(1, $this->consulta->impresiones()->count());
     }
+
+    /**
+     * La revision emitida aparece en la ficha de la empresa.
+     *
+     * Nacia en Borrador y asi quedaba al emitirse: la ficha, que esconde los
+     * borradores, no la mostraba. Una R1 mandada al cliente no estaba en
+     * ningun lado salvo en las solapas de versiones.
+     */
+    public function test_la_revision_emitida_aparece_en_la_ficha(): void
+    {
+        $this->emitir($this->consulta)->assertOk();
+        $r1 = Consulta::find($this->revisar($this->consulta->fresh())->json('data.id'));
+        $this->emitir($r1)->assertOk();
+
+        $numeros = collect($this->getJson("/api/empresas/{$this->consulta->empresa_id}")->json('data.cotizaciones'))
+            ->pluck('numero_con_revision');
+
+        $this->assertContains('2026-0001 R0', $numeros);
+        $this->assertContains('2026-0001 R1', $numeros);
+    }
 }

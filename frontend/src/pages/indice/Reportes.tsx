@@ -14,6 +14,7 @@ import {
   plata,
   traerReporteSeguimiento,
   useCarga,
+  hoy,
 } from '../../lib/indice'
 
 /* ---------------------------------------------------------------------------
@@ -24,8 +25,8 @@ import {
    si mira lo de hoy o lo del mes pasado.
 --------------------------------------------------------------------------- */
 
-const HOY = new Date().toISOString().slice(0, 10)
-const ENERO = `${new Date().getFullYear()}-01-01`
+const HOY = hoy()
+const ENERO = `${HOY.slice(0, 4)}-01-01`
 
 export default function Reportes() {
   const [desde, setDesde] = useState(ENERO)

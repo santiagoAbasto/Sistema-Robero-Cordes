@@ -319,6 +319,18 @@ export function cantidad(valor: string | number | null | undefined): string {
   })
 }
 
+/**
+ * La fecha de hoy en Argentina, "2026-10-01". Corrida en días si hace falta.
+ *
+ * toISOString da la de Greenwich: después de las 21 h ya era mañana, y una
+ * cotización cargada a la noche salía con la fecha del día siguiente.
+ */
+export function hoy(dias = 0): string {
+  return new Date(Date.now() + dias * 864e5).toLocaleDateString('sv-SE', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+  })
+}
+
 /** "2026-07-20" -> "20/07/2026" */
 export function fecha(valor: string | null | undefined): string {
   if (!valor) return '—'

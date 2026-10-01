@@ -401,10 +401,18 @@ class EmpresaEscrituraController extends Controller
     private function validar(Request $request, ?Empresa $empresa = null): array
     {
         return $request->validate([
-            'nombre' => [
+            /*
+              Solo se controla si el nombre cambia. El indice viejo trae 66
+              nombres repetidos en 173 fichas, y comparar siempre hacia que
+              ninguna de esas se pudiera guardar, aunque solo se le tocara la
+              observacion. Lo que no se puede es ponerle a una el nombre de otra.
+            */
+            'nombre' => array_filter([
                 'required', 'string', 'max:150',
-                Rule::unique('empresas', 'nombre')->ignore($empresa?->id),
-            ],
+                $request->input('nombre') !== $empresa?->nombre
+                    ? Rule::unique('empresas', 'nombre')->ignore($empresa?->id)
+                    : null,
+            ]),
             'codigo_indice' => ['nullable', 'string', 'max:20'],
             'codigo_isis' => ['nullable', 'string', 'max:20'],
             'cuit' => ['nullable', 'string', 'max:13'],

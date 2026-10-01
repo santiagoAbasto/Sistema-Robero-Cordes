@@ -23,6 +23,7 @@ use App\Models\TipoMedio;
 use App\Models\Unidad;
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 
 /**
@@ -61,19 +62,19 @@ class IndiceTelefonicoSeeder extends Seeder
         ];
 
         /*
-          OJO: la clave de abajo es para levantar el sistema en una maquina
-          nueva, nada mas. Esta escrita en el codigo y el codigo esta en
-          GitHub, asi que en un servidor con datos reales la puede leer
-          cualquiera. Despues de sembrar en un servidor, cambiala:
+          Cada usuario nace con una clave al azar que nadie conoce, y a uno que
+          ya existe no se le toca. Antes la clave estaba escrita aca, el codigo
+          esta en GitHub y la pantalla de ingreso la traia precargada: con el
+          enlace cualquiera entraba como administrador. Para entrar, ponele una:
 
               php artisan usuarios:clave <correo>
 
           (con DB_URL delante apunta al servidor en vez de a la base local).
         */
         foreach ($usuarios as [$ini, $nombre, $mail, $rol]) {
-            $user = User::updateOrCreate(
+            $user = User::firstOrCreate(
                 ['email' => $mail],
-                ['name' => $nombre, 'iniciales' => $ini, 'role' => $rol, 'password' => 'cordes2026', 'activo' => true]
+                ['name' => $nombre, 'iniciales' => $ini, 'role' => $rol, 'password' => Str::password(32), 'activo' => true]
             );
 
             $this->u[$ini] = $user;

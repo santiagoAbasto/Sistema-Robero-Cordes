@@ -65,7 +65,9 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // El sistema se usa en Argentina. En UTC las horas salian 3 adelantadas y
+    // despues de las 21 h la fecha de hoy era la de mañana.
+    'timezone' => 'America/Argentina/Buenos_Aires',
 
     /*
     |--------------------------------------------------------------------------
