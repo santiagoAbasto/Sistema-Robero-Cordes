@@ -27,6 +27,13 @@ class AuthController extends Controller
 
         $user = $request->user();
 
+        // La pantalla de usuarios promete que el dado de baja "deja de entrar".
+        if (! $user->activo) {
+            throw ValidationException::withMessages([
+                'email' => ['Este usuario esta dado de baja. Pedile a un administrador que lo vuelva a activar.'],
+            ]);
+        }
+
         // One active token per login; revoke previous ones for this device name.
         $token = $user->createToken('cordes-spa')->plainTextToken;
 

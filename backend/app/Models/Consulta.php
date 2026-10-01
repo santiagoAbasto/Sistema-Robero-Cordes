@@ -48,8 +48,15 @@ class Consulta extends Model
      * Las que vinieron del Access no se numeran: su numero es el id_sistema
      * que ya esta impreso en los papeles que tiene el cliente.
      */
-    public function numerar(): string
+    public function numerar(): ?string
     {
+        // Una observacion de la empresa no se le manda al cliente: no lleva
+        // numero de la serie de las cotizaciones, llegue por donde llegue
+        // (emitir, cambiar el estado).
+        if ($this->tipo === 'Observacion') {
+            return null;
+        }
+
         if (filled($this->numero)) {
             return $this->numero;
         }
@@ -376,6 +383,14 @@ class Consulta extends Model
     /** La fecha de vencimiento sale de la fecha más los días de validez. */
     public function recalcularVencimiento(): void
     {
+        // Una observacion no es una oferta: no vence. Con los 7 dias de una
+        // cotizacion aparecia en Seguimiento como por vencer.
+        if ($this->tipo === 'Observacion') {
+            $this->vence_el = null;
+
+            return;
+        }
+
         if ($this->fecha && $this->validez_dias) {
             $this->vence_el = $this->fecha->copy()->addDays((int) $this->validez_dias);
         }

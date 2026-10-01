@@ -8,11 +8,11 @@ namespace App\Services;
  * Las consultas que llegan desde la web vienen como una ficha de dos columnas:
  *
  *     NOMBRE                      EMAIL
- *     Cristian Obon               cobon@implantestraumatologicos.com
+ *     Diego Arce               darce@implantestraumatologicos.com
  *
  * Al copiarla de la pantalla las columnas se aplanan: el valor de la izquierda
  * y la etiqueta de la derecha quedan en el mismo renglon, separados por un
- * TAB. Y a veces llega ordenada a mano, "NOMBRE Cristian Obon".
+ * TAB. Y a veces llega ordenada a mano, "NOMBRE Diego Arce".
  *
  * Leida como texto corrido, las etiquetas pasaban por datos: el contacto de
  * DGS ANTIPINA se llamaba "DATOS DE CONTACTO" y tenia el cargo "NOMBRE".
@@ -116,7 +116,7 @@ final class CamposDeFormulario
                 return [$campo, $siguiente, true];
             }
 
-            // "NOMBRE Cristian Obon", "EMAIL: cobon@..." — la etiqueta tiene
+            // "NOMBRE Diego Arce", "EMAIL: darce@..." — la etiqueta tiene
             // que terminar ahi: EMAILS no es EMAIL.
             if (str_starts_with($plana, $variante)
                 && preg_match('/^[\s:.\-]/u', mb_substr($plana, mb_strlen($variante)))) {

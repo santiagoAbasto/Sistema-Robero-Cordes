@@ -840,7 +840,9 @@ function EntradaHistorial({
             {consulta.numero_con_revision}
           </span>
         ) : (
-          !consulta.emitida && !consulta.id_sistema && <Chip tono="ambar">Borrador</Chip>
+          !consulta.emitida && !consulta.id_sistema && consulta.tipo !== 'Observacion' && (
+            <Chip tono="ambar">Borrador</Chip>
+          )
         )}
         {/* De que era, para no tener que abrirla para saberlo. */}
         {! abierto && (
@@ -964,7 +966,9 @@ function EntradaHistorial({
         )}
 
         <div className="ml-auto flex items-center gap-3.5">
-          <Accion to={`/consultas/${consulta.id}/copiar`}>Copiar a otra empresa</Accion>
+          {consulta.tipo !== 'Observacion' && (
+            <Accion to={`/consultas/${consulta.id}/copiar`}>Copiar a otra empresa</Accion>
+          )}
           {!sinImprimir && (
             <Accion to={`/imprimir?empresa=${empresaId}&consulta=${consulta.id}`}>Imprimir</Accion>
           )}

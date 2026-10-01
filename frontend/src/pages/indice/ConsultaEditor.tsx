@@ -875,7 +875,8 @@ export default function ConsultaEditor() {
             : `${tipo} de ${empresa.nombre}`
         }
         chips={
-          esNueva ? undefined : emitida ? (
+          // Una observación no se emite: no es borrador ni emitida.
+          esNueva || tipo === 'Observacion' ? undefined : emitida ? (
             <Chip tono="verde">{existente?.numero_con_revision ?? 'Emitida'}</Chip>
           ) : (
             <Chip tono="ambar">
@@ -924,9 +925,15 @@ export default function ConsultaEditor() {
             >
               Cancelar
             </Boton>
-            <Boton variante="suave" onClick={() => guardar()} disabled={guardando}>
+            {/* Una observación no se emite: guardarla es terminarla. */}
+            <Boton
+              variante={tipo === 'Observacion' ? 'primario' : 'suave'}
+              onClick={() => guardar()}
+              disabled={guardando}
+            >
               {guardando ? 'Guardando…' : 'Guardar'}
             </Boton>
+            {tipo !== 'Observacion' && <>
             {/*
               Al terminar una cotización lo que sigue es mandarla, así que este
               es el botón principal. Se llama "Emitir" y no "Guardar" porque
@@ -949,6 +956,7 @@ export default function ConsultaEditor() {
             >
               {guardando ? 'Emitiendo…' : 'Emitir e imprimir'}
             </Boton>
+            </>}
           </>
           )
         }

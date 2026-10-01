@@ -159,7 +159,7 @@ class FirmaDeMail
     /**
      * El nombre de la empresa.
      *
-     * Primero de la linea "From: Gonzalo Sack - Apex Metalurgica <...>", que
+     * Primero de la linea "From: Pablo Ferreyra - Apex Metalurgica <...>", que
      * es donde suele estar escrito entero. Si no, del dominio del mail, que
      * nunca miente aunque venga abreviado.
      */
@@ -170,7 +170,7 @@ class FirmaDeMail
                 continue;
             }
 
-            // "Gonzalo Sack - Apex Metalurgica <gsack@apex.com.ar>"
+            // "Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.com.ar>"
             $sinMail = trim(preg_replace('/<[^>]*>/', '', $m[2]) ?? '');
             $partes = preg_split('/\s+[-–|]\s+/', $sinMail) ?: [];
 
@@ -228,7 +228,7 @@ class FirmaDeMail
                 continue;
             }
 
-            // Palabras capitalizadas o iniciales: "Juan J. Saccomanno". La
+            // Palabras capitalizadas o iniciales: "Pedro A. Quiroga". La
             // inicial es una sola letra y su punto: "S.A." no pasa.
             $capitalizadas = array_filter(
                 $palabras,
@@ -290,7 +290,7 @@ class FirmaDeMail
             return [$this->limpiar($m[2]), $tipo];
         }
 
-        // "(2954) 15-584584" se reconoce solo por la forma.
+        // "(2954) 15-412233" se reconoce solo por la forma.
         if (preg_match('/\(\d{2,5}\)\s*[\d\s.-]{6,15}/', $texto, $m)) {
             return [$this->limpiar($m[0]), $this->pareceCelular($m[0]) ? 'Celular' : 'Telefono'];
         }
@@ -299,11 +299,11 @@ class FirmaDeMail
     }
 
     /**
-     * Un celular escrito como se escriben aca: "(2954) 15-584584" —el 15
+     * Un celular escrito como se escriben aca: "(2954) 15-412233" —el 15
      * despues de la caracteristica— o con el 9 internacional, "+54 9 11".
      *
      * Solo se usa cuando el rotulo no lo dice. Sin 15 ni 9 no se sabe: un
-     * 11 4555-3700 y un 11 3106-1795 tienen el mismo largo, y queda Telefono.
+     * 11 4555-3700 y un 11 4567-2389 tienen el mismo largo, y queda Telefono.
      */
     private function pareceCelular(string $numero): bool
     {

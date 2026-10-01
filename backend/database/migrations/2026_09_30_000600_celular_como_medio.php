@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  * celular" aparte podria quedar puesto en un fax.
  *
  * Los 1.163 telefonos cargados quedan como estan. Cuales son celulares no se
- * puede saber mirando el numero —un 11 4555-3700 y un 11 3106-1795 tienen el
+ * puede saber mirando el numero —un 11 4555-3700 y un 11 4567-2389 tienen el
  * mismo largo— y adivinar cambiaria como se los llama.
  */
 return new class extends Migration

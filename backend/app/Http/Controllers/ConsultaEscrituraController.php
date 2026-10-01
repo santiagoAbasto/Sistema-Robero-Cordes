@@ -149,6 +149,15 @@ class ConsultaEscrituraController extends Controller
     {
         $this->soloSiPuedeModificar($request);
 
+        // Una observacion de la empresa (una llamada, una visita) no se le
+        // manda al cliente: emitirla le daba un numero de la serie de las
+        // cotizaciones y una hoja titulada OBSERVACION.
+        abort_if(
+            $consulta->tipo === 'Observacion',
+            422,
+            'Una observacion no se emite: queda guardada en la ficha de la empresa.',
+        );
+
         $consulta->emitir($request->user()?->id);
 
         return new ConsultaResource($this->recargar($consulta));
@@ -235,6 +244,10 @@ class ConsultaEscrituraController extends Controller
     public function copiar(Request $request, Consulta $consulta)
     {
         $this->soloSiPuedeModificar($request);
+
+        // Una observacion (una llamada, una visita) es de esa empresa: copiada
+        // salia vacia en las otras, porque el texto no se copia.
+        abort_if($consulta->tipo === 'Observacion', 422, 'Una observacion no se copia a otras empresas.');
 
         $datos = $request->validate([
             'empresas' => ['required', 'array', 'min:1'],
