@@ -140,48 +140,99 @@ class DireccionController extends Controller
                 return response()->json(['message' => 'No pudimos traer los datos de esa direccion.'], 502);
             }
 
-            $componentes = collect($respuesta->json('addressComponents') ?? []);
-
-            $buscar = fn (string $tipo) => $componentes
-                ->first(fn ($c) => in_array($tipo, $c['types'] ?? [], true));
-
-            $calle = $buscar('route')['longText'] ?? null;
-            $numero = $buscar('street_number')['longText'] ?? null;
-            // La ciudad es la locality; el partido ("Partido de Lanús") es solo
-            // un respaldo para buscar, nunca una localidad para agregar.
-            $ciudad = $buscar('locality')['longText'] ?? null;
-            $localidad = $ciudad ?? $buscar('administrative_area_level_2')['longText'] ?? null;
-            // Google dice "Provincia de Buenos Aires"; la lista, "Buenos Aires".
-            $provincia = preg_replace(
-                '/^provincia\s+del?\s+/iu', '', $buscar('administrative_area_level_1')['longText'] ?? '',
-            ) ?: null;
-            $pais = $buscar('country')['longText'] ?? null;
-            $cp = $buscar('postal_code')['longText'] ?? null;
-
-            /*
-              Se buscan en nuestras listas. La provincia no se crea nunca. La
-              ciudad sí, si no está y su provincia calzó: Google da el nombre
-              bien escrito ("Remedios de Escalada"), y la lista vieja tiene
-              175 localidades. El pie de un mail, en cambio, no crea ninguna.
-            */
-            $provinciaId = $provincia
-                ? Provincia::where('nombre', 'like', $provincia)->value('id')
-                : null;
-
-            return response()->json([
-                'direccion' => trim(implode(' ', array_filter([$calle, $numero]))) ?: null,
-                'codigo_postal' => $cp,
-                'provincia_id' => $provinciaId,
-                'provincia_nombre' => $provincia,
-                'localidad_id' => $this->buscarLocalidad($localidad, $provinciaId, crear: $ciudad !== null),
-                'localidad_nombre' => $localidad,
-                'pais_id' => $pais ? Pais::where('nombre', 'like', $pais)->value('id') : null,
-                'pais_nombre' => $pais,
-            ]);
+            return response()->json($this->desdeComponentes(collect($respuesta->json('addressComponents') ?? [])));
         } catch (\Throwable $e) {
             Log::warning('No se pudo traer el detalle de la direccion: '.$e->getMessage());
 
             return response()->json(['message' => 'No pudimos traer los datos de esa direccion.'], 502);
+        }
+    }
+
+    /**
+     * Lo que dice Google de una direccion, calzado con nuestras listas.
+     *
+     * @param  \Illuminate\Support\Collection<int, array>  $componentes
+     * @return array<string, mixed>
+     */
+    private function desdeComponentes(\Illuminate\Support\Collection $componentes): array
+    {
+        $buscar = fn (string $tipo) => $componentes
+            ->first(fn ($c) => in_array($tipo, $c['types'] ?? [], true));
+
+        $calle = $buscar('route')['longText'] ?? null;
+        $numero = $buscar('street_number')['longText'] ?? null;
+        // La ciudad es la locality; el partido ("Partido de Lanús") es solo
+        // un respaldo para buscar, nunca una localidad para agregar.
+        $ciudad = $buscar('locality')['longText'] ?? null;
+        $localidad = $ciudad ?? $buscar('administrative_area_level_2')['longText'] ?? null;
+        // Google dice "Provincia de Buenos Aires"; la lista, "Buenos Aires".
+        $provincia = preg_replace(
+            '/^provincia\s+del?\s+/iu', '', $buscar('administrative_area_level_1')['longText'] ?? '',
+        ) ?: null;
+        $pais = $buscar('country')['longText'] ?? null;
+        $cp = $buscar('postal_code')['longText'] ?? null;
+
+        /*
+          Se buscan en nuestras listas. La provincia no se crea nunca. La
+          ciudad sí, si no está y su provincia calzó: Google da el nombre
+          bien escrito ("Remedios de Escalada"), y la lista vieja tiene
+          175 localidades. El pie de un mail no crea ninguna por su cuenta:
+          solo a traves de Google, con ubicar().
+        */
+        $provinciaId = $provincia
+            ? Provincia::where('nombre', 'like', $provincia)->value('id')
+            : null;
+
+        return [
+            'direccion' => trim(implode(' ', array_filter([$calle, $numero]))) ?: null,
+            'codigo_postal' => $cp,
+            'provincia_id' => $provinciaId,
+            'provincia_nombre' => $provincia,
+            'localidad_id' => $this->buscarLocalidad($localidad, $provinciaId, crear: $ciudad !== null),
+            'localidad_nombre' => $localidad,
+            'pais_id' => $pais ? Pais::where('nombre', 'like', $pais)->value('id') : null,
+            'pais_nombre' => $pais,
+        ];
+    }
+
+    /**
+     * Ubica la direccion de un pie de mail: "Av. ... 2576, San Justo".
+     *
+     * Cuando la localidad del mail no esta en la lista, se le pregunta a
+     * Google por la direccion entera, como hace el buscador. Se acepta solo si
+     * Google encontro esa misma altura: un nombre de calle parecido en otra
+     * ciudad no puede cambiarle la localidad a nadie. Si no, null y se elige a
+     * mano.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function ubicar(string $direccion): ?array
+    {
+        if (! $this->estaConfigurado() || ! preg_match('/\b(\d{1,5})\b/u', $direccion, $altura)) {
+            return null;
+        }
+
+        try {
+            $respuesta = $this
+                ->aGoogle(['X-Goog-FieldMask' => 'places.addressComponents'])
+                ->post(self::BASE.'/places:searchText', [
+                    'textQuery' => $direccion,
+                    'languageCode' => self::IDIOMA,
+                    'regionCode' => self::PAIS,
+                ]);
+
+            $componentes = collect($respuesta->json('places.0.addressComponents') ?? []);
+            $numero = $componentes->first(fn ($c) => in_array('street_number', $c['types'] ?? [], true))['longText'] ?? null;
+
+            if ($respuesta->failed() || $numero !== $altura[1]) {
+                return null;
+            }
+
+            return $this->desdeComponentes($componentes);
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo ubicar la direccion del mail: '.$e->getMessage());
+
+            return null;
         }
     }
 

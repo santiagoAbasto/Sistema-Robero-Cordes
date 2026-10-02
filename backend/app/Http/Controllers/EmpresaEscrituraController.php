@@ -49,12 +49,24 @@ class EmpresaEscrituraController extends Controller
             'contacto.medios.*.valor' => ['required', 'string', 'max:120'],
         ])['contacto'] ?? null;
 
-        $empresa = DB::transaction(function () use ($datos, $request, $contacto) {
+        // La web y las redes que traia el pie del mail: nacen como enlaces de
+        // la ficha, clickeables, y no como texto en la observacion.
+        $enlaces = $request->validate([
+            'enlaces' => ['nullable', 'array', 'max:10'],
+            'enlaces.*.tipo' => ['required', Rule::in(EmpresaEnlace::TIPOS)],
+            'enlaces.*.url' => ['required', 'string', 'max:500'],
+        ])['enlaces'] ?? [];
+
+        $empresa = DB::transaction(function () use ($datos, $request, $contacto, $enlaces) {
             $empresa = Empresa::create($datos + ['creada_por' => $request->user()->id]);
             $this->sincronizarRelaciones($empresa, $request->input('relaciones', []));
 
             if (filled($contacto['nombre'] ?? null)) {
                 $this->escribirContacto($empresa, null, $contacto + ['principal' => true]);
+            }
+
+            foreach (array_values($enlaces) as $i => $enlace) {
+                $empresa->enlaces()->create($enlace + ['orden' => $i + 1]);
             }
 
             return $empresa;
@@ -105,7 +117,7 @@ class EmpresaEscrituraController extends Controller
      * los campos ya separados. Nada se guarda: es una propuesta que la
      * persona revisa, igual que las lineas de una cotizacion.
      */
-    public function leerFirma(Request $request, FirmaDeMail $firma, InterpreteIA $ia)
+    public function leerFirma(Request $request, FirmaDeMail $firma, InterpreteIA $ia, DireccionController $direcciones)
     {
         $datos = $request->validate([
             // Primero la imagen: si PHP la corto por grande, ese es el error a mostrar,
@@ -120,12 +132,13 @@ class EmpresaEscrituraController extends Controller
         ]);
 
         $texto = $datos['texto'] ?? null;
+        $control = null;
 
         if ($request->hasFile('imagen')) {
             abort_unless($ia->estaConfigurada(), 422, 'Para leer una imagen hace falta la IA, y no esta configurada. Pega el texto o cargalo a mano.');
 
             try {
-                $texto = $ia->transcribir($request->file('imagen'));
+                [$texto, $control] = $ia->transcribir($request->file('imagen'));
             } catch (\Throwable $e) {
                 // Un corte de conexion no trae motivo propio: se dice en criollo.
                 $motivo = $e instanceof \RuntimeException ? $e->getMessage() : 'El servicio de IA no esta respondiendo';
@@ -134,20 +147,109 @@ class EmpresaEscrituraController extends Controller
         }
 
         $leido = $firma->leer($texto);
-        // El tipo de telefono dice que es el telefono: no es un dato mas.
+
+        /*
+          La IA apoya a las reglas: completa lo que ellas dejaron vacio, y solo
+          con lo que esta escrito en el texto (ver InterpreteIA::completarFirma).
+        */
+        $faltan = array_keys(array_filter(
+            array_intersect_key($leido, array_flip(['empresa', 'contacto', 'cargo', 'mail', 'telefono', 'direccion'])),
+            fn ($v) => blank($v),
+        ));
+        $porIa = $faltan !== [] && $ia->estaConfigurada() ? $ia->completarFirma($texto, $faltan) : [];
+
+        foreach ($porIa as $campo => $valor) {
+            $leido[$campo] = $campo === 'direccion' ? $firma->soloLaCalle($valor) : $valor;
+        }
+
+        if (isset($porIa['direccion'])) {
+            $leido['direccion_completa'] ??= $porIa['direccion'];
+        }
+
+        if (isset($porIa['telefono'])) {
+            $leido['tipo_telefono'] = $firma->pareceCelular($porIa['telefono']) ? 'Celular' : 'Telefono';
+        }
+
+        /*
+          Las dos lecturas de la imagen, comparadas en lo que no se puede
+          adivinar mirandolo: el mail y el telefono. Si no coinciden, se avisa
+          con las dos versiones para que la persona mire la imagen.
+        */
+        $dudas = [];
+
+        if ($control !== null) {
+            $otra = $firma->leer($control);
+            $enDuda = array_filter(
+                ['mail' => 'el mail', 'telefono' => 'el telefono', 'contacto' => 'el nombre'],
+                fn ($nombre, $campo) => filled($leido[$campo]) && filled($otra[$campo]) && $leido[$campo] !== $otra[$campo],
+                ARRAY_FILTER_USE_BOTH,
+            );
+
+            // Si no coinciden, una tercera lectura desempata: gana lo que
+            // coincide dos veces. Pasa pocas veces, asi que casi nunca se paga.
+            $tercera = $enDuda !== [] ? $ia->desempatar($request->file('imagen')) : null;
+            $tercera = $tercera !== null ? $firma->leer($tercera) : null;
+
+            foreach ($enDuda as $campo => $nombre) {
+                if ($tercera !== null && in_array($tercera[$campo], [$leido[$campo], $otra[$campo]], true)) {
+                    $leido[$campo] = $tercera[$campo];
+
+                    continue;
+                }
+
+                $dudas[] = "{$nombre} (\"{$leido[$campo]}\" o \"{$otra[$campo]}\")";
+            }
+        }
+
+        /*
+          La localidad que no esta en la lista se le pregunta a Google con la
+          direccion entera, como hace el buscador: "Av. ... 2576, San Justo".
+          Solo si no contradice la provincia que ya se encontro.
+        */
+        if ($leido['localidad_id'] === null && filled($leido['direccion_completa'])
+            && $leido['direccion_completa'] !== $leido['direccion']) {
+            $lugar = $direcciones->ubicar($leido['direccion_completa']);
+
+            if ($lugar && $lugar['localidad_id']
+                && in_array($leido['provincia_id'], [null, $lugar['provincia_id']], true)) {
+                $leido['localidad_id'] = $lugar['localidad_id'];
+                $leido['provincia_id'] = $lugar['provincia_id'];
+                $leido['pais_id'] ??= $lugar['pais_id'];
+                $leido['codigo_postal'] ??= $lugar['codigo_postal'];
+            }
+        }
+
+        unset($leido['direccion_completa']);
+
+        // Con su nombre: si la acaba de agregar Google, la pantalla todavia no
+        // la tiene en su lista y el desplegable diria "Sin elegir".
+        $leido['localidad_nombre'] = $leido['localidad_id']
+            ? \App\Models\Localidad::whereKey($leido['localidad_id'])->value('nombre')
+            : null;
+
+        // El tipo de telefono dice que es el telefono, y los enlaces repiten
+        // la web: no son un dato mas.
         $cuantos = count(array_filter(
-            array_diff_key($leido, ['tipo_telefono' => true]),
+            array_diff_key($leido, ['tipo_telefono' => true, 'enlaces' => true, 'localidad_nombre' => true]),
             fn ($v) => filled($v),
         ));
+
+        $nombres = ['empresa' => 'la empresa', 'contacto' => 'el contacto', 'cargo' => 'el cargo',
+            'mail' => 'el mail', 'telefono' => 'el telefono', 'direccion' => 'la direccion'];
+        $completo = $porIa === [] ? ''
+            : ' La IA completo '.implode(', ', array_map(fn ($c) => $nombres[$c], array_keys($porIa))).'.';
 
         return [
             'datos' => $leido,
             // Lo que leyo la IA queda a la vista en el recuadro: se ve que no invento.
             'texto' => $texto,
-            'con_ia' => $request->hasFile('imagen'),
-            'mensaje' => $cuantos === 0
-                ? 'No pudimos reconocer ningun dato. Cargalos a mano.'
-                : "{$cuantos} datos reconocidos. Revisalos antes de guardar.",
+            'con_ia' => $request->hasFile('imagen') || $porIa !== [],
+            'mensaje' => match (true) {
+                $cuantos === 0 => 'No pudimos reconocer ningun dato. Cargalos a mano.',
+                $dudas !== [] => "{$cuantos} datos reconocidos.{$completo} Mira la imagen: la IA leyo distinto "
+                    .implode(' y ', $dudas).'.',
+                default => "{$cuantos} datos reconocidos.{$completo} Revisalos antes de guardar.",
+            },
         ];
     }
 
@@ -368,6 +470,15 @@ class EmpresaEscrituraController extends Controller
         ]);
 
         if (! $enlace?->exists) {
+            // El mismo enlace dos veces no: pegar otra firma de la misma
+            // empresa trae la misma web. Con o sin https y www es el mismo.
+            $plano = fn (string $u) => rtrim(preg_replace('#^(?:https?://)?(?:www\.)?#i', '', mb_strtolower(trim($u))) ?? '', '/');
+            $yaEsta = $empresa->enlaces()->get()->first(fn ($e) => $plano($e->url) === $plano($datos['url']));
+
+            if ($yaEsta) {
+                return response()->json(['id' => $yaEsta->id, 'mensaje' => 'Ese enlace ya estaba.']);
+            }
+
             $datos['orden'] = ($empresa->enlaces()->max('orden') ?? 0) + 1;
         }
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Aviso } from '../../components/ui'
 import { AreaTexto, Casilla, Etiqueta, Lista, Texto } from '../../components/ui/form'
-import { useCatalogos } from '../../lib/indice'
+import { olvidarCatalogos, useCatalogos } from '../../lib/indice'
 import BuscadorDireccion from '../../components/BuscadorDireccion'
 import type { DireccionElegida } from '../../components/BuscadorDireccion'
 import type { DatosEmpresa } from '../../lib/indice'
@@ -40,10 +40,13 @@ export default function EmpresaForm({
   valores,
   onChange,
   errorNombre,
+  localidadesNuevas = [],
 }: {
   valores: EstadoEmpresaForm
   onChange: (v: EstadoEmpresaForm) => void
   errorNombre?: string
+  /** Las que agregó Google al leer el mail: la lista de la pantalla no las tiene. */
+  localidadesNuevas?: { id: number; nombre: string; provincia_id: number }[]
 }) {
   const catalogos = useCatalogos()
   const [filtroLocalidad, setFiltroLocalidad] = useState('')
@@ -54,10 +57,11 @@ export default function EmpresaForm({
     localidad nueva quedaba elegida pero el desplegable decía "Sin elegir".
   */
   const [agregadas, setAgregadas] = useState<{ id: number; nombre: string; provincia_id: number }[]>([])
-  const todasLasLocalidades = useMemo(
-    () => [...(catalogos?.localidades ?? []), ...agregadas],
-    [catalogos, agregadas],
-  )
+  const todasLasLocalidades = useMemo(() => {
+    const todas = [...(catalogos?.localidades ?? []), ...agregadas]
+
+    return [...todas, ...localidadesNuevas.filter((n) => !todas.some((l) => l.id === n.id))]
+  }, [catalogos, agregadas, localidadesNuevas])
 
   const set = <K extends keyof EstadoEmpresaForm>(clave: K, valor: EstadoEmpresaForm[K]) =>
     onChange({ ...valores, [clave]: valor })
@@ -100,7 +104,11 @@ export default function EmpresaForm({
         ...a,
         { id: d.localidad_id!, nombre: d.localidad_nombre!, provincia_id: d.provincia_id! },
       ])
+      olvidarCatalogos()
     }
+
+    // Un filtro tecleado antes no tiene que esconder la localidad que llegó.
+    setFiltroLocalidad('')
 
     onChange({
       ...valores,

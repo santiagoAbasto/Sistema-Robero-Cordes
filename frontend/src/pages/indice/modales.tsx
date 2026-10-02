@@ -5,6 +5,7 @@ import { AreaTexto, Casilla, Etiqueta, Lista, Modal, Texto } from '../../compone
 import {
   guardarCampo,
   guardarContacto,
+  guardarEnlace,
   guardarRazonSocial,
   imagenPegada,
   leerFirmaDeMail,
@@ -12,6 +13,7 @@ import {
   useCatalogos,
 } from '../../lib/indice'
 import type { CampoEmpresa, Contacto, RazonSocial } from '../../types/indice'
+import type { EnlaceLeido } from '../../lib/indice'
 
 /* ---------------------------------------------------------------------------
    Las ventanas para cargar y modificar lo que cuelga de la ficha.
@@ -62,6 +64,7 @@ export function ModalContacto({
     setSector(contacto?.sector ?? '')
     setCargo(contacto?.cargo ?? '')
     setPegado('')
+    setEnlacesLeidos([])
     setAviso(null)
     setPrincipal(contacto?.principal ?? false)
     setObservacion(contacto?.observacion ?? '')
@@ -97,6 +100,9 @@ export function ModalContacto({
    * de Nueva empresa. Solo llena lo vacio, y un telefono o un mail que ya
    * esta en la lista no se repite.
    */
+  // La web y las redes del mail pegado: al guardar se suman a la ficha.
+  const [enlacesLeidos, setEnlacesLeidos] = useState<EnlaceLeido[]>([])
+
   async function completarDesdeLoPegado(entrada: string | File = pegado) {
     setLeyendo(true)
     setError(null)
@@ -107,6 +113,7 @@ export function ModalContacto({
 
       setNombre((n) => n || datos.contacto || '')
       setCargo((c) => c || datos.cargo || '')
+      setEnlacesLeidos(datos.enlaces ?? [])
 
       const nuevos = [
         datos.telefono && { tipo: datos.tipo_telefono ?? 'Telefono', valor: datos.telefono },
@@ -172,6 +179,9 @@ export function ModalContacto({
         },
         contacto?.id,
       )
+
+      // La web y las redes del mail van a la ficha; las que ya tenia no se repiten.
+      for (const enlace of enlacesLeidos) await guardarEnlace(empresaId, enlace)
 
       // Si ya estaba, el servidor le sumo lo nuevo y dice cuanto.
       onGuardado(contacto ? 'Contacto modificado.' : r.ya_estaba ? r.mensaje : 'Contacto agregado.')

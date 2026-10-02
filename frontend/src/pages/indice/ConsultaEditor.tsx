@@ -273,7 +273,8 @@ export default function ConsultaEditor() {
     guardar en Condiciones la mandaba de vuelta a Líneas. El aviso de
     guardado también, que se perdía con la pantalla vieja.
   */
-  const alGuardar = useLocation().state as { paso?: Paso; aviso?: string } | null
+  const ubicacion = useLocation()
+  const alGuardar = ubicacion.state as { paso?: Paso; aviso?: string } | null
   const pasoAlGuardar = alGuardar?.paso
 
   const esNueva = !consultaId
@@ -315,7 +316,15 @@ export default function ConsultaEditor() {
   const barraDePasos = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    if (!existente || pasoAlGuardar) return
+    if (!existente) return
+
+    // Viajan una sola vez: recargar o volver con Atrás abre como cualquier
+    // otra, en Líneas y sin el aviso de guardado.
+    if (pasoAlGuardar) {
+      navigate(ubicacion.pathname, { replace: true, state: null })
+
+      return
+    }
 
     setPaso((existente.lineas?.length ?? 0) > 0 ? 'lineas' : 'encabezado')
   }, [existente?.id])
@@ -2441,7 +2450,7 @@ function LineaFila({
     // Vista previa de lo que va a aplicar el servidor.
     onCambio({ factor_conversion: automatico.factor, aplicar_calculo_al_factor: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cambiaUnidad, automatico.factor])
+  }, [cambiaUnidad, automatico.factor, linea.factorEscrito])
 
   const importe = sinFactor ? null : calcularImporte(linea)
   const kilos = cambiaUnidad

@@ -17,6 +17,11 @@ return [
         'key' => env('OPENAI_API_KEY'),
         'url' => env('OPENAI_URL', 'https://api.openai.com/v1'),
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+        // La segunda lectura de una imagen, con otro modelo: si las dos no
+        // coinciden en el mail o el telefono, se avisa cual revisar.
+        'modelo_control' => env('OPENAI_MODELO_CONTROL', 'gpt-4.1-mini'),
+        // Si esas dos no coinciden, una tercera lectura desempata.
+        'modelo_desempate' => env('OPENAI_MODELO_DESEMPATE', 'gpt-4o'),
         // 60 y no 30: con un mail largo la lectura fallaba por tiempo y la
         // persona veia "no reconocimos ninguna linea", como si el texto
         // estuviera mal.
