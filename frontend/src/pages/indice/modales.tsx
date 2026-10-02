@@ -6,6 +6,7 @@ import {
   guardarCampo,
   guardarContacto,
   guardarRazonSocial,
+  imagenPegada,
   leerFirmaDeMail,
   mensajeDeError,
   useCatalogos,
@@ -96,12 +97,13 @@ export function ModalContacto({
    * de Nueva empresa. Solo llena lo vacio, y un telefono o un mail que ya
    * esta en la lista no se repite.
    */
-  async function completarDesdeLoPegado() {
+  async function completarDesdeLoPegado(entrada: string | File = pegado) {
     setLeyendo(true)
     setError(null)
 
     try {
-      const { datos, mensaje } = await leerFirmaDeMail(pegado)
+      const { datos, mensaje, texto } = await leerFirmaDeMail(entrada)
+      if (entrada instanceof File) setPegado(texto)
 
       setNombre((n) => n || datos.contacto || '')
       setCargo((c) => c || datos.cargo || '')
@@ -204,13 +206,34 @@ export function ModalContacto({
             filas={3}
             value={pegado}
             onChange={(e) => setPegado(e.target.value)}
+            onPaste={(e) => {
+              const imagen = imagenPegada(e)
+              if (imagen) {
+                e.preventDefault()
+                void completarDesdeLoPegado(imagen)
+              }
+            }}
             placeholder={'Pedro A. Quiroga\ndeposito@sulfoquimica.com.ar\nCel 1145672389'}
           />
           <div className="flex flex-wrap items-center gap-2.5">
-            <Boton variante="suave" onClick={completarDesdeLoPegado} disabled={leyendo || !pegado.trim()}>
+            <Boton variante="suave" onClick={() => completarDesdeLoPegado()} disabled={leyendo || !pegado.trim()}>
               <Wand2 size={14} strokeWidth={2.2} />
               {leyendo ? 'Leyendo…' : 'Completar'}
             </Boton>
+            {/* La firma que viene como dibujo: la copia la IA y se lee igual. */}
+            <label className="cursor-pointer text-[12px] text-brand-600 underline">
+              o elegí una imagen
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(e) => {
+                  const imagen = e.target.files?.[0]
+                  e.target.value = ''
+                  if (imagen) void completarDesdeLoPegado(imagen)
+                }}
+              />
+            </label>
             {aviso && <span className="text-[11.5px] text-brand-600">{aviso}</span>}
           </div>
         </div>

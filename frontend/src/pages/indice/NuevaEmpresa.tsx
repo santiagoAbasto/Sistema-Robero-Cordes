@@ -5,7 +5,7 @@ import { Boton, Card, PageHeader, Aviso } from '../../components/ui'
 import { AreaTexto, Guardado, Lista, Texto } from '../../components/ui/form'
 import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
-import { crearEmpresa, leerFirmaDeMail, mensajeDeError, useCatalogos } from '../../lib/indice'
+import { crearEmpresa, imagenPegada, leerFirmaDeMail, mensajeDeError, useCatalogos } from '../../lib/indice'
 
 /** Alta de una empresa nueva. Antes era una pantalla aparte del índice. */
 /** El primer contacto de la empresa, tal como se lo carga en esta pantalla. */
@@ -51,12 +51,14 @@ export default function NuevaEmpresa() {
   const [firma, setFirma] = useState('')
   const [leyendo, setLeyendo] = useState(false)
 
-  async function leerLaFirma() {
+  async function leerLaFirma(entrada: string | File = firma) {
     setLeyendo(true)
     setError(null)
 
     try {
-      const { datos, mensaje } = await leerFirmaDeMail(firma)
+      const { datos, mensaje, texto } = await leerFirmaDeMail(entrada)
+      // Lo que copio la IA de la imagen queda a la vista para revisarlo.
+      if (entrada instanceof File) setFirma(texto)
 
       setValores((v) => ({
         ...v,
@@ -175,16 +177,37 @@ export default function NuevaEmpresa() {
           filas={4}
           value={firma}
           onChange={(e) => setFirma(e.target.value)}
+          onPaste={(e) => {
+            const imagen = imagenPegada(e)
+            if (imagen) {
+              e.preventDefault()
+              void leerLaFirma(imagen)
+            }
+          }}
           placeholder={'From: Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.com.ar>\n\nPablo Ferreyra\nSupervisor de Mantenimiento\nCel: (2954) 15-412233\nParque Industrial, Calle 9 esq. 10 | CP 6300\nSanta Rosa, La Pampa, Argentina'}
         />
 
         <div className="flex flex-wrap items-center gap-3">
-          <Boton variante="primario" onClick={leerLaFirma} disabled={leyendo || !firma.trim()}>
+          <Boton variante="primario" onClick={() => leerLaFirma()} disabled={leyendo || !firma.trim()}>
             <Wand2 size={15} strokeWidth={2.2} />
             {leyendo ? 'Leyendo…' : 'Completar con estos datos'}
           </Boton>
+          <label className="cursor-pointer text-[12px] text-brand-600 underline">
+            o elegí una imagen
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const imagen = e.target.files?.[0]
+                e.target.value = ''
+                if (imagen) void leerLaFirma(imagen)
+              }}
+            />
+          </label>
           <p className="min-w-[280px] flex-1 text-[11.5px] leading-relaxed text-[#6c93ae]">
-            Sin inteligencia artificial. La localidad y la provincia se enganchan con las que ya
+            El texto se lee sin IA. Una imagen (Ctrl+V o elegida) la copia la IA y se lee con las
+            mismas reglas. La localidad y la provincia se enganchan con las que ya
             estan en el catalogo: si no estan, quedan vacias y se eligen a mano.
           </p>
         </div>

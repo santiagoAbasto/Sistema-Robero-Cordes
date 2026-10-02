@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Resources\EmpresaResource;
 use App\Models\Contacto;
 use App\Services\FirmaDeMail;
+use App\Services\InterpreteIA;
 use App\Models\ContactoMedio;
 use App\Models\Empresa;
 use App\Models\EmpresaCampo;
@@ -104,15 +105,35 @@ class EmpresaEscrituraController extends Controller
      * los campos ya separados. Nada se guarda: es una propuesta que la
      * persona revisa, igual que las lineas de una cotizacion.
      */
-    public function leerFirma(Request $request, FirmaDeMail $firma)
+    public function leerFirma(Request $request, FirmaDeMail $firma, InterpreteIA $ia)
     {
         $datos = $request->validate([
-            'texto' => ['required', 'string', 'min:10', 'max:8000'],
+            // Primero la imagen: si PHP la corto por grande, ese es el error a mostrar,
+            // no "pega el texto". 2 MB es el limite de subida de PHP en produccion.
+            'imagen' => ['nullable', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+            'texto' => ['required_without:imagen', 'nullable', 'string', 'min:10', 'max:8000'],
         ], [
-            'texto.required' => 'Pega el pie del mail y completamos lo que se pueda.',
+            'texto.required_without' => 'Pega el pie del mail y completamos lo que se pueda.',
+            'imagen.mimes' => 'Solo se leen imagenes PNG, JPG o WEBP.',
+            'imagen.max' => 'La imagen pesa mas de 2 MB: recortala o pega el texto.',
+            'imagen.uploaded' => 'La imagen pesa mas de 2 MB: recortala o pega el texto.',
         ]);
 
-        $leido = $firma->leer($datos['texto']);
+        $texto = $datos['texto'] ?? null;
+
+        if ($request->hasFile('imagen')) {
+            abort_unless($ia->estaConfigurada(), 422, 'Para leer una imagen hace falta la IA, y no esta configurada. Pega el texto o cargalo a mano.');
+
+            try {
+                $texto = $ia->transcribir($request->file('imagen'));
+            } catch (\Throwable $e) {
+                // Un corte de conexion no trae motivo propio: se dice en criollo.
+                $motivo = $e instanceof \RuntimeException ? $e->getMessage() : 'El servicio de IA no esta respondiendo';
+                abort(422, $motivo.'. Pega el texto o cargalo a mano.');
+            }
+        }
+
+        $leido = $firma->leer($texto);
         // El tipo de telefono dice que es el telefono: no es un dato mas.
         $cuantos = count(array_filter(
             array_diff_key($leido, ['tipo_telefono' => true]),
@@ -121,6 +142,9 @@ class EmpresaEscrituraController extends Controller
 
         return [
             'datos' => $leido,
+            // Lo que leyo la IA queda a la vista en el recuadro: se ve que no invento.
+            'texto' => $texto,
+            'con_ia' => $request->hasFile('imagen'),
             'mensaje' => $cuantos === 0
                 ? 'No pudimos reconocer ningun dato. Cargalos a mano.'
                 : "{$cuantos} datos reconocidos. Revisalos antes de guardar.",

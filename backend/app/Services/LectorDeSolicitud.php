@@ -92,13 +92,24 @@ class LectorDeSolicitud
             return ['lineas' => $lineas, 'sin_reconocer' => $sinReconocer];
         }
 
+        // El material dicho en un renglon que no pide nada vale para los que
+        // siguen y no nombran el suyo: "...por material Monel K-500" y abajo
+        // "diametro exterior 76 mm largo 970 mm".
+        $materialDeArriba = null;
+
         foreach ($this->separarRenglones($texto) as $renglon) {
             $linea = $this->leerRenglon($renglon, $materiales, $formas, $unidades);
 
             if ($linea === null) {
                 $sinReconocer[] = $renglon;
+                $materialDeArriba = $this->buscarMaterial($renglon, $materiales) ?? $materialDeArriba;
 
                 continue;
+            }
+
+            if ($linea['material_id'] === null && $materialDeArriba !== null) {
+                $linea['material_id'] = $materialDeArriba->id;
+                $linea['material'] = $materialDeArriba->nombre;
             }
 
             $lineas[] = $linea;
@@ -239,7 +250,7 @@ class LectorDeSolicitud
         $normalizado = $this->normalizar($renglon);
 
         $forma = $this->buscarForma($normalizado, $renglon, $formas);
-        [$cantidad, $unidad] = $this->buscarCantidad($normalizado, $unidades);
+        [$cantidad, $unidad] = $this->buscarCantidad($renglon, $unidades);
         $medidas = $this->buscarMedidas($renglon, $forma);
 
         /*
@@ -505,14 +516,28 @@ class LectorDeSolicitud
         return $palabra.(preg_match('/[AEIOU]$/', $palabra) ? 'S' : 'ES');
     }
 
-    /** "6 UN", "2 c/u", "3 metros" al principio del renglón. */
-    private function buscarCantidad(string $normalizado, $unidades): array
+    /**
+     * "6 UN", "2 c/u", "3 metros" al principio del renglón.
+     *
+     * Se lee del renglón como se escribió, con sus espacios y comas. Leído
+     * del texto normalizado, que no tiene ninguno, la cantidad se pegaba al
+     * número de al lado: "10 Ø4,76" daba 10476 y "1,5 MT" daba 15.
+     */
+    private function buscarCantidad(string $renglon, $unidades): array
     {
-        if (! preg_match('/^(\d+(?:[.,]\d+)?)/', $normalizado, $m)) {
+        if (! preg_match('/^\s*(\d+(?:[.,]\d+)*)(.*)$/su', $renglon, $m)) {
             return [null, null];
         }
 
-        $cantidad = (float) str_replace(',', '.', $m[1]);
+        // Como se escribe acá: coma decimal, y punto de miles ("1.000 KG").
+        $numero = match (true) {
+            str_contains($m[1], ',') => str_replace(['.', ','], ['', '.'], $m[1]),
+            (bool) preg_match('/^\d{1,3}(\.\d{3})+$/', $m[1]) => str_replace('.', '', $m[1]),
+            default => $m[1],
+        };
+
+        $cantidad = (float) $numero;
+        $resto = $this->normalizar($m[2]);
 
         $porTexto = [
             'METRO' => 'MT', 'METROS' => 'MT', 'MTS' => 'MT', 'MT' => 'MT',
@@ -521,7 +546,7 @@ class LectorDeSolicitud
         ];
 
         foreach ($porTexto as $texto => $codigo) {
-            if (preg_match('/^\d+(?:[.,]\d+)?'.$texto.'/', $normalizado)) {
+            if (str_starts_with($resto, $texto)) {
                 return [$cantidad, $unidades->firstWhere('codigo', $codigo)];
             }
         }

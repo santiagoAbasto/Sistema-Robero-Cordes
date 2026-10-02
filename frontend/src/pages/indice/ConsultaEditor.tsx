@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Calculator, Check, Eye, EyeOff, Lock, Plus, Ruler, Trash2, Wand2, Scale } from 'lucide-react'
 import {
   Accion,
@@ -107,6 +107,8 @@ interface LineaForm extends DatosLinea {
    * y cuándo. Lo decide el servidor comparando contra lo que da la fórmula.
    */
   factorAMano?: { quien: string | null; cuando: string | null } | null
+  /** Si una persona escribió el factor en esta pantalla, todavía sin guardar. */
+  factorEscrito?: boolean
   /**
    * Si la medida y la descripción las escribió una persona.
    *
@@ -183,7 +185,10 @@ function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
 
     // Se deduce si el texto guardado lo escribió una persona: si coincide con
     // lo que armaría el sistema, nadie lo tocó.
-    const dimArmada = armarDimensiones(forma, calc.medidas, cano)
+    const dimArmada = armarDimensiones(forma, calc.medidas, cano, {
+      min: l.largo_min_mm,
+      max: l.largo_max_mm,
+    })
     const descArmada = armarDescripcion(l.material, forma, dimArmada)
 
     return {
@@ -261,6 +266,16 @@ export default function ConsultaEditor() {
   const navigate = useNavigate()
   const catalogos = useCatalogos()
 
+  /*
+    El primer guardado de una cotización nueva cambia la dirección
+    (/empresas/12/agregar → /consultas/40), y la pantalla se arma de nuevo.
+    El paso en el que estaba la persona viaja con la navegación: sin esto,
+    guardar en Condiciones la mandaba de vuelta a Líneas. El aviso de
+    guardado también, que se perdía con la pantalla vieja.
+  */
+  const alGuardar = useLocation().state as { paso?: Paso; aviso?: string } | null
+  const pasoAlGuardar = alGuardar?.paso
+
   const esNueva = !consultaId
 
   const { datos: existente, cargando: cargandoConsulta, recargar } = useCarga(
@@ -296,11 +311,11 @@ export default function ConsultaEditor() {
     Un borrador que se reabre ya tiene sus lineas: se sigue desde ahi, que es
     lo que se estaba haciendo. Uno nuevo arranca por el encabezado.
   */
-  const [paso, setPaso] = useState<Paso>('encabezado')
+  const [paso, setPaso] = useState<Paso>(pasoAlGuardar ?? 'encabezado')
   const barraDePasos = useRef<HTMLElement>(null)
 
   useEffect(() => {
-    if (!existente) return
+    if (!existente || pasoAlGuardar) return
 
     setPaso((existente.lineas?.length ?? 0) > 0 ? 'lineas' : 'encabezado')
   }, [existente?.id])
@@ -379,7 +394,7 @@ export default function ConsultaEditor() {
   }, [hayCambios])
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [aviso, setAviso] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(alGuardar?.aviso ?? null)
   const [nuevaObs, setNuevaObs] = useState('')
   const [precargando, setPrecargando] = useState(false)
 
@@ -595,6 +610,7 @@ export default function ConsultaEditor() {
         clave: _clave,
         calc,
         factorAMano: _fam,
+        factorEscrito: _fe,
         dimensionesAMano: _dam,
         descripcionAMano: _desam,
         ...l
@@ -619,8 +635,10 @@ export default function ConsultaEditor() {
         : Number(consultaId)
 
       if (esNueva) {
-        setAviso('Guardado. Ya figura en el historial de la empresa.')
-        navigate(`/consultas/${id}`, { replace: true })
+        navigate(`/consultas/${id}`, {
+          replace: true,
+          state: { paso, aviso: 'Guardado. Ya figura en el historial de la empresa.' },
+        })
       } else {
         await actualizarConsulta(id, datos)
         setAviso('Cambios guardados. Quedaron en el control de cambios.')
@@ -704,7 +722,9 @@ export default function ConsultaEditor() {
 
   /**
    * Precarga: se pega el texto del cliente y el sistema propone las líneas.
-   * Se agregan a lo que ya hay; después se revisan y se corrigen.
+   *
+   * Reemplazan a las que hay. Antes se sumaban, y cada clic agregaba otra
+   * tanda: con el mismo pedido Belén terminó con 3 líneas y Roberto con 1.
    */
   async function precargarDesdeTexto() {
     const texto = cabecera.solicitud_texto.trim()
@@ -712,6 +732,18 @@ export default function ConsultaEditor() {
     if (!texto) {
       setError('Pegá primero el texto del mail o del WhatsApp en "Lo que pidió el cliente".')
 
+      return
+    }
+
+    const cargadas = lineas.filter((l) => l.descripcion.trim() !== '').length
+
+    if (
+      cargadas > 0 &&
+      !window.confirm(
+        `Ya hay ${cargadas === 1 ? 'una línea cargada' : `${cargadas} líneas cargadas`}. ` +
+          'Se reemplazan por las que salen del texto. ¿Seguimos?',
+      )
+    ) {
       return
     }
 
@@ -779,8 +811,8 @@ export default function ConsultaEditor() {
         }
       })
 
-      // Reemplaza las líneas vacías; conserva las que ya tenían datos.
-      setLineas((prev) => [...prev.filter((l) => l.descripcion.trim() !== ''), ...nuevas])
+      // Reemplaza todo: volver a leer el mismo texto no va sumando copias.
+      setLineas(nuevas)
 
       // Lo que sigue es revisarlas y ponerles precio.
       setPaso('lineas')
@@ -1842,7 +1874,7 @@ function Lineas({
         chips={
           vigentes > 0 ? <Chip tono="neutro">{`${iguales} de ${vigentes} iguales a lo pedido`}</Chip> : undefined
         }
-        ayuda="La tilde verde quiere decir que se cotiza igual a lo que pidieron. Al destildarla se abre lo que se cotiza y el motivo del cambio."
+        ayuda="La tilde verde quiere decir que se cotiza igual a lo que pidieron. Al destildarla se abre arriba lo que pidió el cliente y el motivo del cambio, y abajo queda lo que se le ofrece."
         acciones={
           <Accion onClick={agregar}>+ Agregar linea</Accion>
         }
@@ -2058,11 +2090,16 @@ function MedidasDeLaForma({
     Que el largo sea variable es tener los dos extremos cargados; no hay un
     campo aparte que pueda quedar marcado con el rango vacío.
   */
-  const largoVariable = linea.largo_min_mm !== null || linea.largo_max_mm !== null
+  // != y no !==: las líneas que arma el lector no traen el rango, y con
+  // undefined la casilla aparecía tildada en todas.
+  const largoVariable = linea.largo_min_mm != null || linea.largo_max_mm != null
 
-  /** Pasa milímetros a la unidad en la que se está escribiendo. */
+  /**
+   * Pasa milímetros a la unidad en la que se está escribiendo. El 0 con que
+   * arranca un rango sin largo se ve vacío: escrito encima quedaba "03200".
+   */
   const desdeMm = (mm: number | null, unidad: string) =>
-    mm === null ? '' : String(Number((mm / (A_MILIMETROS[unidad] ?? 1)).toFixed(4)))
+    !mm ? '' : String(Number((mm / (A_MILIMETROS[unidad] ?? 1)).toFixed(4)))
 
   /**
    * Deja el rango y el promedio de una sola vez.
@@ -2358,7 +2395,10 @@ function LineaFila({
   // El nombre manda, este o no en el catalogo: es lo que sale impreso.
   const nombreMaterial = material?.nombre ?? linea.material_nuevo ?? null
 
-  const dimArmada = armarDimensiones(formaElegida, linea.calc.medidas, canoElegido)
+  const dimArmada = armarDimensiones(formaElegida, linea.calc.medidas, canoElegido, {
+    min: linea.largo_min_mm,
+    max: linea.largo_max_mm,
+  })
   const descArmada = armarDescripcion(nombreMaterial, formaElegida, dimArmada)
 
   useEffect(() => {
@@ -2385,11 +2425,21 @@ function LineaFila({
   const factorAMano = cambiaUnidad && linea.factor_conversion ? linea.factorAMano : null
   const sinFactor = cambiaUnidad && !linea.factor_conversion && automatico.factor === null
 
+  /*
+    La propuesta sigue a las medidas mientras nadie escriba el factor.
+
+    Antes se ponía una sola vez, con lo primero que hubiera: al escribir el
+    largo 3200, la primera tecla ("3") daba 3 mm = 0,003 MT, y ahí quedaba
+    aunque después el largo dijera 3,35 m. Lo que escribió una persona —en
+    esta pantalla o guardado— no se toca.
+  */
   useEffect(() => {
-    if (cambiaUnidad && automatico.factor !== null && !linea.factor_conversion) {
-      // Vista previa de lo que va a aplicar el servidor.
-      onCambio({ factor_conversion: automatico.factor, aplicar_calculo_al_factor: true })
-    }
+    if (!cambiaUnidad || automatico.factor === null) return
+    if (linea.factorEscrito || (linea.factor_conversion && linea.factorAMano)) return
+    if (Number(linea.factor_conversion ?? 0).toFixed(4) === automatico.factor.toFixed(4)) return
+
+    // Vista previa de lo que va a aplicar el servidor.
+    onCambio({ factor_conversion: automatico.factor, aplicar_calculo_al_factor: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cambiaUnidad, automatico.factor])
 
@@ -2399,13 +2449,14 @@ function LineaFila({
     : null
 
   /*
-    Destildar "igual a lo que pidio" copia la linea al bloque de abajo.
+    Destildar "igual a lo que pidio" copia la linea al bloque amarillo, que
+    aparece arriba: lo que pidio el cliente.
 
     Al reves no tenia sentido y confundia: el lector carga la linea CON LO QUE
     PIDIO EL CLIENTE —lo saca de su mail—, asi que al destildar el bloque
     amarillo aparecia vacio y habia que volver a tipear ahi lo que ya estaba
-    escrito arriba. Ahora se copia solo, y arriba queda para cambiar lo que se
-    va a cotizar, que es lo unico que falta.
+    escrito en la linea. Ahora se copia solo, y abajo queda para cambiar lo
+    que se le va a ofrecer, que es lo unico que falta.
 
     Lo ya escrito a mano no se pisa: solo se completa lo que esta vacio.
   */
@@ -2424,7 +2475,7 @@ function LineaFila({
    * Cambia una medida de lo pedido y rearma el texto que sale impreso.
    *
    * pedido_dimensiones sigue siendo lo que se imprime: se arma con la misma
-   * funcion que el de la linea de arriba, asi las dos mitades se escriben
+   * funcion que el de lo que se ofrece, asi las dos mitades se escriben
    * igual y se pueden comparar.
    */
   function cambiarMedidaPedida(clave: string, cambios: Partial<{ valor: string; unidad: string }>) {
@@ -2512,6 +2563,135 @@ function LineaFila({
           </button>
         </div>
       </div>
+
+      {/*
+        Lo que pidió el cliente, ARRIBA de lo que se le ofrece: "pidió esto,
+        ofrecí aquello" (Roberto, 01-10). El 26-09 se había bajado, para que lo
+        primero fuera lo que se cotiza; leído al revés, la línea arrancaba por
+        la respuesta. El motivo del cambio queda al final de lo pedido, justo
+        antes de lo que se ofrece.
+
+        Los campos son los mismos y en el mismo orden que abajo: material,
+        forma, medidas, cantidad y unidad.
+      */}
+      {!linea.igual_a_lo_pedido && (
+        <div className="mb-2.5 grid gap-2.5 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] p-2.5 lg:grid-cols-6">
+          <p className="text-[10.5px] font-bold uppercase tracking-wide text-warning-ink lg:col-span-6">
+            Lo que pidió el cliente
+          </p>
+          <Combo
+            id={`pedido-material-${linea.clave}`}
+            etiqueta="Material"
+            className="lg:col-span-2"
+            value={linea.pedido_material ?? ''}
+            onChange={(e) => onCambio({ pedido_material: e.target.value || null })}
+            placeholder="Elegi de la lista o escribi lo que pidio"
+            opciones={(catalogos?.materiales ?? []).map((m) => m.nombre)}
+          />
+          <Combo
+            id={`pedido-forma-${linea.clave}`}
+            etiqueta="Forma"
+            value={linea.pedido_forma ?? ''}
+            onChange={(e) => onCambio({ pedido_forma: e.target.value || null })}
+            placeholder="BARRA REDONDA"
+            opciones={(catalogos?.formas ?? []).map((f) => f.nombre)}
+          />
+          {/*
+            Las medidas de lo pedido, con los nombres que les pone la forma.
+
+            Era una caja llamada "Medidas" donde cada uno escribia lo que le
+            parecia —"DIA 65 X 145", "Ø65x145mm"— mientras que arriba, en lo
+            que se cotiza, hay un campo por medida: Diametro y Largo para una
+            barra, Ancho y Largo para una chapa. Las dos mitades de la misma
+            linea no se podian comparar de un vistazo, que es para lo que esta
+            este bloque.
+
+            Con una forma que no esta en el catalogo no sabemos que campos
+            lleva: ahi sigue la caja de texto, y las lineas viejas tambien.
+          */}
+          {camposDeLoPedido.length > 0 ? (
+            camposDeLoPedido.map((campo) => {
+              const cargada = linea.pedido_medidas?.[campo.clave] ?? { valor: '', unidad: 'mm' }
+
+              return (
+                <div key={campo.clave}>
+                  <Etiqueta>{campo.label}</Etiqueta>
+                  <div className="flex">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      aria-label={`${campo.label} pedido`}
+                      value={cargada.valor}
+                      onChange={(e) => cambiarMedidaPedida(campo.clave, { valor: e.target.value })}
+                      className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                    />
+                    <select
+                      aria-label={`Unidad de ${campo.label.toLowerCase()} pedido`}
+                      value={cargada.unidad}
+                      onChange={(e) => cambiarMedidaPedida(campo.clave, { unidad: e.target.value })}
+                      className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                    >
+                      {UNIDADES_MEDIDA.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )
+            })
+          ) : (
+            <Texto
+              etiqueta="Medidas"
+              value={linea.pedido_dimensiones ?? ''}
+              onChange={(e) => onCambio({ pedido_dimensiones: e.target.value || null })}
+              placeholder="DIA 65 X 145 MM"
+            />
+          )}
+          <Texto
+            etiqueta="Cantidad"
+            type="number"
+            step="0.01"
+            value={linea.cantidad_pedida ?? ''}
+            onChange={(e) =>
+              onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
+            }
+          />
+          <Lista
+            etiqueta="Unidad"
+            value={linea.unidad_pedida_id ?? ''}
+            onChange={(e) =>
+              onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
+            }
+            opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
+          />
+          {/*
+            El motivo se elige o se escribe, y lo escrito queda en la lista.
+
+            "Agregar mas opciones de motivos de cambio, debe ser mas
+            administrable". Era un desplegable cerrado con siete opciones:
+            agregar una octava era tocar el codigo. Igual que la condicion de
+            pago, la primera vez se escribe y de ahi en mas esta en la lista.
+          */}
+          <Combo
+            id={`motivo-${linea.clave}`}
+            etiqueta="Motivo del cambio"
+            className="lg:col-span-6"
+            value={linea.motivo_cambio ?? ''}
+            onChange={(e) => onCambio({ motivo_cambio: e.target.value || null })}
+            placeholder="Elegi de la lista o escribi por que se cotiza distinto"
+            opciones={catalogos?.motivos_cambio ?? []}
+          />
+        </div>
+      )}
+
+      {!linea.igual_a_lo_pedido && (
+        <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-brand-600">
+          Lo que se le ofrece
+        </p>
+      )}
 
       <div className="grid items-end gap-2.5 lg:grid-cols-2">
         <ElegirMaterial linea={linea} catalogos={catalogos} onCambio={onCambio} />
@@ -2670,8 +2850,11 @@ function LineaFila({
               onChange={(e) =>
                 onCambio({
                   factor_conversion: e.target.value ? Number(e.target.value) : null,
-                  // Lo escribió una persona: ya no es el de la calculadora.
+                  // Lo escribió una persona: ya no es el de la calculadora, y
+                  // la propuesta deja de seguir a las medidas. Si lo borra,
+                  // vuelve a proponerse.
                   aplicar_calculo_al_factor: false,
+                  factorEscrito: Boolean(e.target.value),
                 })
               }
             />
@@ -2757,131 +2940,6 @@ function LineaFila({
           {codigo(linea.unidad_factura_id)} × {plata(linea.precio_por_kilo)} por{' '}
           {codigo(linea.unidad_factura_id).toLowerCase()} = {plata(importe)}
         </p>
-      )}
-
-      {/*
-        Lo que habia pedido el cliente, DEBAJO de lo que se cotiza.
-
-        Estaba arriba, y en el orden al reves: primero lo que pidio y despues
-        lo que se ofrece. Para leer una linea habia que arrancar por lo que no
-        se va a vender. Ahora arriba esta lo que se cotiza —que es el trabajo—
-        y abajo, en amarillo, contra que se lo compara.
-
-        Los campos son los mismos y en el mismo orden que arriba: material,
-        forma, medidas, cantidad y unidad. Antes eran cajas de texto libre, asi
-        que no se podia elegir de la lista.
-      */}
-      {!linea.igual_a_lo_pedido && (
-        <div className="mt-2.5 grid gap-2.5 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] p-2.5 lg:grid-cols-6">
-          <p className="text-[10.5px] font-bold uppercase tracking-wide text-warning-ink lg:col-span-6">
-            Lo que habia pedido el cliente
-          </p>
-          <Combo
-            id={`pedido-material-${linea.clave}`}
-            etiqueta="Material"
-            className="lg:col-span-2"
-            value={linea.pedido_material ?? ''}
-            onChange={(e) => onCambio({ pedido_material: e.target.value || null })}
-            placeholder="Elegi de la lista o escribi lo que pidio"
-            opciones={(catalogos?.materiales ?? []).map((m) => m.nombre)}
-          />
-          <Combo
-            id={`pedido-forma-${linea.clave}`}
-            etiqueta="Forma"
-            value={linea.pedido_forma ?? ''}
-            onChange={(e) => onCambio({ pedido_forma: e.target.value || null })}
-            placeholder="BARRA REDONDA"
-            opciones={(catalogos?.formas ?? []).map((f) => f.nombre)}
-          />
-          {/*
-            Las medidas de lo pedido, con los nombres que les pone la forma.
-
-            Era una caja llamada "Medidas" donde cada uno escribia lo que le
-            parecia —"DIA 65 X 145", "Ø65x145mm"— mientras que arriba, en lo
-            que se cotiza, hay un campo por medida: Diametro y Largo para una
-            barra, Ancho y Largo para una chapa. Las dos mitades de la misma
-            linea no se podian comparar de un vistazo, que es para lo que esta
-            este bloque.
-
-            Con una forma que no esta en el catalogo no sabemos que campos
-            lleva: ahi sigue la caja de texto, y las lineas viejas tambien.
-          */}
-          {camposDeLoPedido.length > 0 ? (
-            camposDeLoPedido.map((campo) => {
-              const cargada = linea.pedido_medidas?.[campo.clave] ?? { valor: '', unidad: 'mm' }
-
-              return (
-                <div key={campo.clave}>
-                  <Etiqueta>{campo.label}</Etiqueta>
-                  <div className="flex">
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      aria-label={`${campo.label} pedido`}
-                      value={cargada.valor}
-                      onChange={(e) => cambiarMedidaPedida(campo.clave, { valor: e.target.value })}
-                      className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
-                    />
-                    <select
-                      aria-label={`Unidad de ${campo.label.toLowerCase()} pedido`}
-                      value={cargada.unidad}
-                      onChange={(e) => cambiarMedidaPedida(campo.clave, { unidad: e.target.value })}
-                      className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
-                    >
-                      {UNIDADES_MEDIDA.map((u) => (
-                        <option key={u} value={u}>
-                          {u}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )
-            })
-          ) : (
-            <Texto
-              etiqueta="Medidas"
-              value={linea.pedido_dimensiones ?? ''}
-              onChange={(e) => onCambio({ pedido_dimensiones: e.target.value || null })}
-              placeholder="DIA 65 X 145 MM"
-            />
-          )}
-          <Texto
-            etiqueta="Cantidad"
-            type="number"
-            step="0.01"
-            value={linea.cantidad_pedida ?? ''}
-            onChange={(e) =>
-              onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
-            }
-          />
-          <Lista
-            etiqueta="Unidad"
-            value={linea.unidad_pedida_id ?? ''}
-            onChange={(e) =>
-              onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
-            }
-            opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
-          />
-          {/*
-            El motivo se elige o se escribe, y lo escrito queda en la lista.
-
-            "Agregar mas opciones de motivos de cambio, debe ser mas
-            administrable". Era un desplegable cerrado con siete opciones:
-            agregar una octava era tocar el codigo. Igual que la condicion de
-            pago, la primera vez se escribe y de ahi en mas esta en la lista.
-          */}
-          <Combo
-            id={`motivo-${linea.clave}`}
-            etiqueta="Motivo del cambio"
-            className="lg:col-span-6"
-            value={linea.motivo_cambio ?? ''}
-            onChange={(e) => onCambio({ motivo_cambio: e.target.value || null })}
-            placeholder="Elegi de la lista o escribi por que se cotiza distinto"
-            opciones={catalogos?.motivos_cambio ?? []}
-          />
-        </div>
       )}
 
       {/*
