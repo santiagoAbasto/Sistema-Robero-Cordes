@@ -48,12 +48,23 @@ export default function EmpresaForm({
   const catalogos = useCatalogos()
   const [filtroLocalidad, setFiltroLocalidad] = useState('')
 
+  /*
+    Las ciudades que agregó el buscador de direcciones en esta pantalla. El
+    catálogo se trae una vez al abrir el sistema y no se entera: sin esto la
+    localidad nueva quedaba elegida pero el desplegable decía "Sin elegir".
+  */
+  const [agregadas, setAgregadas] = useState<{ id: number; nombre: string; provincia_id: number }[]>([])
+  const todasLasLocalidades = useMemo(
+    () => [...(catalogos?.localidades ?? []), ...agregadas],
+    [catalogos, agregadas],
+  )
+
   const set = <K extends keyof EstadoEmpresaForm>(clave: K, valor: EstadoEmpresaForm[K]) =>
     onChange({ ...valores, [clave]: valor })
 
   // Al elegir provincia sólo se ofrecen sus localidades.
   const localidades = useMemo(() => {
-    const todas = catalogos?.localidades ?? []
+    const todas = todasLasLocalidades
     const deLaProvincia = valores.provincia_id
       ? todas.filter((l) => l.provincia_id === valores.provincia_id)
       : todas
@@ -61,7 +72,7 @@ export default function EmpresaForm({
     return filtroLocalidad
       ? deLaProvincia.filter((l) => l.nombre.toLowerCase().includes(filtroLocalidad.toLowerCase()))
       : deLaProvincia
-  }, [catalogos, valores.provincia_id, filtroLocalidad])
+  }, [todasLasLocalidades, valores.provincia_id, filtroLocalidad])
 
   /*
     Dónde buscar la dirección.
@@ -72,13 +83,25 @@ export default function EmpresaForm({
   */
   const cerca = useMemo(() => {
     const provincia = catalogos?.provincias.find((p) => p.id === valores.provincia_id)?.nombre
-    const localidad = catalogos?.localidades.find((l) => l.id === valores.localidad_id)?.nombre
+    const localidad = todasLasLocalidades.find((l) => l.id === valores.localidad_id)?.nombre
 
     return [localidad, provincia].filter(Boolean).join(', ') || null
-  }, [catalogos, valores.provincia_id, valores.localidad_id])
+  }, [catalogos, todasLasLocalidades, valores.provincia_id, valores.localidad_id])
 
   /** Al elegir una dirección de la lista se completa el resto de los campos. */
   function completarDesdeDireccion(d: DireccionElegida) {
+    if (
+      d.localidad_id &&
+      d.provincia_id &&
+      d.localidad_nombre &&
+      !todasLasLocalidades.some((l) => l.id === d.localidad_id)
+    ) {
+      setAgregadas((a) => [
+        ...a,
+        { id: d.localidad_id!, nombre: d.localidad_nombre!, provincia_id: d.provincia_id! },
+      ])
+    }
+
     onChange({
       ...valores,
       direccion: d.direccion ?? valores.direccion,

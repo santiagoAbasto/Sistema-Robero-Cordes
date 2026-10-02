@@ -6,6 +6,7 @@ use App\Models\ConsultaLineaOpcion;
 use App\Models\Forma;
 use App\Models\Material;
 use App\Models\Unidad;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -74,6 +75,40 @@ class InterpreteIA
 
             return $this->conReglas($texto, $e->getMessage().': se leyo con las reglas de siempre.');
         }
+    }
+
+    /**
+     * Copia el texto de una imagen: la firma que el cliente manda como dibujo.
+     *
+     * La IA SOLO transcribe. Que es nombre, telefono o direccion lo deciden
+     * despues las reglas de FirmaDeMail, igual que con el texto pegado: asi
+     * no puede inventar un dato que no esta escrito.
+     */
+    public function transcribir(UploadedFile $imagen): string
+    {
+        $respuesta = Http::withToken(config('services.openai.key'))
+            ->timeout(config('services.openai.timeout', 30))
+            ->post(rtrim(config('services.openai.url'), '/').'/chat/completions', [
+                'model' => config('services.openai.model'),
+                'temperature' => 0,
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Copia el texto de la imagen tal cual esta escrito, un dato por renglon. '
+                        .'No corrijas, no completes ni agregues nada que no se lea. Si un telefono tiene un icono en vez '
+                        .'de palabra, escribi delante "Tel:", "Cel:" o "WhatsApp:" segun el icono. Devolve solo el texto.'],
+                    ['role' => 'user', 'content' => [[
+                        'type' => 'image_url',
+                        'image_url' => ['url' => 'data:'.$imagen->getMimeType().';base64,'.base64_encode($imagen->get()), 'detail' => 'high'],
+                    ]]],
+                ],
+            ]);
+
+        if ($respuesta->failed()) {
+            Log::warning('OpenAI respondio '.$respuesta->status().': '.$respuesta->body());
+
+            throw new \RuntimeException($this->motivo($respuesta->status()));
+        }
+
+        return trim((string) data_get($respuesta->json(), 'choices.0.message.content'));
     }
 
     private function conReglas(string $texto, ?string $aviso): array

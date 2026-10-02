@@ -227,13 +227,26 @@ export interface DatosDeLaFirma {
   tipo_telefono?: string | null
 }
 
-export async function leerFirmaDeMail(texto: string) {
-  const { data } = await api.post<{ datos: DatosDeLaFirma; mensaje: string }>(
-    '/empresas/leer-firma',
-    { texto },
-  )
+type FirmaLeida = { datos: DatosDeLaFirma; mensaje: string; texto: string; con_ia: boolean }
+
+/** El texto pegado, o la imagen de la firma: esa la copia la IA y se lee con las mismas reglas. */
+export async function leerFirmaDeMail(entrada: string | File) {
+  const { data } =
+    typeof entrada === 'string'
+      ? await api.post<FirmaLeida>('/empresas/leer-firma', { texto: entrada })
+      : await api.postForm<FirmaLeida>('/empresas/leer-firma', { imagen: entrada })
 
   return data
+}
+
+/**
+ * La imagen pegada con Ctrl+V, si lo pegado es SOLO una imagen. Si tambien
+ * trae texto (un mail copiado con su logo) gana el texto, como siempre.
+ */
+export function imagenPegada(e: React.ClipboardEvent): File | undefined {
+  if (e.clipboardData.getData('text/plain').trim()) return undefined
+
+  return Array.from(e.clipboardData.files).find((f) => f.type.startsWith('image/'))
 }
 
 /* ------------------------------------------------------------- revisiones */

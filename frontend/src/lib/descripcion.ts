@@ -1,4 +1,5 @@
 import type { CanoEstandar, Forma } from '../types/indice'
+import { A_MILIMETROS } from './calculadora'
 import type { MedidaCargada } from './calculadora'
 
 /* ---------------------------------------------------------------------------
@@ -27,15 +28,32 @@ function numero(valor: string): string {
  * Si todas las medidas están en la misma unidad, la unidad va una sola vez al
  * final: "38,1 X 145 MM". Si están en unidades distintas, cada una lleva la
  * suya: "1 IN X 6 M".
+ *
+ * Con largos variables el largo es el rango y no el promedio: "4,76 X
+ * 3200-3500 MM", que es lo que se le ofrece al cliente. El promedio queda
+ * para el peso y el factor.
  */
 export function armarDimensiones(
   forma: Forma | null,
   medidas: Record<string, MedidaCargada>,
   cano: CanoEstandar | null,
+  rango?: { min?: number | string | null; max?: number | string | null },
 ): string {
   if (!forma) return ''
 
   const campos = forma.campos ?? []
+
+  const min = rango?.min != null ? Number(rango.min) : null
+  const max = rango?.max != null ? Number(rango.max) : null
+
+  /** La medida escrita; el largo, como rango si lo hay. */
+  const texto = (clave: string, m: MedidaCargada) => {
+    if (clave !== 'length' || !min || !max || min === max) return numero(m.valor)
+
+    const porUnidad = A_MILIMETROS[m.unidad] ?? 1
+
+    return `${numero(String(min / porUnidad))}-${numero(String(max / porUnidad))}`
+  }
 
   // Con un caño comercial la medida es su nombre y su schedule, no el
   // diámetro: es como lo pide el cliente y como lo busca el proveedor.
@@ -44,25 +62,28 @@ export function armarDimensiones(
 
     return [
       `${cano.nombre} SCH ${cano.schedule}`,
-      largo?.valor ? `X ${numero(largo.valor)} ${largo.unidad.toUpperCase()}` : '',
+      largo?.valor ? `X ${texto('length', largo)} ${largo.unidad.toUpperCase()}` : '',
     ]
       .filter(Boolean)
       .join(' ')
   }
 
   const cargadas = campos
-    .map((c) => medidas[c.clave])
-    .filter((m): m is MedidaCargada => Boolean(m?.valor) && numero(m.valor) !== '')
+    .map((c) => ({ clave: c.clave, m: medidas[c.clave] }))
+    // Una medida en 0 no está cargada: "76 X 0 MM" no le sirve a nadie.
+    .filter((x): x is { clave: string; m: MedidaCargada } =>
+      Boolean(x.m?.valor) && Number.parseFloat(x.m.valor) > 0,
+    )
 
   if (cargadas.length === 0) return ''
 
-  const unidades = new Set(cargadas.map((m) => m.unidad))
+  const unidades = new Set(cargadas.map((x) => x.m.unidad))
 
   if (unidades.size === 1) {
-    return `${cargadas.map((m) => numero(m.valor)).join(' X ')} ${[...unidades][0].toUpperCase()}`
+    return `${cargadas.map((x) => texto(x.clave, x.m)).join(' X ')} ${[...unidades][0].toUpperCase()}`
   }
 
-  return cargadas.map((m) => `${numero(m.valor)} ${m.unidad.toUpperCase()}`).join(' X ')
+  return cargadas.map((x) => `${texto(x.clave, x.m)} ${x.m.unidad.toUpperCase()}`).join(' X ')
 }
 
 /**

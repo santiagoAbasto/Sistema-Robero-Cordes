@@ -243,6 +243,12 @@ class EnlazadorDeLineas
         $t = preg_replace('/\bgrado\s*(\d+)/', 'gr$1', $t);
         $t = preg_replace('/\bgr[\s.]*(\d+)/', 'gr$1', $t);
 
+        // "Monel K –500", "K—500" y "K - 500" son el K-500: Word y Outlook
+        // cambian el guion por uno largo, y suelta la K se pierde y gana el
+        // Monel a secas. Solo una letra que sigue a una palabra: "7.2 M - 7.5
+        // KG", "C/U - 75" y "REV.E - 400" no son grados.
+        $t = preg_replace('/(?<=[a-z])(\s+[a-z])\s*[-\x{2010}-\x{2015}\x{2212}]\s*(?=\d)/u', '$1', $t);
+
         // "C-276" y "C 276" son uno solo; "25-22-2" tambien.
         $t = preg_replace('/(?<=[a-z0-9])[-.\/](?=[a-z0-9])/', '', $t);
 

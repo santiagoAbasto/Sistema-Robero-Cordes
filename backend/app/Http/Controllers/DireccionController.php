@@ -147,15 +147,23 @@ class DireccionController extends Controller
 
             $calle = $buscar('route')['longText'] ?? null;
             $numero = $buscar('street_number')['longText'] ?? null;
-            $localidad = $buscar('locality')['longText']
-                ?? $buscar('administrative_area_level_2')['longText']
-                ?? null;
-            $provincia = $buscar('administrative_area_level_1')['longText'] ?? null;
+            // La ciudad es la locality; el partido ("Partido de Lanús") es solo
+            // un respaldo para buscar, nunca una localidad para agregar.
+            $ciudad = $buscar('locality')['longText'] ?? null;
+            $localidad = $ciudad ?? $buscar('administrative_area_level_2')['longText'] ?? null;
+            // Google dice "Provincia de Buenos Aires"; la lista, "Buenos Aires".
+            $provincia = preg_replace(
+                '/^provincia\s+del?\s+/iu', '', $buscar('administrative_area_level_1')['longText'] ?? '',
+            ) ?: null;
             $pais = $buscar('country')['longText'] ?? null;
             $cp = $buscar('postal_code')['longText'] ?? null;
 
-            // Se buscan en nuestras listas; lo que no está queda en blanco y se
-            // elige a mano. No creamos provincias ni localidades solas.
+            /*
+              Se buscan en nuestras listas. La provincia no se crea nunca. La
+              ciudad sí, si no está y su provincia calzó: Google da el nombre
+              bien escrito ("Remedios de Escalada"), y la lista vieja tiene
+              175 localidades. El pie de un mail, en cambio, no crea ninguna.
+            */
             $provinciaId = $provincia
                 ? Provincia::where('nombre', 'like', $provincia)->value('id')
                 : null;
@@ -165,7 +173,7 @@ class DireccionController extends Controller
                 'codigo_postal' => $cp,
                 'provincia_id' => $provinciaId,
                 'provincia_nombre' => $provincia,
-                'localidad_id' => $this->buscarLocalidad($localidad, $provinciaId),
+                'localidad_id' => $this->buscarLocalidad($localidad, $provinciaId, crear: $ciudad !== null),
                 'localidad_nombre' => $localidad,
                 'pais_id' => $pais ? Pais::where('nombre', 'like', $pais)->value('id') : null,
                 'pais_nombre' => $pais,
@@ -182,7 +190,7 @@ class DireccionController extends Controller
      * calzó. Sin eso "Córdoba" o "Santa Fe" podrían pegarle a la ciudad
      * equivocada, porque varias provincias tienen una ciudad con su nombre.
      */
-    private function buscarLocalidad(?string $nombre, ?int $provinciaId): ?int
+    private function buscarLocalidad(?string $nombre, ?int $provinciaId, bool $crear = false): ?int
     {
         if (! $nombre) {
             return null;
@@ -194,9 +202,15 @@ class DireccionController extends Controller
             $nombre = 'C.A.B.A.';
         }
 
-        return Localidad::where('nombre', 'like', $nombre)
+        $id = Localidad::where('nombre', 'like', $nombre)
             ->when($provinciaId, fn ($q) => $q->where('provincia_id', $provinciaId))
             ->value('id');
+
+        if ($id === null && $crear && $provinciaId) {
+            $id = Localidad::firstOrCreate(['provincia_id' => $provinciaId, 'nombre' => $nombre])->id;
+        }
+
+        return $id;
     }
 
     private function idCaba(): ?int
