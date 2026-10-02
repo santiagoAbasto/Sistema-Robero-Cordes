@@ -40,7 +40,9 @@ final class CamposDeFormulario
         $celdas = [];
 
         foreach (preg_split('/\R/u', $texto) ?: [] as $renglon) {
-            foreach (explode("\t", $renglon) as $celda) {
+            // "...largo 970 mm.Nombre: Carlos": al copiar del mail se pierde el
+            // salto y el rotulo queda pegado al punto. Un rotulo empieza celda.
+            foreach (preg_split('/(?<=[.!?])\s*(?=\p{Lu}[\p{L} \/]{0,30}:)|\t/u', $renglon) ?: [] as $celda) {
                 $celda = trim($celda);
 
                 if ($celda !== '') {
@@ -119,10 +121,22 @@ final class CamposDeFormulario
             // "NOMBRE Diego Arce", "EMAIL: darce@..." — la etiqueta tiene
             // que terminar ahi: EMAILS no es EMAIL.
             if (str_starts_with($plana, $variante)
-                && preg_match('/^[\s:.\-]/u', mb_substr($plana, mb_strlen($variante)))) {
+                && preg_match('/^[\s:.\-\/]/u', $resto = mb_substr($plana, mb_strlen($variante)))) {
+                // Sin dos puntos, la etiqueta va en mayusculas como en la web:
+                // "Empresa Habilitada para..." es una oracion de la firma de
+                // Tormicron, no una etiqueta.
+                $rotulo = mb_substr($celda, 0, mb_strlen($variante));
+
+                if (! preg_match('/^\s*[:.\-\/]/u', $resto) && $rotulo !== mb_strtoupper($rotulo)) {
+                    continue;
+                }
+
                 // plano() cambia letra por letra, asi que el largo coincide
-                // con el del original y se corta en el mismo lugar.
-                $valor = trim(mb_substr($celda, mb_strlen($variante)), " \t:.-");
+                // con el del original y se corta en el mismo lugar. "Cargo /
+                // Área: Compras": lo que va de la barra a los dos puntos
+                // tambien es el rotulo.
+                $resto = preg_replace('/^\s*\/[^:\d]{1,30}:/u', '', mb_substr($celda, mb_strlen($variante)));
+                $valor = trim((string) $resto, " \t:.-");
 
                 return [$campo, $valor, false];
             }

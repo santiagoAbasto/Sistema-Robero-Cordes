@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Wand2 } from 'lucide-react'
+import { Wand2, X } from 'lucide-react'
 import { Boton, Card, PageHeader, Aviso } from '../../components/ui'
 import { AreaTexto, Guardado, Lista, Texto } from '../../components/ui/form'
 import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
-import { crearEmpresa, imagenPegada, leerFirmaDeMail, mensajeDeError, useCatalogos } from '../../lib/indice'
+import { crearEmpresa, imagenPegada, leerFirmaDeMail, mensajeDeError, olvidarCatalogos, useCatalogos } from '../../lib/indice'
+import type { EnlaceLeido } from '../../lib/indice'
 
 /** Alta de una empresa nueva. Antes era una pantalla aparte del índice. */
 /** El primer contacto de la empresa, tal como se lo carga en esta pantalla. */
@@ -31,6 +32,9 @@ export default function NuevaEmpresa() {
     en la observacion y habia que volver a tipearlo en la ficha.
   */
   const [contacto, setContacto] = useState<PrimerContacto>(CONTACTO_VACIO)
+  // La web y las redes del mail: quedan como enlaces clickeables de la ficha.
+  const [enlaces, setEnlaces] = useState<EnlaceLeido[]>([])
+  const [localidadesNuevas, setLocalidadesNuevas] = useState<{ id: number; nombre: string; provincia_id: number }[]>([])
   const idDelTipo = (nombre: string) => catalogos?.tipos_medio.find((t) => t.nombre === nombre)?.id
   const [valores, setValores] = useState<EstadoEmpresaForm>(estadoInicial())
   const [guardando, setGuardando] = useState(false)
@@ -68,8 +72,6 @@ export default function NuevaEmpresa() {
         pais_id: v.pais_id ?? datos.pais_id,
         provincia_id: v.provincia_id ?? datos.provincia_id,
         localidad_id: v.localidad_id ?? datos.localidad_id,
-        // La web no tiene campo en el alta: queda anotada para no perderla.
-        observacion_general: v.observacion_general || (datos.web ? `Web: ${datos.web}` : ''),
       }))
 
       // La persona que firma es el primer contacto. Solo lo vacio.
@@ -80,6 +82,21 @@ export default function NuevaEmpresa() {
         tipoTelefono: c.telefono ? c.tipoTelefono : (datos.tipo_telefono ?? 'Telefono'),
         mail: c.mail || (datos.mail ?? ''),
       }))
+
+      // La localidad que agregó Google al leer el mail todavía no está en la
+      // lista de esta pantalla: se la suma, y la próxima pantalla la trae.
+      if (datos.localidad_id && datos.localidad_nombre && datos.provincia_id
+        && !catalogos?.localidades.some((l) => l.id === datos.localidad_id)) {
+        const nueva = { id: datos.localidad_id, nombre: datos.localidad_nombre, provincia_id: datos.provincia_id }
+        setLocalidadesNuevas((a) => [...a, nueva])
+        olvidarCatalogos()
+      }
+
+      // Se suman a los que ya habia, sin repetir.
+      setEnlaces((actuales) => [
+        ...actuales,
+        ...(datos.enlaces ?? []).filter((e) => !actuales.some((a) => a.url === e.url)),
+      ])
 
       setAviso(mensaje)
     } catch (err) {
@@ -113,6 +130,7 @@ export default function NuevaEmpresa() {
 
       const empresa = await crearEmpresa({
         ...valores,
+        enlaces,
         // Sin nombre no hay contacto: el resto solo no alcanza para saber quien es.
         contacto: contacto.nombre.trim()
           ? { nombre: contacto.nombre.trim(), cargo: contacto.cargo.trim() || null, medios }
@@ -207,8 +225,8 @@ export default function NuevaEmpresa() {
           </label>
           <p className="min-w-[280px] flex-1 text-[11.5px] leading-relaxed text-[#6c93ae]">
             El texto se lee sin IA. Una imagen (Ctrl+V o elegida) la copia la IA y se lee con las
-            mismas reglas. La localidad y la provincia se enganchan con las que ya
-            estan en el catalogo: si no estan, quedan vacias y se eligen a mano.
+            mismas reglas; lo que las reglas no encuentran lo completa la IA, solo si está
+            escrito. Si la localidad no está en la lista, se ubica con Google.
           </p>
         </div>
       </Card>
@@ -218,6 +236,7 @@ export default function NuevaEmpresa() {
           valores={valores}
           onChange={setValores}
           errorNombre={error && !valores.nombre.trim() ? 'Falta el nombre' : undefined}
+          localidadesNuevas={localidadesNuevas}
         />
       </Card>
 
@@ -269,6 +288,36 @@ export default function NuevaEmpresa() {
           />
         </div>
       </Card>
+
+      {enlaces.length > 0 && (
+        <Card className="flex flex-col gap-3 p-[22px]">
+          <div className="flex flex-wrap items-baseline gap-2.5">
+            <h2 className="text-[15px] font-semibold text-ink">Web y redes</h2>
+            <span className="text-[11.5px] text-muted">
+              salen del mail; se guardan como enlaces de la ficha. La cruz saca el que no va.
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {enlaces.map((e) => (
+              <span
+                key={e.url}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-app py-1 pl-2.5 pr-1.5 text-[12px]"
+              >
+                <span className="font-semibold text-ink">{e.tipo}</span>
+                <span className="text-muted">{e.url}</span>
+                <button
+                  type="button"
+                  aria-label={`Sacar ${e.url}`}
+                  onClick={() => setEnlaces((a) => a.filter((x) => x.url !== e.url))}
+                  className="rounded p-0.5 text-faint hover:text-danger"
+                >
+                  <X size={12} strokeWidth={2.4} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Aviso tono="verde">
         Después de guardarla vas a poder cargarle más contactos, las razones sociales a las que se

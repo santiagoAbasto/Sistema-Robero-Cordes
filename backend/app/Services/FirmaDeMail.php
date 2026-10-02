@@ -73,15 +73,25 @@ class FirmaDeMail
 
         $mail = $this->mail($texto);
 
+        $empresa = $this->empresa($texto, $renglones, $mail);
+        $cargo = $this->cargo($renglones);
+
         $datos = [
-            'empresa' => $this->empresa($texto, $renglones, $mail),
+            'empresa' => $empresa,
             'contacto' => $this->contacto($renglones),
-            'cargo' => $this->cargo($renglones),
+            // "Gerente Comercial, JMH SRL": la empresa ya tiene su campo.
+            'cargo' => $cargo === null || $empresa === null ? $cargo
+                : preg_replace('/\s*[,|]\s*'.preg_quote($empresa, '/').'$/u', '', $cargo),
             'mail' => $mail,
             'telefono' => $this->telefono($texto)[0],
             'tipo_telefono' => $this->telefono($texto)[1],
             'web' => $this->web($texto, $mail),
-            'direccion' => $this->direccion($renglones),
+            'enlaces' => $this->enlaces($texto),
+            'direccion' => $calle = $this->direccion($renglones),
+            // El renglon entero, con la ciudad: para ubicarla con Google
+            // cuando la localidad no esta en la lista. No es un dato mas.
+            'direccion_completa' => $calle === null ? null
+                : collect($renglones)->first(fn ($r) => str_contains($r, $calle)),
             'codigo_postal' => $this->codigoPostal($texto),
         ];
 
@@ -110,7 +120,9 @@ class FirmaDeMail
             'mail' => $mail,
             ...$this->telefonoDeLaFicha($ficha, $texto),
             'web' => $this->web($texto, $mail),
-            'direccion' => $ficha['direccion'] ?? null,
+            'enlaces' => $this->enlaces($texto),
+            'direccion' => $this->soloLaCalle($ficha['direccion'] ?? null),
+            'direccion_completa' => $ficha['direccion'] ?? null,
             'codigo_postal' => $ficha['codigo_postal'] ?? $this->codigoPostal($texto),
         ];
 
@@ -186,7 +198,8 @@ class FirmaDeMail
         foreach ($renglones as $r) {
             if (! str_contains($r, '@') && mb_strlen($r) <= 60
                 && preg_match('/\s(S\.?\s?A\.?(\s?I\.?\s?C\.?)?|S\.?\s?R\.?\s?L\.?|S\.?\s?A\.?\s?S\.?|LTDA\.?|INC\.?)$/iu', $r)) {
-                return $r;
+                // "Gerente Comercial, JMH SRL": lo de antes de la coma es el cargo.
+                return preg_replace('/^.*[,|]\s*(?=\S+\s)/u', '', $r);
             }
         }
 
@@ -305,9 +318,10 @@ class FirmaDeMail
      * Solo se usa cuando el rotulo no lo dice. Sin 15 ni 9 no se sabe: un
      * 11 4555-3700 y un 11 4567-2389 tienen el mismo largo, y queda Telefono.
      */
-    private function pareceCelular(string $numero): bool
+    public function pareceCelular(string $numero): bool
     {
-        return (bool) preg_match('/(?:^|[\s)(-])15[\s.-]?\d{3,4}[\s.-]?\d{2,4}\b|\+?54\s*9\s*\d/u', $numero);
+        // "(+54-9) 11-6734-1149" tambien: el 9 puede venir con guion y parentesis.
+        return (bool) preg_match('/(?:^|[\s)(-])15[\s.-]?\d{3,4}[\s.-]?\d{2,4}\b|(?<!\d)\+?54[\s.-]*9[\s.)-]*\d/u', $numero);
     }
 
     private function limpiar(string $t): ?string
@@ -327,6 +341,63 @@ class FirmaDeMail
     }
 
     /**
+     * La web y las redes, para guardarlas como enlaces de la ficha.
+     *
+     * Las que estan escritas como direccion ("www.jmh.com.ar",
+     * "linkedin.com/company/jmh-srl") y las que vienen con su rotulo y un
+     * usuario ("Instagram: jmh.argentina"). El dominio del mail no cuenta:
+     * es de donde escribe, no una pagina que hayan puesto.
+     *
+     * @return list<array{tipo: string, url: string}>
+     */
+    private function enlaces(string $texto): array
+    {
+        $redes = [
+            'Instagram' => 'instagram.com', 'Facebook' => 'facebook.com',
+            'LinkedIn' => 'linkedin.com', 'YouTube' => 'youtube.com',
+        ];
+        $enlaces = [];
+
+        foreach ($redes as $tipo => $dominio) {
+            // Escrita como direccion: "linkedin.com/company/jmh-srl".
+            if (preg_match('#(?:https?://)?(?:www\.)?'.preg_quote($dominio, '#').'/[\w@./%-]+#iu', $texto, $m)) {
+                $enlaces[$tipo] = rtrim($m[0], '.');
+            // Con su rotulo y el usuario: "Instagram: jmh.argentina", "IG @jmh".
+            } elseif (preg_match('/^\s*'.$tipo.'\s*:?\s*@?([\w.]{2,60})\s*$/imu', $texto, $m)) {
+                $enlaces[$tipo] = $dominio.'/'.rtrim($m[1], '.');
+            }
+        }
+
+        $webs = [];
+
+        // Las paginas: con www, con http, o con el rotulo "Web:".
+        preg_match_all('#(?:https?://)?www\.[\w-]+(?:\.[\w-]+)+|https?://[\w-]+(?:\.[\w-]+)+#iu', $texto, $m);
+        $webs = $m[0];
+
+        if (preg_match_all('/^\s*(?:web|sitio(?:\s+web)?|p[aá]gina)\s*:\s*((?:https?:\/\/)?[\w-]+(?:\.[\w-]+)+)\s*$/imu', $texto, $r)) {
+            array_push($webs, ...$r[1]);
+        }
+
+        $resultado = [];
+
+        foreach (array_unique(array_map('mb_strtolower', $webs)) as $web) {
+            $sinWww = preg_replace('#^(?:https?://)?(?:www\.)?#', '', $web);
+
+            // Una red escrita con www ya esta como red; no se repite como web.
+            if (! collect($redes)->contains(fn ($d) => str_starts_with($sinWww, $d))
+                && ! collect($resultado)->contains(fn ($e) => preg_replace('#^(?:https?://)?(?:www\.)?#', '', $e['url']) === $sinWww)) {
+                $resultado[] = ['tipo' => 'Web', 'url' => $web];
+            }
+        }
+
+        foreach ($enlaces as $tipo => $url) {
+            $resultado[] = ['tipo' => $tipo, 'url' => mb_strtolower($url)];
+        }
+
+        return $resultado;
+    }
+
+    /**
      * La direccion.
      *
      * El renglon que nombra una calle y tiene numero: "Parque Industrial,
@@ -337,6 +408,9 @@ class FirmaDeMail
     {
         $palabrasDeCalle = '/\b(av|avda|avenida|calle|ruta|camino|parque|km|kil[oó]metro|'
             .'colectora|pasaje|bv|boulevard|diagonal|manzana|mza|lote|piso|oficina|of)\b/iu';
+
+        // "Madariaga 830, Sarandí, Buenos Aires": despues del numero va el lugar.
+        $renglones = array_map(fn ($r) => $this->soloLaCalle($r), $renglones);
 
         foreach ($renglones as $r) {
             if (str_contains($r, '@') || preg_match(self::ENCABEZADOS, $r)) {
@@ -376,6 +450,18 @@ class FirmaDeMail
         }
 
         return null;
+    }
+
+    /**
+     * La calle y el numero, sin lo que sigue a la coma: "General Deheza 3146,
+     * Remedios de Escalada, Buenos Aires" es "General Deheza 3146". La
+     * localidad y la provincia tienen su campo, y deDonde() las busca en el
+     * texto entero. "Parque Industrial, Calle 9 esq. 10" no se toca: la coma
+     * va antes del numero.
+     */
+    public function soloLaCalle(?string $direccion): ?string
+    {
+        return $direccion === null ? null : preg_replace('/(\d)\s*,.*$/u', '$1', $direccion);
     }
 
     /** "CP 6300" o un CPA argentino: B1646GEL. */
@@ -430,21 +516,15 @@ class FirmaDeMail
 
         $localidades = Localidad::query()->get(['id', 'nombre', 'provincia_id']);
         $provinciaId = $buscar(Provincia::query()->get(['id', 'nombre']));
-        $localidadId = $buscar($localidades);
-
         /*
-          La localidad tiene que ser de la provincia que se encontro.
+          La localidad se busca entre las de la provincia que se encontro.
 
-          "Martin Coronado C.P. (1682) - Prov. Buenos Aires": Martin Coronado
-          no esta cargada, y "Buenos Aires" —el nombre de la provincia— si
-          esta como localidad, pero de la Ciudad Autonoma. Salia una
-          localidad de CABA con provincia de Buenos Aires, que se contradice
-          sola. Una localidad vacia se elige a mano; una equivocada no se ve.
+          "Martin Coronado - Prov. Buenos Aires": "Buenos Aires" esta como
+          localidad de CABA y salia con provincia de Buenos Aires. Y en
+          "Sarandí, Buenos Aires" esa localidad de CABA le ganaba a Sarandí por
+          ser mas larga, se descartaba, y Sarandí se perdia.
         */
-        if ($localidadId !== null && $provinciaId !== null
-            && $localidades->firstWhere('id', $localidadId)?->provincia_id !== $provinciaId) {
-            $localidadId = null;
-        }
+        $localidadId = $buscar($provinciaId ? $localidades->where('provincia_id', $provinciaId) : $localidades);
 
         /*
           Lo que falta se completa hacia arriba: la localidad dice su provincia

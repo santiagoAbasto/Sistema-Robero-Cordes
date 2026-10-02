@@ -109,18 +109,110 @@ class FirmaEnImagenTest extends TestCase
             ->assertJsonPath('message', fn ($m) => str_starts_with($m, 'La imagen pesa mas de 2 MB'));
     }
 
-    public function test_el_texto_se_sigue_leyendo_sin_ia(): void
+    /** Respuesta simulada de la IA cuando se le pide completar la firma. */
+    private function iaResponde(array $datos): void
     {
         config(['services.openai.key' => 'clave-de-prueba']);
-        Http::fake();
+        Http::fake(['*/chat/completions' => Http::response([
+            'choices' => [['message' => ['content' => json_encode($datos)]]],
+        ])]);
+    }
+
+    /**
+     * La IA apoya a las reglas pero no puede inventar.
+     *
+     * Lo que propone y no esta escrito en el texto se descarta: aca la IA
+     * "deduce" una empresa, un mail y un cargo que el texto no dice.
+     */
+    public function test_la_ia_no_agrega_nada_que_no_este_escrito(): void
+    {
+        $this->iaResponde(['empresa' => 'ACME', 'mail' => 'jperez@acme.com.ar', 'cargo' => 'Compras']);
+
+        $this->leer(['texto' => "Juan Perez\nCel 1145672389"])
+            ->assertOk()
+            ->assertJsonPath('con_ia', false)
+            ->assertJsonPath('datos.contacto', 'Juan Perez')
+            ->assertJsonPath('datos.empresa', null)
+            ->assertJsonPath('datos.mail', null)
+            ->assertJsonPath('datos.cargo', null);
+
+        // Solo se le preguntan los que faltan: el contacto ya lo leyeron las reglas.
+        Http::assertSent(fn ($r) => ! str_contains($r['messages'][0]['content'], 'contacto,')
+            && str_contains($r['messages'][0]['content'], 'empresa'));
+
+        $this->leer([])->assertStatus(422)->assertJsonValidationErrors('texto');
+    }
+
+    /** Lo que las reglas no leen y esta escrito, lo completa la IA, y se avisa. */
+    public function test_la_ia_completa_lo_que_las_reglas_no_leyeron(): void
+    {
+        // Sin rotulos ni formas conocidas: las reglas no sacan el cargo ni la direccion.
+        $texto = "Juan Perez\nresponsable de compras y abastecimiento\nMetalurgica del Plata\nTel. 4555-3700\nSan Martin 455 piso 2";
+        $this->iaResponde([
+            'cargo' => 'responsable de compras y abastecimiento',
+            'empresa' => 'Metalurgica del Plata',
+            'direccion' => 'San Martin 455',
+        ]);
+
+        $r = $this->leer(['texto' => $texto])->assertOk()->assertJsonPath('con_ia', true);
+
+        $this->assertSame('responsable de compras y abastecimiento', $r->json('datos.cargo'));
+        $this->assertSame('Metalurgica del Plata', $r->json('datos.empresa'));
+        $this->assertStringContainsString('La IA completo', $r->json('mensaje'));
+    }
+
+    /** Sin clave, el texto se lee como siempre, solo con reglas, y no se llama a nadie. */
+    public function test_sin_ia_el_texto_se_lee_igual(): void
+    {
+        config(['services.openai.key' => null]);
 
         $this->leer(['texto' => "Juan Perez\nCel 1145672389"])
             ->assertOk()
             ->assertJsonPath('con_ia', false)
             ->assertJsonPath('datos.contacto', 'Juan Perez');
 
-        $this->leer([])->assertStatus(422)->assertJsonValidationErrors('texto');
-
         Http::assertNothingSent();
+    }
+
+    /**
+     * Las dos lecturas de la imagen no coinciden en el mail: se avisa con las dos.
+     *
+     * Paso con la firma de JMH: una lectura salio "gmenendez@" y la otra bien.
+     */
+    public function test_si_las_dos_lecturas_no_coinciden_avisa_que_revisar(): void
+    {
+        config(['services.openai.key' => 'clave-de-prueba']);
+        $lectura = fn (string $mail) => Http::response(['choices' => [['message' => ['content' => "Lucas Ferrari\nTel: +54 11 4321-9876\n{$mail}"]]]]);
+        Http::fake(['*/chat/completions' => Http::sequence()
+            ->pushResponse($lectura('lferari@acme.com.ar'))
+            ->pushResponse($lectura('lferrari@acme.com.ar'))
+            ->whenEmpty(Http::response(['choices' => [['message' => ['content' => '{}']]]]))]);
+
+        $r = $this->leer(['imagen' => UploadedFile::fake()->image('firma.png', 600, 200)])->assertOk();
+
+        $this->assertStringContainsString('lferari@acme.com.ar', $r->json('mensaje'));
+        $this->assertStringContainsString('lferrari@acme.com.ar', $r->json('mensaje'));
+    }
+
+    /**
+     * Una tercera lectura desempata: gana el mail que coincide dos veces.
+     *
+     * JMH en local: gpt-4o-mini leyo "gmenendez@", gpt-4.1-mini "gmendez@".
+     */
+    public function test_la_tercera_lectura_desempata(): void
+    {
+        config(['services.openai.key' => 'clave-de-prueba']);
+        $lectura = fn (string $mail) => Http::response(['choices' => [['message' => ['content' => "Lucas Ferrari\nTel: +54 11 4321-9876\n{$mail}"]]]]);
+        $nada = Http::response(['choices' => [['message' => ['content' => '{}']]]]);
+        Http::fake(['*/chat/completions' => Http::sequence()
+            ->pushResponse($lectura('lferari@acme.com.ar'))    // la principal, con la letra de menos
+            ->pushResponse($lectura('lferrari@acme.com.ar'))   // la de control
+            ->pushResponse($nada)                              // la IA no completa nada mas
+            ->pushResponse($lectura('lferrari@acme.com.ar'))]); // el desempate
+
+        $r = $this->leer(['imagen' => UploadedFile::fake()->image('firma.png', 600, 200)])->assertOk();
+
+        $this->assertSame('lferrari@acme.com.ar', $r->json('datos.mail'));
+        $this->assertStringNotContainsString('Mira la imagen', $r->json('mensaje'));
     }
 }

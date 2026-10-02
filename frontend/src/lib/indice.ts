@@ -140,6 +140,14 @@ export async function traerCatalogos(): Promise<Catalogos> {
   return data
 }
 
+/**
+ * Que el próximo pedido traiga el catálogo de nuevo: el buscador de
+ * direcciones agregó una localidad y la ficha, al modificarla, no la tenía.
+ */
+export function olvidarCatalogos() {
+  cacheCatalogos = null
+}
+
 export function useCatalogos() {
   const [catalogos, setCatalogos] = useState<Catalogos | null>(cacheCatalogos)
 
@@ -223,8 +231,16 @@ export interface DatosDeLaFirma {
   pais_id: number | null
   provincia_id: number | null
   localidad_id: number | null
+  localidad_nombre?: string | null
   /** Que es el telefono: Celular, WhatsApp o Telefono. Lo dice su rotulo. */
   tipo_telefono?: string | null
+  /** La web y las redes que trae: se guardan como enlaces de la ficha. */
+  enlaces?: EnlaceLeido[]
+}
+
+export interface EnlaceLeido {
+  tipo: string
+  url: string
 }
 
 type FirmaLeida = { datos: DatosDeLaFirma; mensaje: string; texto: string; con_ia: boolean }
@@ -383,6 +399,8 @@ export interface DatosEmpresa {
   relaciones?: string[]
   /** Su primer contacto: se guarda junto con la empresa y nace principal. */
   contacto?: DatosContacto | null
+  /** La web y las redes leídas del mail, como enlaces de la ficha. */
+  enlaces?: EnlaceLeido[]
 }
 
 export async function crearEmpresa(datos: DatosEmpresa) {

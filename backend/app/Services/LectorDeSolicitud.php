@@ -107,6 +107,22 @@ class LectorDeSolicitud
                 continue;
             }
 
+            // "Ti. Gr. 4 Ø4,76" y abajo "10 Barras": el renglon que solo dice
+            // cuantas —sin material ni medida— es la cantidad del de arriba.
+            $arriba = array_key_last($lineas);
+
+            if ($arriba !== null && $lineas[$arriba]['cantidad'] === null
+                && $linea['material_id'] === null && $linea['dimensiones'] === null) {
+                $lineas[$arriba]['descripcion'] .= ' '.$linea['descripcion'];
+                $lineas[$arriba]['cantidad'] = $linea['cantidad'];
+                $lineas[$arriba]['unidad_venta_id'] = $linea['unidad_venta_id'];
+                $lineas[$arriba]['unidad'] = $linea['unidad'];
+                $lineas[$arriba]['forma_id'] ??= $linea['forma_id'];
+                $lineas[$arriba]['forma'] ??= $linea['forma'];
+
+                continue;
+            }
+
             if ($linea['material_id'] === null && $materialDeArriba !== null) {
                 $linea['material_id'] = $materialDeArriba->id;
                 $linea['material'] = $materialDeArriba->nombre;
@@ -235,14 +251,22 @@ class LectorDeSolicitud
     /** Un renglón por línea de pedido, sin la viñeta de la lista. */
     private function separarRenglones(string $texto): array
     {
-        $renglones = preg_split('/[\r\n]+|(?<=\))\s*[,;]\s*/u', $texto) ?: [];
+        // Tambien antes de un rotulo de la ficha de contacto pegado al pedido:
+        // "...largo 970 mm.Nombre: Carlos". Una lista cerrada, porque cortar
+        // antes de cualquier "Palabra:" rompe "de largo. Material: Titanio".
+        $renglones = preg_split('/[\r\n]+|(?<=\))\s*[,;]\s*|(?<!\/)(?<!\/ )(?=\b(?:NOMBRE|CARGO|EMPRESA|DIRECCI[OÓ]N|TEL[EÉ]FONO|CELULAR|WHATSAPP|E-?MAIL|WEB)\b[^:\r\n]{0,20}:)/iu', $texto) ?: [];
 
         $limpios = array_map(
             fn ($r) => trim(preg_replace(self::VINETA, '', trim($r)) ?? ''),
             $renglones,
         );
 
-        return array_values(array_filter($limpios, fn ($r) => mb_strlen($r) >= 6));
+        // Lo muy corto es ruido ("Hola", "Gracias")... salvo una medida con su
+        // Ø: "Ø4,76" solo en su renglon es el diametro del pedido.
+        return array_values(array_filter(
+            $limpios,
+            fn ($r) => mb_strlen($r) >= 6 || preg_match('/^[Ø⌀]\s*\d/u', $r),
+        ));
     }
 
     private function leerRenglon($renglon, $materiales, $formas, $unidades): ?array
@@ -525,7 +549,8 @@ class LectorDeSolicitud
      */
     private function buscarCantidad(string $renglon, $unidades): array
     {
-        if (! preg_match('/^\s*(\d+(?:[.,]\d+)*)(.*)$/su', $renglon, $m)) {
+        if (! preg_match('/^\s*(\d+(?:[.,]\d+)*)(.*)$/su', $renglon, $m)
+            && ! $this->cantidadAlFinal($renglon, $m)) {
             return [null, null];
         }
 
@@ -552,6 +577,25 @@ class LectorDeSolicitud
         }
 
         return [$cantidad, $unidades->firstWhere('codigo', 'UN')];
+    }
+
+    /**
+     * "Ti. Gr. 4 Ø4,76 ASTM F 67 10 Barras": lo que se cuenta, al final.
+     *
+     * Solo un entero pegado a una palabra que cuenta piezas y cerrando el
+     * renglon. Y no si lo de antes es un grado o una norma: en "Titanio
+     * grado 2 barras" el 2 es el grado, no cuantas.
+     */
+    private function cantidadAlFinal(string $renglon, &$m): bool
+    {
+        if (! preg_match('/^(.*?)(?<![\d.,])(\d+)\s*((?:BARRAS?|PIEZAS?|PZAS?|UNIDADES|UN)\.?)\s*$/iu', $renglon, $f)
+            || preg_match('/(?:\b(?:GR|GRADO|AISI|SAE|ASTM|UNS|TIPO|F)|[xX×Ø⌀])[\s.]*$/iu', $f[1])) {
+            return false;
+        }
+
+        $m = [$f[0], $f[2], $f[3]];
+
+        return true;
     }
 
     /**
@@ -601,13 +645,14 @@ class LectorDeSolicitud
         $numero = '\d+(?:[.,]\d+)?';
 
         // "38.1 X 145 MM" · "2 X 1000 X 2000" · "DIA 65 X 145MM" · "Ø127mm x 25.4mm" · "Ø10mm x 3 metros"
-        $serie = '/(DIA\s*|Ø\s*)?'.$numero.$unidad.'(?:\s*[xX]\s*'.$numero.$unidad.'){1,2}/iu';
+        // "76 mm largo 970 mm": LARGO separa como la x.
+        $serie = '/(DIA\s*|Ø\s*)?'.$numero.$unidad.'(?:\s*(?:X|LARGO)\s*'.$numero.$unidad.'){1,2}/iu';
 
         if (preg_match($serie, $renglon, $m)) {
             $medidas['texto'] = trim($m[0]);
             $marcado = trim($m[1] ?? '') !== '';
 
-            foreach (preg_split('/\s*[xX]\s*/', $m[0]) ?: [] as $pieza) {
+            foreach (preg_split('/\s*(?:X|LARGO)\s*/i', $m[0]) ?: [] as $pieza) {
                 if (preg_match('/('.$numero.')\s*(MM|CM|MTS?|METROS?|M)?/iu', $pieza, $q)) {
                     $numeros[] = $this->aMilimetros($q[1], $q[2] ?? '');
                 }
@@ -617,6 +662,12 @@ class LectorDeSolicitud
             $medidas['texto'] = trim($m[0]);
             $marcado = trim($m[1] ?? '') !== '';
             $numeros = [$this->aMilimetros($m[2], 'MM')];
+        } elseif (preg_match('/[Ø⌀]\s*('.$numero.')(?!\d|[.,]\d|\s*\/)/u', $renglon, $m)) {
+            // "Ø4,76" sin MM: el simbolo ya dice que es un diametro, y sin
+            // unidad es en milimetros. DIA no: tambien es "dia de entrega".
+            $medidas['texto'] = trim($m[0]);
+            $marcado = true;
+            $numeros = [$this->aMilimetros($m[1], 'MM')];
         }
 
         /*

@@ -252,6 +252,9 @@ class EnlazadorDeLineas
         // "C-276" y "C 276" son uno solo; "25-22-2" tambien.
         $t = preg_replace('/(?<=[a-z0-9])[-.\/](?=[a-z0-9])/', '', $t);
 
+        // "Ti" es el simbolo del titanio, y el catalogo lo abrevia TIT: "Ti. Gr. 4" es TIT GR4.
+        $t = preg_replace('/\bti\b/', 'tit', $t);
+
         /*
           "AISI 316 L" es 316L: la letra suelta detras de un numero es el
           sufijo del grado, y 316L no es lo mismo que 316.

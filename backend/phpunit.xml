@@ -32,5 +32,9 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Sin claves de verdad: las pruebas no llaman a OpenAI ni a Google. La que
+             necesita una la pone en config() y simula la respuesta con Http::fake. -->
+        <env name="OPENAI_API_KEY" value=""/>
+        <env name="GOOGLE_PLACES_KEY" value=""/>
     </php>
 </phpunit>

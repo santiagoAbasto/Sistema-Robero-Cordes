@@ -1106,8 +1106,15 @@ class ConsultaEscrituraController extends Controller
         $linea->largo_mm = $promedio;
 
         // Solo si la forma lleva largo: a un disco no se le inventa uno.
+        // En la unidad en que se cargo: guardado en mm, al reabrir un largo
+        // escrito en metros cambiaba de unidad y la descripcion dejaba de
+        // armarse sola. El peso no cambia: la calculadora vuelve a mm.
         if (isset($calculo['medidas']['length'])) {
-            $calculo['medidas']['length'] = ['valor' => $promedio, 'unidad' => 'mm'];
+            $unidad = $calculo['medidas']['length']['unidad'] ?? 'mm';
+            $calculo['medidas']['length'] = [
+                'valor' => round($promedio / (CalculadoraDePeso::A_MILIMETROS[$unidad] ?? 1.0), 4),
+                'unidad' => $unidad,
+            ];
         }
     }
 

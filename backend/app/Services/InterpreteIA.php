@@ -6,6 +6,8 @@ use App\Models\ConsultaLineaOpcion;
 use App\Models\Forma;
 use App\Models\Material;
 use App\Models\Unidad;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -79,36 +81,169 @@ class InterpreteIA
 
     /**
      * Copia el texto de una imagen: la firma que el cliente manda como dibujo.
+     * Devuelve la lectura y la de control (null si esa no llego).
      *
      * La IA SOLO transcribe. Que es nombre, telefono o direccion lo deciden
      * despues las reglas de FirmaDeMail, igual que con el texto pegado: asi
      * no puede inventar un dato que no esta escrito.
      */
-    public function transcribir(UploadedFile $imagen): string
+    public function transcribir(UploadedFile $imagen): array
     {
-        $respuesta = Http::withToken(config('services.openai.key'))
-            ->timeout(config('services.openai.timeout', 30))
-            ->post(rtrim(config('services.openai.url'), '/').'/chat/completions', [
-                'model' => config('services.openai.model'),
-                'temperature' => 0,
-                'messages' => [
-                    ['role' => 'system', 'content' => 'Copia el texto de la imagen tal cual esta escrito, un dato por renglon. '
-                        .'No corrijas, no completes ni agregues nada que no se lea. Si un telefono tiene un icono en vez '
-                        .'de palabra, escribi delante "Tel:", "Cel:" o "WhatsApp:" segun el icono. Devolve solo el texto.'],
-                    ['role' => 'user', 'content' => [[
-                        'type' => 'image_url',
-                        'image_url' => ['url' => 'data:'.$imagen->getMimeType().';base64,'.base64_encode($imagen->get()), 'detail' => 'high'],
-                    ]]],
-                ],
-            ]);
+        $url = rtrim(config('services.openai.url'), '/').'/chat/completions';
+        $pedido = fn (string $modelo) => $this->pedidoDeTranscripcion($imagen, $modelo);
 
-        if ($respuesta->failed()) {
-            Log::warning('OpenAI respondio '.$respuesta->status().': '.$respuesta->body());
+        /*
+          Dos lecturas a la vez, con dos modelos distintos.
 
-            throw new \RuntimeException($this->motivo($respuesta->status()));
+          Copiar una imagen letra por letra a veces falla en una sola letra:
+          la firma de JMH salio una vez "gmenendez@" en vez de "gmendez@", y
+          en otras ocho lecturas salio bien. Dos lecturas que se equivocan en
+          la misma letra es muy raro; si no coinciden, se avisa que revisar.
+        */
+        $respuestas = Http::pool(fn (Pool $pool) => [
+            $pool->as('principal')->withToken(config('services.openai.key'))
+                ->timeout(config('services.openai.timeout', 30))
+                ->post($url, $pedido(config('services.openai.model'))),
+            $pool->as('control')->withToken(config('services.openai.key'))
+                ->timeout(config('services.openai.timeout', 30))
+                ->post($url, $pedido(config('services.openai.modelo_control'))),
+        ]);
+
+        $principal = $respuestas['principal'];
+
+        // Sin respuesta (se corto la conexion) llega la excepcion en su lugar.
+        if ($principal instanceof \Throwable) {
+            throw $principal;
         }
 
-        return trim((string) data_get($respuesta->json(), 'choices.0.message.content'));
+        if ($principal->failed()) {
+            Log::warning('OpenAI respondio '.$principal->status().': '.$principal->body());
+
+            throw new \RuntimeException($this->motivo($principal->status()));
+        }
+
+        // La de control es un chequeo: si falla, se sigue con la principal.
+        $control = $respuestas['control'];
+        $deControl = $control instanceof Response && $control->successful()
+            ? trim((string) data_get($control->json(), 'choices.0.message.content'))
+            : null;
+
+        return [trim((string) data_get($principal->json(), 'choices.0.message.content')), $deControl ?: null];
+    }
+
+    /**
+     * Una tercera lectura, con otro modelo, cuando las dos primeras no
+     * coinciden. Si falla, null: queda el aviso de revisar.
+     */
+    public function desempatar(UploadedFile $imagen): ?string
+    {
+        try {
+            $respuesta = Http::withToken(config('services.openai.key'))
+                ->timeout(config('services.openai.timeout', 30))
+                ->post(
+                    rtrim(config('services.openai.url'), '/').'/chat/completions',
+                    $this->pedidoDeTranscripcion($imagen, config('services.openai.modelo_desempate')),
+                );
+
+            return $respuesta->successful()
+                ? trim((string) data_get($respuesta->json(), 'choices.0.message.content')) ?: null
+                : null;
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo desempatar la lectura de la imagen: '.$e->getMessage());
+
+            return null;
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function pedidoDeTranscripcion(UploadedFile $imagen, string $modelo): array
+    {
+        return [
+            'model' => $modelo,
+            'temperature' => 0,
+            'messages' => [
+                ['role' => 'system', 'content' => 'Copia el texto de la imagen tal cual esta escrito, un dato por renglon. '
+                    .'No corrijas, no completes ni agregues nada que no se lea. Si un telefono tiene un icono en vez '
+                    .'de palabra, escribi delante "Tel:", "Cel:" o "WhatsApp:" segun el icono. Devolve solo el texto.'],
+                ['role' => 'user', 'content' => [[
+                    'type' => 'image_url',
+                    'image_url' => [
+                        'url' => 'data:'.$imagen->getMimeType().';base64,'.base64_encode($imagen->get()),
+                        'detail' => 'high',
+                    ],
+                ]]],
+            ],
+        ];
+    }
+
+    /**
+     * Lo que las reglas no encontraron en una firma, buscado por la IA.
+     *
+     * Las reglas leen primero; esto solo completa los campos que quedaron
+     * vacios. Y solo se acepta un dato que esta escrito tal cual en el
+     * texto: lo que la IA "deduzca" y no aparezca se descarta, asi no puede
+     * inventar un mail o un telefono. Si la IA falla, no pasa nada: quedan
+     * los datos de las reglas.
+     *
+     * @param  list<string>  $campos  los que faltan
+     * @return array<string, string>
+     */
+    public function completarFirma(string $texto, array $campos): array
+    {
+        try {
+            $respuesta = Http::withToken(config('services.openai.key'))
+                ->timeout(config('services.openai.timeout', 30))
+                ->post(rtrim(config('services.openai.url'), '/').'/chat/completions', [
+                    'model' => config('services.openai.model'),
+                    'temperature' => 0,
+                    'response_format' => ['type' => 'json_object'],
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'Te paso el pie de un mail o la ficha de contacto de un cliente. '
+                            .'Devolve un JSON con estas claves: '.implode(', ', $campos).'. '
+                            .'empresa: el nombre de la empresa. contacto: la persona que firma. cargo: su puesto. '
+                            .'mail: su correo. telefono: un telefono. direccion: solo la calle y el numero. '
+                            .'Copia cada valor exactamente como esta escrito, sin corregirlo. '
+                            .'Si un dato no esta escrito, null. No inventes ni completes nada.'],
+                        ['role' => 'user', 'content' => $texto],
+                    ],
+                ]);
+
+            if ($respuesta->failed()) {
+                Log::warning('OpenAI respondio '.$respuesta->status().' al completar una firma');
+
+                return [];
+            }
+
+            $datos = json_decode((string) data_get($respuesta->json(), 'choices.0.message.content'), true);
+        } catch (\Throwable $e) {
+            Log::warning('No se pudo completar la firma con la IA: '.$e->getMessage());
+
+            return [];
+        }
+
+        $plano = fn ($t) => mb_strtolower(preg_replace('/\s+/u', ' ', trim((string) $t)) ?? '');
+        $digitos = fn ($t) => preg_replace('/\D/', '', (string) $t) ?? '';
+        $aceptados = [];
+
+        foreach ($campos as $campo) {
+            $valor = is_array($datos) ? ($datos[$campo] ?? null) : null;
+
+            if (! is_string($valor) || trim($valor) === '') {
+                continue;
+            }
+
+            // El telefono se compara por sus cifras, renglon por renglon.
+            $estaEscrito = $campo === 'telefono'
+                ? strlen($digitos($valor)) >= 6 && collect(preg_split('/\R/u', $texto))
+                    ->contains(fn ($r) => str_contains($digitos($r), $digitos($valor)))
+                : str_contains($plano($texto), $plano($valor));
+
+            if ($estaEscrito) {
+                $aceptados[$campo] = trim($valor);
+            }
+        }
+
+        return $aceptados;
     }
 
     private function conReglas(string $texto, ?string $aviso): array
