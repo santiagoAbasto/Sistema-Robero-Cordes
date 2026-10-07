@@ -20,11 +20,32 @@ import type { Revision } from '../../lib/indice'
    dice ahora— está adentro, para quien lo necesite.
 --------------------------------------------------------------------------- */
 
-export default function Revisiones({ consultaId }: { consultaId: number }) {
+export default function Revisiones({
+  consultaId,
+  vacio,
+}: {
+  consultaId: number
+  /** Qué mostrar si no hubo cambios. Sin esto, no se muestra nada (null). */
+  vacio?: string
+}) {
   const { datos, cargando } = useCarga(() => traerRevisiones(consultaId), [consultaId])
   const [abierta, setAbierta] = useState<number | null>(null)
 
-  if (cargando || !datos || datos.total === 0) return null
+  if (cargando) {
+    return vacio ? (
+      <p className="rounded-[9px] border border-line bg-app px-3.5 py-3 text-[12px] text-muted">
+        Buscando los cambios…
+      </p>
+    ) : null
+  }
+
+  if (!datos || datos.total === 0) {
+    return vacio ? (
+      <p className="rounded-[9px] border border-line bg-app px-3.5 py-3 text-[12px] text-muted">
+        {vacio}
+      </p>
+    ) : null
+  }
 
   return (
     <Card className="overflow-hidden">

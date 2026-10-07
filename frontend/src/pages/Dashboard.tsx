@@ -43,6 +43,8 @@ interface Resumen {
     fecha: string | null
     tipo: string
     estado: string
+    numero_con_revision: string | null
+    emitida: boolean
     moneda: string | null
     moneda_base: string | null
     total: number
@@ -52,6 +54,9 @@ interface Resumen {
 
 const ESTADOS: Record<string, { dot: string; bg: string; fg: string }> = {
   Borrador: { dot: 'bg-[#94a3b8]', bg: 'bg-[#f1f5f9]', fg: 'text-[#64748b]' },
+  // Confirmada pero sin emitir: todavía no se mandó, falta el paso de emisión.
+  'Falta emisión': { dot: 'bg-[#f59e0b]', bg: 'bg-[#fff8ee]', fg: 'text-[#b45309]' },
+  Emitida: { dot: 'bg-brand', bg: 'bg-brand-50', fg: 'text-brand-700' },
   Confirmada: { dot: 'bg-brand', bg: 'bg-brand-50', fg: 'text-brand-700' },
   Vendida: { dot: 'bg-success', bg: 'bg-success-bg', fg: 'text-success-ink' },
 }
@@ -59,19 +64,23 @@ const ESTADOS: Record<string, { dot: string; bg: string; fg: string }> = {
 const QUICK: { label: string; to: string; icon: LucideIcon; fg: string }[] = [
   { label: 'Nueva empresa', to: '/empresas/nueva', icon: Briefcase, fg: 'text-[#7c3aed]' },
   { label: 'Buscar cotizacion', to: '/consultas/condicion', icon: Search, fg: 'text-brand' },
+  { label: 'Borradores', to: '/consultas/condicion?estado=Borrador', icon: FileText, fg: 'text-[#64748b]' },
   { label: 'Consultas por fecha', to: '/consultas/fecha', icon: CalendarRange, fg: 'text-[#0d9488]' },
   { label: 'Imprimir', to: '/imprimir', icon: Printer, fg: 'text-[#d97706]' },
 ]
 
-function EstadoPill({ estado }: { estado: string }) {
-  const s = ESTADOS[estado] ?? ESTADOS.Borrador
+function EstadoPill({ estado, emitida }: { estado: string; emitida?: boolean }) {
+  // "Confirmada" no dice si ya se hizo. Sin emitir todavía no se mandó: falta
+  // la emisión. Emitida es la que ya salió. El resto se muestra tal cual.
+  const texto = estado === 'Confirmada' ? (emitida ? 'Emitida' : 'Falta emisión') : estado
+  const s = ESTADOS[texto] ?? ESTADOS.Borrador
 
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-full ${s.bg} px-2.5 py-1 text-[11.5px] font-semibold ${s.fg}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
-      {estado}
+      {texto}
     </span>
   )
 }
@@ -245,9 +254,10 @@ export default function Dashboard() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <div className="min-w-[600px]">
-                <div className="grid grid-cols-[1.8fr_0.8fr_0.9fr_1fr_1fr] gap-2 border-y border-line bg-app/60 px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+              <div className="min-w-[760px]">
+                <div className="grid grid-cols-[1.4fr_1.1fr_0.8fr_0.8fr_0.9fr_1.2fr] gap-2 border-y border-line bg-app/60 px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
                   <span>Empresa</span>
+                  <span>Código</span>
                   <span>Fecha</span>
                   <span>Moneda</span>
                   <span className="text-right">Total</span>
@@ -256,20 +266,31 @@ export default function Dashboard() {
                 {ultimas.map((c, i) => (
                   <div
                     key={c.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigate(`/consultas/${c.id}`)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        navigate(`/consultas/${c.id}`)
-                      }
-                    }}
-                    className={`group grid cursor-pointer grid-cols-[1.8fr_0.8fr_0.9fr_1fr_1fr] items-center gap-2 px-6 py-[13px] transition-colors hover:bg-app ${
+                    className={`group grid grid-cols-[1.4fr_1.1fr_0.8fr_0.8fr_0.9fr_1.2fr] items-center gap-2 px-6 py-[13px] transition-colors hover:bg-app ${
                       i < ultimas.length - 1 ? 'border-b border-line' : ''
                     }`}
                   >
-                    <span className="truncate text-[13px] font-semibold text-ink">{c.empresa}</span>
+                    {/* El nombre abre la ficha de la empresa; el código, la cotización. */}
+                    <Link
+                      to={`/empresas/${c.empresa_id}`}
+                      className="truncate text-[13px] font-semibold text-ink hover:text-brand-600 hover:underline"
+                    >
+                      {c.empresa}
+                    </Link>
+                    {c.numero_con_revision ? (
+                      <Link
+                        to={`/consultas/${c.id}`}
+                        className="truncate text-[12.5px] font-semibold tabular-nums text-brand-600 hover:underline"
+                      >
+                        {c.numero_con_revision}
+                      </Link>
+                    ) : (
+                      // Sin número: un borrador todavía no lo tiene; una
+                      // importada del sistema viejo salió sin el número nuevo.
+                      <Link to={`/consultas/${c.id}`} className="text-[12px] text-faint hover:underline">
+                        {c.emitida ? '—' : 'sin emitir'}
+                      </Link>
+                    )}
                     <span className="text-[13px] text-muted">{fmtFecha(c.fecha)}</span>
                     <span className="text-[12.5px] text-muted">{c.moneda_base ?? '—'}</span>
                     <span className="text-right text-[13px] font-semibold text-ink">
@@ -280,16 +301,13 @@ export default function Dashboard() {
                       {c.tipo !== 'Observacion' && (
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            usarBorrador(c.id, c.empresa_id)
-                          }}
+                          onClick={() => usarBorrador(c.id, c.empresa_id)}
                           className="whitespace-nowrap text-[11px] font-semibold text-brand-600 opacity-0 transition-opacity hover:text-brand group-hover:opacity-100"
                         >
                           Usar como borrador
                         </button>
                       )}
-                      <EstadoPill estado={c.estado} />
+                      <EstadoPill estado={c.estado} emitida={c.emitida} />
                     </span>
                   </div>
                 ))}

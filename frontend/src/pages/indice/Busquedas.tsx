@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Accion,
   Card,
@@ -300,12 +300,15 @@ export function ConsultasPorFecha() {
 
 export function BuscarConsultas() {
   const catalogos = useCatalogos()
+  // El estado puede venir en la URL: "Borradores" del dashboard entra acá ya
+  // filtrado por estado=Borrador, sin que haya que elegirlo a mano.
+  const [params] = useSearchParams()
   const [f, setF] = useState({
     material_id: '',
     forma_id: '',
     diametro_desde: '',
     diametro_hasta: '',
-    estado: '',
+    estado: params.get('estado') ?? '',
     usuario_id: '',
     sin_respuesta: false,
   })

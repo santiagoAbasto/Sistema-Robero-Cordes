@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ChevronRight, Plus, Printer, Pencil, History, Trash2 } from 'lucide-react'
+import { ChevronRight, LayoutGrid, List, Plus, Printer, Pencil, History, Trash2 } from 'lucide-react'
 import {
   Accion,
   Aviso,
@@ -36,6 +36,7 @@ import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
 import { ModalCampo, ModalContacto, ModalRazonSocial } from './modales'
 import Enlaces from './Enlaces'
+import Revisiones from './Revisiones'
 import type { CampoEmpresa, Consulta, Contacto, Empresa, RazonSocial } from '../../types/indice'
 
 
@@ -734,6 +735,9 @@ function Historial({
   sinImprimir?: boolean
 }) {
   const [visibles, setVisibles] = useState(10)
+  // Por defecto, cajas abiertas: se ve cada cotización entera sin tener que
+  // abrirla. "Lista" es la vista compacta de antes, para recorrer muchas.
+  const [vista, setVista] = useState<'cards' | 'lista'>('cards')
 
   return (
     <Card id={id} className="scroll-mt-24 overflow-hidden">
@@ -741,7 +745,32 @@ function Historial({
         titulo={titulo}
         cuenta={consultas.length}
         ayuda={ayuda}
-        acciones={<Accion to={accion.to}>{accion.texto}</Accion>}
+        acciones={
+          <div className="flex items-center gap-3">
+            {consultas.length > 0 && (
+              <div className="flex rounded-[8px] border border-line-strong bg-white p-0.5">
+                {([
+                  { v: 'cards', Icono: LayoutGrid, texto: 'Cards' },
+                  { v: 'lista', Icono: List, texto: 'Lista' },
+                ] as const).map(({ v, Icono, texto }) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setVista(v)}
+                    aria-pressed={vista === v}
+                    className={`flex items-center gap-1.5 rounded-[6px] px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
+                      vista === v ? 'bg-brand text-white' : 'text-slate-600 hover:bg-app'
+                    }`}
+                  >
+                    <Icono size={13} strokeWidth={2.2} />
+                    {texto}
+                  </button>
+                ))}
+              </div>
+            )}
+            <Accion to={accion.to}>{accion.texto}</Accion>
+          </div>
+        }
       />
 
       {consultas.length === 0 ? (
@@ -750,13 +779,20 @@ function Historial({
         </div>
       ) : (
         <>
-          <ul className="border-t border-[#eef2f6]">
+          <ul
+            className={
+              vista === 'cards'
+                ? 'flex flex-col gap-3 border-t border-[#eef2f6] bg-[#fbfcfe] p-[18px]'
+                : 'border-t border-[#eef2f6]'
+            }
+          >
             {consultas.slice(0, visibles).map((c) => (
               <EntradaHistorial
                 key={c.id}
                 consulta={c}
                 empresaId={empresaId}
                 sinImprimir={sinImprimir}
+                vista={vista}
               />
             ))}
           </ul>
@@ -785,10 +821,12 @@ function EntradaHistorial({
   consulta,
   empresaId,
   sinImprimir,
+  vista,
 }: {
   consulta: Consulta
   empresaId: number
   sinImprimir?: boolean
+  vista: 'cards' | 'lista'
 }) {
   const navigate = useNavigate()
   const [usando, setUsando] = useState(false)
@@ -817,7 +855,14 @@ function EntradaHistorial({
     tiene 114. Lo que se mira al abrir la ficha es la fecha, el estado y de que
     era; el detalle se abre cuando interesa.
   */
-  const [abierto, setAbierto] = useState(false)
+  // En vista de cards arranca abierta (es una caja entera); en lista, cerrada.
+  // Cambiar la vista reabre o cierra todas, pero cada una se puede tocar aparte.
+  const [abierto, setAbierto] = useState(vista === 'cards')
+  useEffect(() => setAbierto(vista === 'cards'), [vista])
+
+  // "Antes y después": la bitácora de esta cotización, para ver cómo llegaron
+  // los datos (qué decía antes y qué dice ahora en cada guardado).
+  const [verCambios, setVerCambios] = useState(false)
 
   // De que era, en un renglon: el primer material y cuantos mas hay.
   const resumen = consulta.tipo === 'Observacion'
@@ -827,7 +872,13 @@ function EntradaHistorial({
       : lineas[0].descripcion + (lineas.length > 1 ? `  +${lineas.length - 1}` : '')
 
   return (
-    <li className="flex flex-col gap-2.5 border-b border-[#eef2f6] px-[22px] py-3.5 last:border-b-0">
+    <li
+      className={
+        vista === 'cards'
+          ? 'flex flex-col gap-2.5 rounded-[12px] border border-line bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,.05)]'
+          : 'flex flex-col gap-2.5 border-b border-[#eef2f6] px-[22px] py-3.5 last:border-b-0'
+      }
+    >
       {/* fecha, contacto y estado */}
       <div
         role="button"
@@ -983,6 +1034,10 @@ function EntradaHistorial({
         )}
 
         <div className="ml-auto flex items-center gap-3.5">
+          {/* Antes y después: cómo llegaron los datos, acá mismo. */}
+          <Accion onClick={() => setVerCambios((v) => !v)} apagado={!verCambios}>
+            {verCambios ? 'Ocultar antes y después' : 'Antes y después'}
+          </Accion>
           {consulta.tipo !== 'Observacion' && (
             <>
               <Accion onClick={usarComoBorradorAca} apagado={usando}>
@@ -998,6 +1053,17 @@ function EntradaHistorial({
           <Accion to={`/consultas/${consulta.id}`}>{consulta.emitida ? 'Ver' : 'Modificar'}</Accion>
         </div>
       </div>
+
+      {/* La bitácora de esta cotización: cada guardado, con lo que decía antes
+          y lo que dice ahora. Se abre a pedido, debajo de las acciones. */}
+      {verCambios && (
+        <div className="mt-1">
+          <Revisiones
+            consultaId={consulta.id}
+            vacio="Esta cotización no tuvo cambios después de crearse."
+          />
+        </div>
+      )}
         </>
       )}
     </li>
