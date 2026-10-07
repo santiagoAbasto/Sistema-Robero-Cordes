@@ -371,9 +371,15 @@ export function tituloDeConsulta(c: {
   tipo: string
   numero_con_revision: string | null
   empresa?: { nombre: string } | null
+  estado?: string
+  emitida?: boolean
 }): string {
   const clase = c.tipo === 'Pedido' ? 'PEDIDO' : c.tipo === 'Observacion' ? 'OBSERVACIÓN' : 'COTIZACIÓN'
-  const nro = c.numero_con_revision ?? 'BORRADOR'
+  // Con número va el número (2026-0011 R0). Sin número, el estado real: una
+  // confirmada sin emitir es "FALTA EMISIÓN", no "BORRADOR".
+  const nro =
+    c.numero_con_revision ??
+    (c.estado ? estadoDeConsulta({ estado: c.estado, emitida: c.emitida }).texto.toUpperCase() : 'BORRADOR')
   const empresa = c.empresa?.nombre
 
   return [`${clase} ${nro}`, empresa].filter(Boolean).join(' · ')
