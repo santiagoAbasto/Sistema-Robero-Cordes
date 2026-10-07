@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ArrowRight, Search } from 'lucide-react'
 import api from '../../lib/api'
 import { Aviso, Boton, Card, Cargando, Chip, PageHeader, SinResultados } from '../../components/ui'
@@ -70,8 +71,12 @@ function Ficha({ datos, tono }: { datos: Lado; tono: 'antes' | 'ahora' }) {
 }
 
 export default function AntesYAhora() {
-  const [que, setQue] = useState<Que>('cotizaciones')
-  const [buscar, setBuscar] = useState('')
+  // Se puede entrar apuntando a una cotización: desde su ficha, el botón
+  // "Antes y después" abre esta pantalla ya buscándola.
+  const [params] = useSearchParams()
+  const queInicial = QUE.find((q) => q.id === params.get('que'))?.id ?? 'cotizaciones'
+  const [que, setQue] = useState<Que>(queInicial)
+  const [buscar, setBuscar] = useState(params.get('buscar') ?? '')
   const [pagina, setPagina] = useState(1)
   const [datos, setDatos] = useState<Respuesta | null>(null)
   const [cargando, setCargando] = useState(false)

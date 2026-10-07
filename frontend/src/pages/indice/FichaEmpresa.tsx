@@ -36,7 +36,6 @@ import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
 import { ModalCampo, ModalContacto, ModalRazonSocial } from './modales'
 import Enlaces from './Enlaces'
-import Revisiones from './Revisiones'
 import type { CampoEmpresa, Consulta, Contacto, Empresa, RazonSocial } from '../../types/indice'
 
 
@@ -860,10 +859,6 @@ function EntradaHistorial({
   const [abierto, setAbierto] = useState(vista === 'cards')
   useEffect(() => setAbierto(vista === 'cards'), [vista])
 
-  // "Antes y después": la bitácora de esta cotización, para ver cómo llegaron
-  // los datos (qué decía antes y qué dice ahora en cada guardado).
-  const [verCambios, setVerCambios] = useState(false)
-
   // De que era, en un renglon: el primer material y cuantos mas hay.
   const resumen = consulta.tipo === 'Observacion'
     ? (consulta.texto ?? '').slice(0, 90)
@@ -1038,9 +1033,14 @@ function EntradaHistorial({
         )}
 
         <div className="ml-auto flex items-center gap-3.5">
-          {/* Antes y después: cómo llegaron los datos, acá mismo. */}
-          <Accion onClick={() => setVerCambios((v) => !v)} apagado={!verCambios}>
-            {verCambios ? 'Ocultar antes y después' : 'Antes y después'}
+          {/* Antes y después: abre la pantalla de cómo llegaron los datos (el
+              dato del sistema viejo vs. el de ahora), ya buscando ésta. */}
+          <Accion
+            to={`/config/antes-y-ahora?que=cotizaciones${
+              consulta.id_sistema ? `&buscar=${encodeURIComponent(consulta.id_sistema)}` : ''
+            }`}
+          >
+            Antes y después
           </Accion>
           {consulta.tipo !== 'Observacion' && (
             <>
@@ -1057,17 +1057,6 @@ function EntradaHistorial({
           <Accion to={`/consultas/${consulta.id}`}>{consulta.emitida ? 'Ver' : 'Modificar'}</Accion>
         </div>
       </div>
-
-      {/* La bitácora de esta cotización: cada guardado, con lo que decía antes
-          y lo que dice ahora. Se abre a pedido, debajo de las acciones. */}
-      {verCambios && (
-        <div className="mt-1">
-          <Revisiones
-            consultaId={consulta.id}
-            vacio="Esta cotización no tuvo cambios después de crearse."
-          />
-        </div>
-      )}
         </>
       )}
     </li>
