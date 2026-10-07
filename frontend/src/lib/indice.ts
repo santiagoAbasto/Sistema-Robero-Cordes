@@ -408,6 +408,29 @@ export function nombreDeLaHoja(
     .trim()
 }
 
+/**
+ * El estado de una cotización, como se muestra.
+ *
+ * "Confirmada" no dice si ya se hizo: sin emitir todavía no se mandó —falta la
+ * emisión— y emitida es la que ya salió. Una vencida sin cerrar se marca
+ * aparte. Centralizado acá para que el dashboard y las búsquedas digan lo
+ * mismo.
+ */
+export function estadoDeConsulta(c: {
+  estado: string
+  emitida?: boolean
+  esta_vencida?: boolean
+}): { texto: string; tono: 'verde' | 'brand' | 'ambar' | 'neutro' } {
+  if (c.esta_vencida && c.estado !== 'Vendida') return { texto: 'Vencida por tiempo', tono: 'ambar' }
+  if (c.estado === 'Vendida') return { texto: 'Vendida', tono: 'verde' }
+  if (c.estado === 'Confirmada') {
+    return c.emitida ? { texto: 'Emitida', tono: 'brand' } : { texto: 'Falta emisión', tono: 'ambar' }
+  }
+  if (c.estado === 'Borrador') return { texto: 'Borrador', tono: 'neutro' }
+
+  return { texto: c.estado, tono: 'neutro' }
+}
+
 /** "2026-07-20" -> "20/07/2026" */
 export function fecha(valor: string | null | undefined): string {
   if (!valor) return '—'
