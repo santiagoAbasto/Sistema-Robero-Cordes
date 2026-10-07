@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
   Briefcase,
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import api from '../lib/api'
-import { fecha as fmtFecha, plata, useCarga } from '../lib/indice'
+import { fecha as fmtFecha, plata, usarComoBorrador, useCarga } from '../lib/indice'
 import { Cargando } from '../components/ui'
 import NecesitaAtencion from '../components/NecesitaAtencion'
 
@@ -129,6 +129,7 @@ function Variacion({ ahora, antes }: { ahora: number; antes: number }) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const { datos, cargando } = useCarga(
     () => api.get<Resumen>('/resumen').then((r) => r.data),
     [],
@@ -139,6 +140,14 @@ export default function Dashboard() {
 
   const { totales, ultimas, materiales } = datos
   const masCotizado = materiales[0]?.veces ?? 1
+
+  async function usarBorrador(id: number, empresaId: number) {
+    try {
+      navigate(`/consultas/${await usarComoBorrador(id, empresaId)}`)
+    } catch {
+      /* el aviso de error ya lo maneja la pantalla de la cotización */
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -245,10 +254,18 @@ export default function Dashboard() {
                   <span className="text-right">Estado</span>
                 </div>
                 {ultimas.map((c, i) => (
-                  <Link
+                  <div
                     key={c.id}
-                    to={`/consultas/${c.id}`}
-                    className={`grid grid-cols-[1.8fr_0.8fr_0.9fr_1fr_1fr] items-center gap-2 px-6 py-[13px] transition-colors hover:bg-app ${
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/consultas/${c.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        navigate(`/consultas/${c.id}`)
+                      }
+                    }}
+                    className={`group grid cursor-pointer grid-cols-[1.8fr_0.8fr_0.9fr_1fr_1fr] items-center gap-2 px-6 py-[13px] transition-colors hover:bg-app ${
                       i < ultimas.length - 1 ? 'border-b border-line' : ''
                     }`}
                   >
@@ -258,10 +275,23 @@ export default function Dashboard() {
                     <span className="text-right text-[13px] font-semibold text-ink">
                       {plata(c.total)}
                     </span>
-                    <span className="flex justify-end">
+                    <span className="flex items-center justify-end gap-2.5">
+                      {/* Usar como borrador: arranca uno nuevo con todo lo de esta. */}
+                      {c.tipo !== 'Observacion' && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            usarBorrador(c.id, c.empresa_id)
+                          }}
+                          className="whitespace-nowrap text-[11px] font-semibold text-brand-600 opacity-0 transition-opacity hover:text-brand group-hover:opacity-100"
+                        >
+                          Usar como borrador
+                        </button>
+                      )}
                       <EstadoPill estado={c.estado} />
                     </span>
-                  </Link>
+                  </div>
                 ))}
               </div>
             </div>

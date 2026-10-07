@@ -126,6 +126,9 @@ class InterpreteIATest extends TestCase
     /**
      * El mail del cliente ya dice que quiere las dos vias: si el sistema lo
      * lee, nadie tiene que volver a escribirlo.
+     *
+     * Cada variante es una linea entera: la primera es la madre y la otra
+     * cuelga de ella (alternativa_de apunta a su posicion en la lista).
      */
     public function test_arma_las_alternativas_que_pidio_el_cliente(): void
     {
@@ -146,18 +149,19 @@ class InterpreteIATest extends TestCase
             ]),
         ]);
 
-        $linea = app(InterpreteIA::class)
-            ->interpretar(self::PROSA)['lineas'][0];
+        $lineas = app(InterpreteIA::class)->interpretar(self::PROSA)['lineas'];
 
-        $this->assertCount(2, $linea['alternativas']);
-        $this->assertSame('Maritimo', $linea['alternativas'][0]['etiqueta']);
-        $this->assertSame('Transporte', $linea['alternativas'][0]['tipo']);
-        // Alguna tiene que contar para el total: la primera queda de base.
-        $this->assertTrue($linea['alternativas'][0]['es_base']);
-        $this->assertFalse($linea['alternativas'][1]['es_base']);
+        // Dos lineas: la madre y su alternativa.
+        $this->assertCount(2, $lineas);
+        $this->assertArrayNotHasKey('alternativa_de', $lineas[0]);
+        $this->assertSame(0, $lineas[1]['alternativa_de']);
+
+        // La via es lo que las distingue: maritima arriba, aerea abajo.
+        $this->assertSame('Marítimo', $lineas[0]['transporte']);
+        $this->assertSame('Aéreo', $lineas[1]['transporte']);
 
         // Sin precio: el cliente pide, la persona cotiza.
-        $this->assertNull($linea['alternativas'][0]['precio_unitario']);
+        $this->assertArrayNotHasKey('precio_unitario', $lineas[1]);
     }
 
     public function test_una_sola_variante_no_es_una_alternativa(): void
@@ -174,13 +178,15 @@ class InterpreteIATest extends TestCase
             ]),
         ]);
 
-        $linea = app(InterpreteIA::class)->interpretar(self::PROSA)['lineas'][0];
+        $lineas = app(InterpreteIA::class)->interpretar(self::PROSA)['lineas'];
 
         // Con una sola opcion no hay nada que elegir: es la linea y ya.
-        $this->assertSame([], $linea['alternativas']);
+        $this->assertCount(1, $lineas);
+        $this->assertArrayNotHasKey('alternativa_de', $lineas[0]);
+        $this->assertArrayNotHasKey('transporte', $lineas[0]);
     }
 
-    public function test_no_acepta_un_tipo_de_alternativa_inventado(): void
+    public function test_un_tipo_de_alternativa_inventado_no_rompe(): void
     {
         config(['services.openai.key' => 'clave-de-prueba']);
 
@@ -197,11 +203,12 @@ class InterpreteIATest extends TestCase
             ]),
         ]);
 
-        $linea = app(InterpreteIA::class)->interpretar(self::PROSA)['lineas'][0];
+        $lineas = app(InterpreteIA::class)->interpretar(self::PROSA)['lineas'];
 
-        // Un tipo que no existe cae en "Otra", no rompe ni se guarda como vino.
-        $this->assertSame('Otra', $linea['alternativas'][0]['tipo']);
-        $this->assertSame('Cantidad', $linea['alternativas'][1]['tipo']);
+        // Un tipo que no existe no rompe: igual quedan la madre y su
+        // alternativa, para que alguien las termine de cargar a mano.
+        $this->assertCount(2, $lineas);
+        $this->assertSame(0, $lineas[1]['alternativa_de']);
     }
 
     public function test_no_inventa_un_material_que_no_existe(): void

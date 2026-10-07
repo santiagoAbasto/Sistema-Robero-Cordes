@@ -21,6 +21,9 @@ class ConsultaLinea extends Model
 
     protected $table = 'consulta_lineas';
 
+    /** Por donde viaja lo importado, cuando importa: cambia el plazo y el precio. */
+    public const TRANSPORTES = ['Marítimo', 'Aéreo'];
+
     /**
      * Lo que decide el servidor no entra por fill().
      *
@@ -120,25 +123,31 @@ class ConsultaLinea extends Model
     }
 
     /**
-     * Las alternativas: el mismo ítem cotizado de otra manera.
+     * Las alternativas: el mismo item ofrecido de otra manera.
      *
-     * Aérea o marítima, por tramos de cantidad, con otro material. Una es la
-     * base y es la que cuenta para el total; las demás se imprimen como
-     * opciones para que el cliente elija.
+     * Por avion en vez de barco, otra cantidad, otro material, una medida
+     * cercana ("piden 50,8, se ofrece Ø50"). Cada una es una linea completa
+     * que cuelga de esta: en la hoja va como 1.1, 1.2, y no suma al total.
      */
-    public function opciones(): HasMany
+    public function alternativas(): HasMany
     {
-        return $this->hasMany(ConsultaLineaOpcion::class, 'consulta_linea_id')->orderBy('orden');
+        return $this->hasMany(self::class, 'alternativa_de_id')->orderBy('orden')->orderBy('id');
     }
 
-    public function opcionBase(): ?ConsultaLineaOpcion
+    public function madre(): BelongsTo
     {
-        return $this->opciones->firstWhere('es_base', true) ?? $this->opciones->first();
+        return $this->belongsTo(self::class, 'alternativa_de_id');
     }
 
-    public function tieneAlternativas(): bool
+    public function esAlternativa(): bool
     {
-        return $this->opciones->count() > 1;
+        return $this->alternativa_de_id !== null;
+    }
+
+    /** Lo que suma: lo que no se quito, sin las alternativas, que se ofrecen para elegir. */
+    public function cuentaParaElTotal(): bool
+    {
+        return ! $this->quitada && ! $this->esAlternativa();
     }
 
     public function unidadPedida(): BelongsTo
@@ -193,17 +202,6 @@ class ConsultaLinea extends Model
      */
     public function recalcular(): void
     {
-        // Con alternativas, el importe de la linea es el de la base: es la que
-        // se toma como cotizada. Las demas se imprimen como opciones y cada una
-        // muestra lo suyo, pero no se suman al total.
-        if ($this->relationLoaded('opciones') && $this->opciones->isNotEmpty()) {
-            $base = $this->opcionBase();
-
-            $this->cantidad = $base->laCantidad() ?? $this->cantidad;
-            $this->precio_unitario = $base->elPrecio() ?? $this->precio_unitario;
-            $this->precio_por_kilo = $base->elPrecioPorKilo() ?? $this->precio_por_kilo;
-        }
-
         if ($this->cambiaDeUnidad() && $this->factor_conversion) {
             $this->cantidad_facturar = round((float) $this->cantidad * (float) $this->factor_conversion, 2);
 
@@ -240,7 +238,9 @@ class ConsultaLinea extends Model
     /** Lo que el cliente había pedido, en una línea. Se muestra cuando no coincide. */
     public function getPedidoTextoAttribute(): ?string
     {
-        $partes = array_filter([$this->pedido_forma, $this->pedido_material, $this->pedido_dimensiones]);
+        $partes = array_filter([
+            $this->pedido_forma, $this->pedido_material, $this->pedido_dimensiones, $this->pedido_caracteristicas,
+        ]);
 
         return $partes ? implode('  ·  ', $partes) : null;
     }

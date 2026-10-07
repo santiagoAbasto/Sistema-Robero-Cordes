@@ -10,7 +10,7 @@ class ConsultaController extends Controller
 {
     private const RELACIONES = [
         'empresa', 'contacto', 'razonSocial', 'usuario', 'moneda',
-        'lineas.material', 'lineas.forma', 'lineas.unidadVenta', 'lineas.opciones.material',
+        'lineas.material', 'lineas.forma', 'lineas.unidadVenta',
         'lineas.unidadFactura', 'lineas.unidadPedida',
         'condiciones', 'observaciones.usuario',
         'impresiones.contacto', 'impresiones.usuario',
@@ -82,7 +82,7 @@ class ConsultaController extends Controller
             'fecha' => $c->fecha?->format('Y-m-d'),
             'estado' => $c->estado,
             'quien' => $c->usuario?->initials,
-            'total' => (float) $c->lineas->where('quitada', false)->sum('importe'),
+            'total' => (float) $c->lineas->filter(fn ($l) => $l->cuentaParaElTotal())->sum('importe'),
             'lineas' => $c->lineas->where('quitada', false)->count(),
         ] : null;
 
@@ -114,7 +114,7 @@ class ConsultaController extends Controller
     public function versiones(Consulta $consulta)
     {
         return $consulta->versiones()
-            ->with('emisor:id,name', 'usuario:id,name', 'lineas:id,consulta_id,importe,quitada')
+            ->with('emisor:id,name', 'usuario:id,name', 'lineas:id,consulta_id,importe,quitada,alternativa_de_id')
             ->get()
             ->map(fn (Consulta $v) => [
                 'id' => $v->id,

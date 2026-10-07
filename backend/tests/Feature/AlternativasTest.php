@@ -17,6 +17,11 @@ use Tests\TestCase;
 /**
  * Alternativas de una linea.
  *
+ * Una alternativa ya no es una "opcion" que solo cambia el precio o el plazo:
+ * es una linea entera que cuelga de otra (alternativa_de_id). Su material,
+ * medidas, unidad, precio, transporte y plazo son propios. En la hoja sale
+ * como 1.1, 1.2 debajo de su linea.
+ *
  * Los dos casos salen de cotizaciones reales:
  *
  *  · HASTELLOY C22 — el mismo caño maritimo a 201 y 80 dias, o aereo a 210 y
@@ -45,161 +50,138 @@ class AlternativasTest extends TestCase
         Sanctum::actingAs($this->usuario);
     }
 
-    /** El caso del mail de HASTELLOY: maritimo o aereo. */
+    /** El caso del mail de HASTELLOY: maritimo o aereo, con su plazo. */
     public function test_alternativa_por_transporte(): void
     {
-        $consulta = $this->cotizar([[
-            'descripcion' => 'HASTELLOY C22 Caño c/c 1" Sch. 40 x 327mm',
-            'cantidad' => 200,
-            'opciones' => [
-                ['etiqueta' => 'Maritimo', 'tipo' => 'Transporte', 'precio_unitario' => 201, 'plazo_dias' => 80, 'es_base' => true],
-                ['etiqueta' => 'Aereo', 'tipo' => 'Transporte', 'precio_unitario' => 210, 'plazo_dias' => 40, 'es_base' => false],
-            ],
-        ]]);
+        $consulta = $this->cotizar([
+            ['descripcion' => 'HASTELLOY C22 Caño c/c 1" Sch. 40 x 327mm', 'cantidad' => 200,
+                'precio_unitario' => 201, 'transporte' => 'Marítimo', 'plazo_dias' => 80],
+            ['descripcion' => 'HASTELLOY C22 Caño c/c 1" Sch. 40 x 327mm', 'cantidad' => 200,
+                'precio_unitario' => 210, 'transporte' => 'Aéreo', 'plazo_dias' => 40, 'alternativa_de' => 0],
+        ]);
 
-        $linea = $consulta->lineas->first();
+        $lineas = $consulta->lineas->sortBy('orden')->values();
+        [$maritimo, $aereo] = [$lineas[0], $lineas[1]];
 
-        $this->assertCount(2, $linea->opciones);
+        // La alternativa cuelga de su linea, no es una linea suelta.
+        $this->assertNull($maritimo->alternativa_de_id);
+        $this->assertSame($maritimo->id, $aereo->alternativa_de_id);
+        $this->assertTrue($aereo->esAlternativa());
 
-        $maritimo = $linea->opciones->firstWhere('etiqueta', 'Maritimo');
-        $aereo = $linea->opciones->firstWhere('etiqueta', 'Aereo');
-
-        // Cada alternativa cotiza lo suyo, heredando la cantidad de la linea.
-        $this->assertSame(200.0, $maritimo->laCantidad());
-        $this->assertSame(200.0, $aereo->laCantidad());
-        $this->assertEqualsWithDelta(40200.0, $maritimo->importe, 0.01);
-        $this->assertEqualsWithDelta(42000.0, $aereo->importe, 0.01);
-
-        // Y el plazo cambia con el transporte.
-        $this->assertSame(80, $maritimo->plazo_dias);
+        // Cada una cotiza lo suyo, con su via y su plazo.
+        $this->assertEqualsWithDelta(40200.0, (float) $maritimo->importe, 0.01);
+        $this->assertEqualsWithDelta(42000.0, (float) $aereo->importe, 0.01);
+        $this->assertSame('Aéreo', $aereo->transporte);
         $this->assertSame(40, $aereo->plazo_dias);
 
-        // El total toma la base, no la suma de las dos.
-        $consulta->load('lineas.opciones');
-        $this->assertEqualsWithDelta(40200.0, $consulta->total, 0.01);
+        // El total toma la linea, no la suma de las dos.
+        $this->assertEqualsWithDelta(40200.0, $consulta->fresh('lineas')->total, 0.01);
     }
 
     /** El caso del mail de ALLOY 20: tres tramos de cantidad. */
     public function test_alternativa_por_cantidad(): void
     {
-        $consulta = $this->cotizar([[
-            'descripcion' => 'ALLOY 20 Tubo s/c 12,7 x 0,89 x 6090mm',
-            'cantidad' => 36.6,
-            'opciones' => [
-                ['etiqueta' => '36,6 m', 'tipo' => 'Cantidad', 'cantidad' => 36.6, 'precio_unitario' => 141.60, 'es_base' => true],
-                ['etiqueta' => '73,2 m', 'tipo' => 'Cantidad', 'cantidad' => 73.2, 'precio_unitario' => 96.10, 'es_base' => false],
-                ['etiqueta' => '109,8 m', 'tipo' => 'Cantidad', 'cantidad' => 109.8, 'precio_unitario' => 81.00, 'es_base' => false],
-            ],
-        ]]);
+        $consulta = $this->cotizar([
+            ['descripcion' => 'ALLOY 20 Tubo s/c 12,7 x 0,89 x 6090mm', 'cantidad' => 36.6, 'precio_unitario' => 141.60],
+            ['descripcion' => 'ALLOY 20 Tubo s/c 12,7 x 0,89 x 6090mm', 'cantidad' => 73.2, 'precio_unitario' => 96.10, 'alternativa_de' => 0],
+            ['descripcion' => 'ALLOY 20 Tubo s/c 12,7 x 0,89 x 6090mm', 'cantidad' => 109.8, 'precio_unitario' => 81.00, 'alternativa_de' => 0],
+        ]);
 
-        $opciones = $consulta->lineas->first()->opciones;
+        $madre = $consulta->lineas->firstWhere('alternativa_de_id', null);
+        $alts = $consulta->lineas->where('alternativa_de_id', $madre->id)->sortBy('orden')->values();
 
-        $this->assertCount(3, $opciones);
-        $this->assertEqualsWithDelta(5182.56, $opciones[0]->importe, 0.01);
-        $this->assertEqualsWithDelta(7034.52, $opciones[1]->importe, 0.01);
-        $this->assertEqualsWithDelta(8893.80, $opciones[2]->importe, 0.01);
+        $this->assertCount(2, $alts);
+        $this->assertEqualsWithDelta(5182.56, (float) $madre->importe, 0.01);
+        $this->assertEqualsWithDelta(7034.52, (float) $alts[0]->importe, 0.01);
+        $this->assertEqualsWithDelta(8893.80, (float) $alts[1]->importe, 0.01);
 
         // A mas metros, menos precio por metro: es el sentido del tramo.
-        $this->assertLessThan($opciones[0]->elPrecio(), $opciones[1]->elPrecio());
-        $this->assertLessThan($opciones[1]->elPrecio(), $opciones[2]->elPrecio());
+        $this->assertLessThan((float) $madre->precio_unitario, (float) $alts[0]->precio_unitario);
+        $this->assertLessThan((float) $alts[0]->precio_unitario, (float) $alts[1]->precio_unitario);
 
-        $consulta->load('lineas.opciones');
-        $this->assertEqualsWithDelta(5182.56, $consulta->total, 0.01);
+        // El total toma solo la linea madre.
+        $this->assertEqualsWithDelta(5182.56, $consulta->fresh('lineas')->total, 0.01);
     }
 
-    public function test_la_alternativa_hereda_lo_que_no_cambia(): void
+    /** Una alternativa no arrastra lo pedido: es otra respuesta al mismo pedido. */
+    public function test_la_alternativa_no_tiene_pedido_propio(): void
     {
-        $consulta = $this->cotizar([[
-            'descripcion' => 'Barra',
-            'cantidad' => 100,
-            'precio_unitario' => 50,
-            'opciones' => [
-                // Solo cambia el precio: la cantidad la toma de la linea.
-                ['etiqueta' => 'Maritimo', 'tipo' => 'Transporte', 'es_base' => true],
-                ['etiqueta' => 'Aereo', 'tipo' => 'Transporte', 'precio_unitario' => 60, 'es_base' => false],
-            ],
-        ]]);
+        $consulta = $this->cotizar([
+            ['descripcion' => 'Barra', 'cantidad' => 100, 'precio_unitario' => 50,
+                'igual_a_lo_pedido' => false, 'pedido_material' => 'TITANIO', 'motivo_cambio' => 'stock'],
+            ['descripcion' => 'Barra en otro largo', 'cantidad' => 100, 'precio_unitario' => 60,
+                'alternativa_de' => 0, 'igual_a_lo_pedido' => false, 'pedido_material' => 'NO DEBERIA QUEDAR'],
+        ]);
 
-        $opciones = $consulta->lineas->first()->opciones;
+        $alt = $consulta->lineas->firstWhere('alternativa_de_id', '!=', null);
 
-        $this->assertSame(100.0, $opciones[0]->laCantidad());
-        $this->assertSame(50.0, $opciones[0]->elPrecio());
-        $this->assertEqualsWithDelta(5000.0, $opciones[0]->importe, 0.01);
-
-        // La segunda hereda la cantidad pero pisa el precio.
-        $this->assertSame(100.0, $opciones[1]->laCantidad());
-        $this->assertSame(60.0, $opciones[1]->elPrecio());
-    }
-
-    public function test_si_no_marcan_base_se_toma_la_primera(): void
-    {
-        $consulta = $this->cotizar([[
-            'descripcion' => 'Barra',
-            'cantidad' => 10,
-            'opciones' => [
-                ['etiqueta' => 'Una', 'precio_unitario' => 100, 'es_base' => false],
-                ['etiqueta' => 'Otra', 'precio_unitario' => 200, 'es_base' => false],
-            ],
-        ]]);
-
-        $opciones = $consulta->lineas->first()->opciones;
-
-        // Algo tiene que contar para el total: no se puede quedar sin base.
-        $this->assertTrue($opciones[0]->es_base);
-        $this->assertFalse($opciones[1]->es_base);
-        $consulta->load('lineas.opciones');
-        $this->assertEqualsWithDelta(1000.0, $consulta->total, 0.01);
-    }
-
-    public function test_hay_una_sola_base_aunque_marquen_varias(): void
-    {
-        $consulta = $this->cotizar([[
-            'descripcion' => 'Barra',
-            'cantidad' => 10,
-            'opciones' => [
-                ['etiqueta' => 'Una', 'precio_unitario' => 100, 'es_base' => true],
-                ['etiqueta' => 'Otra', 'precio_unitario' => 200, 'es_base' => true],
-            ],
-        ]]);
-
-        $opciones = $consulta->lineas->first()->opciones;
-
-        $this->assertSame(1, $opciones->where('es_base', true)->count());
-        // Si hubiera dos bases, el total contaria el item dos veces.
-        $consulta->load('lineas.opciones');
-        $this->assertEqualsWithDelta(1000.0, $consulta->total, 0.01);
+        $this->assertTrue((bool) $alt->igual_a_lo_pedido);
+        $this->assertNull($alt->pedido_material);
+        $this->assertNull($alt->motivo_cambio);
     }
 
     public function test_una_linea_sin_alternativas_sigue_andando_igual(): void
     {
-        $consulta = $this->cotizar([[
-            'descripcion' => 'Barra comun',
-            'cantidad' => 4,
-            'precio_unitario' => 25,
-        ]]);
+        $consulta = $this->cotizar([
+            ['descripcion' => 'Barra comun', 'cantidad' => 4, 'precio_unitario' => 25],
+        ]);
 
         $linea = $consulta->lineas->first();
 
-        $this->assertCount(0, $linea->opciones);
-        $this->assertFalse($linea->tieneAlternativas());
+        $this->assertNull($linea->alternativa_de_id);
+        $this->assertFalse($linea->esAlternativa());
         $this->assertEqualsWithDelta(100.0, (float) $linea->importe, 0.01);
+        $this->assertEqualsWithDelta(100.0, $consulta->fresh('lineas')->total, 0.01);
     }
 
     public function test_borrar_la_linea_se_lleva_sus_alternativas(): void
     {
-        $consulta = $this->cotizar([[
-            'descripcion' => 'Barra',
-            'cantidad' => 10,
-            'opciones' => [['etiqueta' => 'Una', 'precio_unitario' => 100, 'es_base' => true]],
-        ]]);
+        $consulta = $this->cotizar([
+            ['descripcion' => 'Barra', 'cantidad' => 10, 'precio_unitario' => 100],
+            ['descripcion' => 'Barra aerea', 'cantidad' => 10, 'precio_unitario' => 110, 'alternativa_de' => 0],
+        ]);
 
-        $this->assertDatabaseCount('consulta_linea_opciones', 1);
+        $madre = $consulta->lineas->firstWhere('alternativa_de_id', null);
+        $this->assertDatabaseCount('consulta_lineas', 2);
 
-        ConsultaLinea::query()->delete();
+        $madre->delete();
 
-        // Sin esto quedarian alternativas colgadas de una linea que ya no esta.
-        $this->assertDatabaseCount('consulta_linea_opciones', 0);
-        $this->assertNotNull($consulta->id);
+        // La foreign key cascadea: sin esto quedaria una alternativa colgando
+        // de una linea que ya no esta.
+        $this->assertDatabaseCount('consulta_lineas', 0);
+    }
+
+    /** Una alternativa va debajo de su linea, nunca de otra alternativa (1.1.1 no existe). */
+    public function test_no_acepta_una_alternativa_de_una_alternativa(): void
+    {
+        $un = Unidad::where('codigo', 'UN')->value('id') ?? Unidad::value('id');
+
+        $this->postJson("/api/empresas/{$this->empresa->id}/consultas", [
+            'tipo' => 'Cotizacion',
+            'fecha' => now()->toDateString(),
+            'moneda_id' => Moneda::where('nombre', 'DOLAR BILLETE BNA VENDEDOR')->value('id'),
+            'lineas' => [
+                ['descripcion' => 'Barra', 'cantidad' => 10, 'precio_unitario' => 100, 'unidad_venta_id' => $un],
+                ['descripcion' => 'Alt', 'cantidad' => 10, 'precio_unitario' => 110, 'unidad_venta_id' => $un, 'alternativa_de' => 0],
+                ['descripcion' => 'Alt de la alt', 'cantidad' => 10, 'precio_unitario' => 120, 'unidad_venta_id' => $un, 'alternativa_de' => 1],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('lineas.2.alternativa_de');
+    }
+
+    /** Una alternativa no puede apuntar a una linea que viene despues. */
+    public function test_la_alternativa_apunta_a_una_linea_anterior(): void
+    {
+        $un = Unidad::where('codigo', 'UN')->value('id') ?? Unidad::value('id');
+
+        $this->postJson("/api/empresas/{$this->empresa->id}/consultas", [
+            'tipo' => 'Cotizacion',
+            'fecha' => now()->toDateString(),
+            'moneda_id' => Moneda::where('nombre', 'DOLAR BILLETE BNA VENDEDOR')->value('id'),
+            'lineas' => [
+                ['descripcion' => 'Alt antes que su madre', 'cantidad' => 10, 'precio_unitario' => 100, 'unidad_venta_id' => $un, 'alternativa_de' => 1],
+                ['descripcion' => 'Madre', 'cantidad' => 10, 'precio_unitario' => 110, 'unidad_venta_id' => $un],
+            ],
+        ])->assertStatus(422)->assertJsonValidationErrors('lineas.0.alternativa_de');
     }
 
     /**
@@ -210,21 +192,17 @@ class AlternativasTest extends TestCase
      */
     public function test_propone_el_plazo_que_se_uso_la_ultima_vez(): void
     {
-        $this->cotizar([[
-            'descripcion' => 'Caño',
-            'cantidad' => 200,
-            'opciones' => [
-                ['etiqueta' => 'Maritimo', 'tipo' => 'Transporte', 'precio_unitario' => 201, 'plazo_dias' => 80, 'es_base' => true],
-                ['etiqueta' => 'Aereo', 'tipo' => 'Transporte', 'precio_unitario' => 210, 'plazo_dias' => 40, 'es_base' => false],
-            ],
-        ]]);
+        $this->cotizar([
+            ['descripcion' => 'Caño', 'cantidad' => 200, 'precio_unitario' => 201, 'transporte' => 'Marítimo', 'plazo_dias' => 80],
+            ['descripcion' => 'Caño', 'cantidad' => 200, 'precio_unitario' => 210, 'transporte' => 'Aéreo', 'plazo_dias' => 40, 'alternativa_de' => 0],
+        ]);
 
         $r = $this->getJson('/api/alternativas/sugerencias')->assertOk();
 
         $vias = collect($r->json('transporte'))->keyBy('etiqueta');
 
-        $this->assertSame(80, $vias['Maritimo']['plazo_dias']);
-        $this->assertSame(40, $vias['Aereo']['plazo_dias']);
+        $this->assertSame(80, $vias['Marítimo']['plazo_dias']);
+        $this->assertSame(40, $vias['Aéreo']['plazo_dias']);
     }
 
     public function test_sin_historial_propone_las_vias_pero_no_inventa_plazos(): void
@@ -234,7 +212,7 @@ class AlternativasTest extends TestCase
         $vias = collect($r->json('transporte'));
 
         // Las dos vias son siempre las mismas: eso se puede proponer.
-        $this->assertSame(['Maritimo', 'Aereo'], $vias->pluck('etiqueta')->all());
+        $this->assertSame(['Marítimo', 'Aéreo'], $vias->pluck('etiqueta')->all());
 
         // El plazo no: un plazo inventado se convierte en un compromiso que
         // nadie asumio.
@@ -260,6 +238,6 @@ class AlternativasTest extends TestCase
 
         $r->assertCreated();
 
-        return Consulta::with('lineas.opciones')->findOrFail($r->json('data.id'));
+        return Consulta::with('lineas')->findOrFail($r->json('data.id'));
     }
 }

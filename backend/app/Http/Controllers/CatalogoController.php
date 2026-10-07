@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CanoEstandar;
 use App\Models\CondicionHabitual;
 use App\Models\CondicionPago;
+use App\Models\Caracteristica;
 use App\Models\MotivoCambio;
 use App\Models\EmpresaEnlace;
 use App\Models\Pais;
@@ -31,6 +32,11 @@ class CatalogoController extends Controller
             // un combo y lo que se escribe queda para la proxima.
             'motivos_cambio' => MotivoCambio::where('activo', true)
                 ->orderBy('orden')->pluck('nombre'),
+            // Con o sin costura, laminada, la norma: sugerencias que crecen
+            // con lo que se escribe, igual que los motivos.
+            'caracteristicas' => Caracteristica::where('activo', true)
+                ->orderBy('orden')->pluck('nombre'),
+            'transportes' => \App\Models\ConsultaLinea::TRANSPORTES,
             'tipos_consulta' => ['Cotizacion', 'Pedido', 'Observacion'],
             'estados' => \App\Models\Consulta::ESTADOS,
             'estados_de_cierre' => \App\Models\Consulta::ESTADOS_DE_CIERRE,

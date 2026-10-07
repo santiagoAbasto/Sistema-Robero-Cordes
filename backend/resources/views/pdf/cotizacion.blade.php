@@ -36,10 +36,12 @@
         .lineas td { font-size: 8.4pt; padding: 4pt 4pt 4pt 0; vertical-align: top; }
         .lineas tr.linea + tr.linea td { border-top: .5pt solid #f1f5f9; }
 
-        /* Las alternativas cuelgan de su linea: sangradas y en gris, para que
-           se lean como opciones de ese item y no como items aparte. */
-        .lineas tr.opcion td { font-size: 8pt; color: #475569; padding-top: 1pt; padding-bottom: 3pt; }
-        .lineas tr.opcion td:first-child { padding-left: 10pt; }
+        /* Las alternativas cuelgan de su linea (1.1, 1.2): en gris y pegadas
+           a ella, para que se lean como opciones de ese item. */
+        .lineas td.item { font-weight: bold; color: #0a2e45; }
+        .lineas tr.alternativa td { color: #475569; border-top: none !important; padding-top: 2pt; }
+        .lineas tr.alternativa td.item { color: #64748b; padding-left: 6pt; }
+        .nota-total { font-size: 7pt; color: #64748b; padding-top: 3pt; }
         .lineas .etiqueta {
             display: inline-block; background: #f1f5f9; color: #0a2e45;
             font-weight: bold; font-size: 7.4pt; padding: 1pt 4pt; border-radius: 3pt;
@@ -145,107 +147,30 @@
 <table class="lineas">
     <thead>
         <tr>
-            <th style="width:42pt">Cant.</th>
-            <th style="width:46pt">Unidad</th>
+            <th style="width:26pt">Item</th>
+            <th style="width:38pt">Cant.</th>
+            <th style="width:40pt">Unidad</th>
             <th>Descripcion</th>
             @if ($incluyeImportes)
-                <th class="der" style="width:80pt">P. unitario</th>
-                <th class="der" style="width:80pt">Importe</th>
+                <th class="der" style="width:76pt">P. unitario</th>
+                <th class="der" style="width:76pt">Importe</th>
             @endif
         </tr>
     </thead>
     <tbody>
-        @foreach ($lineas as $linea)
-            <tr class="linea">
-                <td>{{ $linea->cantidad ? rtrim(rtrim(number_format((float) $linea->cantidad, 2, ',', '.'), '0'), ',') : '' }}</td>
-                <td>{{ $linea->unidadVenta?->codigo }}</td>
-                <td>
-                    {{--
-                        Si la linea tiene alternativas, la de arriba tambien
-                        lleva su etiqueta. Sin esto el lector ve un precio y no
-                        sabe a cual de las opciones corresponde.
-                    --}}
-                    @if ($linea->tieneAlternativas() && $linea->opcionBase())
-                        <span class="etiqueta">{{ $linea->opcionBase()->etiqueta }}</span>
-                    @endif
-                    {{-- El item del cliente va adelante: es como el compara su
-                         requerimiento contra la oferta, renglon por renglon. --}}
-                    @if ($linea->item_cliente)
-                        <span class="item-cliente">Item {{ $linea->item_cliente }}</span>
-                    @endif
-                    {{ $linea->descripcion }}@if ($linea->aprox)<span class="aprox">(aprox.)</span>@endif
-                    @if ($linea->codigo_cliente)
-                        <div class="dato-cliente">Cod. cliente: {{ $linea->codigo_cliente }}</div>
-                    @endif
-                    {{-- La nota del articulo si sale impresa; la NOTA de la
-                         cotizacion es interna y va aparte. --}}
-                    @if ($linea->nota)
-                        <div class="nota-linea">{!! nl2br(e($linea->nota)) !!}</div>
-                    @endif
-                    @if ($linea->tieneAlternativas() && $linea->opcionBase()?->plazo_dias)
-                        &nbsp;·&nbsp; entrega aprox. {{ $linea->opcionBase()->plazo_dias }} dias
-                    @endif
-                    {{-- Cuando se cotizó otra cosa, en la hoja sale aclarado. --}}
-                    @if (! $linea->igual_a_lo_pedido && $linea->pedido_texto)
-                        <div class="pedido">
-                            Se habia pedido: {{ $linea->pedido_texto }}
-                            @if ($linea->motivo_cambio) &nbsp;·&nbsp; {{ $linea->motivo_cambio }} @endif
-                        </div>
-                    @endif
-                    {{-- Largos variables: el rango se imprime, no se deduce. --}}
-                    @if ($linea->largoEsVariable())
-                        <div class="pedido">
-                            Largos de {{ number_format((float) $linea->largo_min_mm / 1000, 2, ',', '.') }}
-                            a {{ number_format((float) $linea->largo_max_mm / 1000, 2, ',', '.') }} m
-                            &nbsp;·&nbsp; peso calculado sobre el promedio,
-                            {{ number_format((float) $linea->largoPromedioMm() / 1000, 2, ',', '.') }} m
-                        </div>
-                    @endif
-                    {{-- Se cotiza por metro y se factura por kilo. --}}
-                    @if ($linea->cambiaDeUnidad() && $linea->cantidad_facturar)
-                        <div class="pedido" style="color:#0a6ca6">
-                            Se factura {{ number_format((float) $linea->cantidad_facturar, 2, ',', '.') }}
-                            {{ $linea->unidadFactura?->codigo }}
-                            @if ($incluyeImportes && $linea->precio_por_kilo)
-                                a {{ $simbolo }}{{ number_format((float) $linea->precio_por_kilo, 2, ',', '.') }}
-                                por {{ mb_strtolower($linea->unidadFactura?->codigo ?? '') }}
-                            @endif
-                        </div>
-                    @endif
-                </td>
-                @if ($incluyeImportes)
-                    <td>@include('pdf.plata', ['monto' => $linea->precio_unitario])</td>
-                    <td>@include('pdf.plata', ['monto' => $linea->importe])</td>
-                @endif
-            </tr>
-
-            {{--
-                Las alternativas: el mismo item cotizado de otra manera. Van
-                debajo de su linea, sangradas, para que se lea que son opciones
-                de ESE item y no items aparte. La base no se repite: ya esta
-                arriba, en la linea.
-            --}}
-            @foreach ($linea->opciones->where('es_base', false) as $opcion)
-                <tr class="opcion">
-                    <td>{{ $opcion->laCantidad() ? rtrim(rtrim(number_format((float) $opcion->laCantidad(), 2, ',', '.'), '0'), ',') : '' }}</td>
-                    <td>{{ $linea->unidadVenta?->codigo }}</td>
-                    <td>
-                        <span class="etiqueta">{{ $opcion->etiqueta }}</span>
-                        @if ($opcion->descripcion || $opcion->material)
-                            {{ $opcion->descripcion ?: $opcion->material?->nombre }}
-                        @endif
-                        @if ($opcion->plazo_dias)
-                            &nbsp;·&nbsp; entrega aprox. {{ $opcion->plazo_dias }} dias
-                        @endif
-                        @if ($opcion->nota)
-                            <div class="pedido">{{ $opcion->nota }}</div>
-                        @endif
-                    </td>
-                    @if ($incluyeImportes)
-                        <td>@include('pdf.plata', ['monto' => $opcion->elPrecio()])</td>
-                        <td>@include('pdf.plata', ['monto' => $opcion->importe])</td>
-                    @endif
-                </tr>
+        {{--
+            Items 1, 2, 3 y, debajo de cada uno, sus alternativas 1.1, 1.2.
+            La alternativa de una linea que se quito tampoco sale.
+        --}}
+        @php
+            $madres = $lineas->filter(fn ($l) => ! $l->esAlternativa())->values();
+            $hayAlternativas = false;
+        @endphp
+        @foreach ($madres as $i => $linea)
+            @include('pdf.linea', ['linea' => $linea, 'numero' => $i + 1, 'esAlternativa' => false])
+            @foreach ($lineas->where('alternativa_de_id', $linea->id)->values() as $k => $alternativa)
+                @php $hayAlternativas = true; @endphp
+                @include('pdf.linea', ['linea' => $alternativa, 'numero' => ($i + 1).'.'.($k + 1), 'esAlternativa' => true])
             @endforeach
         @endforeach
     </tbody>
@@ -258,6 +183,9 @@
             <td style="width:80pt">@include('pdf.plata', ['monto' => $total])</td>
         </tr>
     </table>
+    @if ($hayAlternativas)
+        <div class="nota-total">Las alternativas (1.1, 1.2...) se ofrecen para elegir: no estan sumadas en el total.</div>
+    @endif
 @endif
 
 @if ($condiciones->isNotEmpty())

@@ -2,8 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ConsultaLineaOpcion;
-use Illuminate\Support\Facades\DB;
+use App\Models\ConsultaLinea;
 
 /**
  * Lo que el sistema propone al armar alternativas.
@@ -12,53 +11,32 @@ use Illuminate\Support\Facades\DB;
  * salio a 40 dias y el maritimo a 80, la proxima vez ya vienen puestos: se
  * corrigen si cambiaron, pero no hay que acordarse ni buscarlos.
  *
- * Los plazos salen SOLO del historial. Cuando no hay historial se proponen las
- * etiquetas y el plazo queda en blanco: un plazo inventado se copia a una
- * cotizacion y se convierte en un compromiso que nadie asumio.
+ * Los plazos salen SOLO del historial. Cuando no hay historial el plazo queda
+ * en blanco: un plazo inventado se copia a una cotizacion y se convierte en un
+ * compromiso que nadie asumio.
  */
 class AlternativaController extends Controller
 {
-    /** Las dos vias son siempre las mismas dos: eso no hace falta aprenderlo. */
-    private const TRANSPORTE = ['Maritimo', 'Aereo'];
-
     public function sugerencias()
     {
-        return [
-            'transporte' => $this->transporte(),
-            'tipos' => ConsultaLineaOpcion::TIPOS,
-        ];
+        return ['transporte' => $this->transporte()];
     }
 
     /**
-     * Las vias, con el plazo que se uso la ultima vez.
+     * Cada via, con el plazo de la ultima linea que la uso.
      *
-     * @return list<array{etiqueta: string, tipo: string, plazo_dias: ?int, veces: int}>
+     * @return list<array{etiqueta: string, plazo_dias: ?int}>
      */
     private function transporte(): array
     {
-        // El ultimo plazo cargado para cada etiqueta, y cuantas veces se uso.
-        $historial = ConsultaLineaOpcion::query()
-            ->where('tipo', 'Transporte')
-            ->whereNotNull('plazo_dias')
-            ->select('etiqueta', DB::raw('count(*) as veces'), DB::raw('max(id) as ultimo'))
-            ->groupBy('etiqueta')
-            ->get()
-            ->keyBy(fn ($f) => mb_strtolower($f->etiqueta));
-
-        $plazos = ConsultaLineaOpcion::whereIn('id', $historial->pluck('ultimo'))
-            ->pluck('plazo_dias', 'id');
-
-        return collect(self::TRANSPORTE)
-            ->map(function (string $etiqueta) use ($historial, $plazos) {
-                $fila = $historial[mb_strtolower($etiqueta)] ?? null;
-
-                return [
-                    'etiqueta' => $etiqueta,
-                    'tipo' => 'Transporte',
-                    'plazo_dias' => $fila ? (int) $plazos[$fila->ultimo] : null,
-                    'veces' => $fila ? (int) $fila->veces : 0,
-                ];
-            })
+        return collect(ConsultaLinea::TRANSPORTES)
+            ->map(fn (string $via) => [
+                'etiqueta' => $via,
+                'plazo_dias' => ConsultaLinea::where('transporte', $via)
+                    ->whereNotNull('plazo_dias')
+                    ->latest('id')
+                    ->value('plazo_dias'),
+            ])
             ->all();
     }
 }

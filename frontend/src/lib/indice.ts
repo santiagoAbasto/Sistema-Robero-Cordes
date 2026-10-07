@@ -360,6 +360,25 @@ export function hoy(dias = 0): string {
   })
 }
 
+/**
+ * El nombre de una cotización, para el encabezado y la pestaña del navegador.
+ *
+ * "COTIZACIÓN 2026-0011 R0 · ACERINOX" en vez de un título genérico: al entrar
+ * se sabe de una cuál es y de quién. Un borrador sin emitir todavía no tiene
+ * número, así que se muestra como BORRADOR.
+ */
+export function tituloDeConsulta(c: {
+  tipo: string
+  numero_con_revision: string | null
+  empresa?: { nombre: string } | null
+}): string {
+  const clase = c.tipo === 'Pedido' ? 'PEDIDO' : c.tipo === 'Observacion' ? 'OBSERVACIÓN' : 'COTIZACIÓN'
+  const nro = c.numero_con_revision ?? 'BORRADOR'
+  const empresa = c.empresa?.nombre
+
+  return [`${clase} ${nro}`, empresa].filter(Boolean).join(' · ')
+}
+
 /** "2026-07-20" -> "20/07/2026" */
 export function fecha(valor: string | null | undefined): string {
   if (!valor) return '—'
@@ -557,11 +576,19 @@ export interface DatosLinea {
   calc_piezas?: number | null
   calc_cano_id?: number | null
 
+  /** Con o sin costura, laminada, la norma. Lo ofrecido sale impreso. */
+  caracteristicas?: string | null
+  /** Lo que el cliente pidió como característica, cuando se cotiza distinto. */
+  pedido_caracteristicas?: string | null
+
   /**
-   * Alternativas: el mismo ítem cotizado de otra manera. Cada una pisa solo lo
-   * que cambia; lo que va en null lo hereda de la línea.
+   * Alternativa: esta línea es otra forma de cotizar la de la posición
+   * `alternativa_de` en la lista. La vía (Marítimo/Aéreo) y el plazo son lo que
+   * la distingue. En la hoja va como 1.1, 1.2 y no suma al total.
    */
-  opciones?: DatosOpcion[]
+  alternativa_de?: number | null
+  transporte?: string | null
+  plazo_dias?: number | null
 
   /** El id de la línea que ya existía, para que el servidor la empareje. */
   id?: number | null
@@ -571,19 +598,6 @@ export interface DatosLinea {
    * dónde vino el número.
    */
   aplicar_calculo_al_factor?: boolean
-}
-
-export interface DatosOpcion {
-  etiqueta: string
-  tipo: string
-  es_base: boolean
-  cantidad?: number | null
-  precio_unitario?: number | null
-  precio_por_kilo?: number | null
-  plazo_dias?: number | null
-  material_id?: number | null
-  descripcion?: string | null
-  nota?: string | null
 }
 
 export interface DatosConsulta {
@@ -682,13 +696,25 @@ export async function versionesDe(id: number) {
   return data
 }
 
-export async function copiarConsulta(id: number, empresas: number[]) {
+export async function copiarConsulta(id: number, empresas: number[], conPrecios = true) {
   const { data } = await api.post<{ mensaje: string; borradores: { data: Consulta[] } }>(
     `/consultas/${id}/copiar`,
-    { empresas },
+    { empresas, con_precios: conPrecios },
   )
 
   return data
+}
+
+/**
+ * "Usar como borrador": arranca un borrador nuevo con todo lo de esta
+ * cotización, en la misma empresa. Es copiarla a sí misma —conserva contacto,
+ * condiciones y lo que pidió el cliente— y sale con precios. Devuelve el id del
+ * borrador para abrirlo.
+ */
+export async function usarComoBorrador(id: number, empresaId: number): Promise<number> {
+  const { borradores } = await copiarConsulta(id, [empresaId], true)
+
+  return borradores.data[0].id
 }
 
 export async function agregarObservacion(consultaId: number, texto: string) {

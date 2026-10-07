@@ -8,8 +8,8 @@ use App\Models\CondicionHabitual;
 use App\Models\CondicionPago;
 use App\Models\Consulta;
 use App\Models\ConsultaCondicion;
+use App\Models\Caracteristica;
 use App\Models\ConsultaLinea;
-use App\Models\ConsultaLineaOpcion;
 use App\Models\Empresa;
 use App\Models\Forma;
 use App\Models\Impresion;
@@ -193,7 +193,7 @@ class ConsultaEscrituraController extends Controller
             ], 409);
         }
 
-        $consulta->load('lineas.opciones', 'condiciones');
+        $consulta->load('lineas', 'condiciones');
 
         $revision = DB::transaction(function () use ($consulta, $request) {
             $nueva = $consulta->replicate([
@@ -210,23 +210,7 @@ class ConsultaEscrituraController extends Controller
             $nueva->recalcularVencimiento();
             $nueva->save();
 
-            foreach ($consulta->lineas as $linea) {
-                $copia = $linea->replicate(['id', 'consulta_id', 'created_at', 'updated_at']);
-                $copia->consulta_id = $nueva->id;
-                $copia->save();
-
-                foreach ($linea->opciones as $opcion) {
-                    $otra = $opcion->replicate(['id', 'consulta_linea_id', 'created_at', 'updated_at']);
-                    $otra->consulta_linea_id = $copia->id;
-                    $otra->save();
-                }
-            }
-
-            foreach ($consulta->condiciones as $condicion) {
-                $otra = $condicion->replicate(['id', 'consulta_id', 'created_at', 'updated_at']);
-                $otra->consulta_id = $nueva->id;
-                $otra->save();
-            }
+            $this->clonarContenido($consulta, $nueva);
 
             return $nueva;
         });
@@ -235,11 +219,53 @@ class ConsultaEscrituraController extends Controller
     }
 
     /**
-     * Copiar una cotización a otras empresas.
+     * Copia el contenido de una cotizacion en otra.
      *
-     * Se copian las líneas y los precios. La condición de pago, la lista de
-     * precios y el contacto NO se copian: salen de la ficha de cada empresa
-     * destino, porque una puede tener crédito y las otras no.
+     * Las lineas con todo lo suyo —lo pedido, las medidas, el calculo, el
+     * factor— y sus alternativas, que pasan a colgar de las copias y no de las
+     * originales. Y las condiciones. Lo usan la revision, copiar a otra
+     * empresa y "usar como borrador": un solo lugar donde se copia.
+     */
+    private function clonarContenido(Consulta $base, Consulta $nueva, bool $conPrecios = true): void
+    {
+        $copias = [];
+
+        // Primero las madres: una alternativa necesita el id nuevo de su linea.
+        foreach ($base->lineas->sortBy(fn ($l) => $l->alternativa_de_id ? 1 : 0) as $linea) {
+            $copia = $linea->replicate(['id', 'consulta_id', 'created_at', 'updated_at']);
+            $copia->consulta_id = $nueva->id;
+            $copia->alternativa_de_id = $linea->alternativa_de_id ? ($copias[$linea->alternativa_de_id] ?? null) : null;
+
+            if (! $conPrecios) {
+                $copia->precio_unitario = null;
+                $copia->precio_por_kilo = null;
+                $copia->importe = null;
+            }
+
+            $copia->save();
+            $copias[$linea->id] = $copia->id;
+        }
+
+        foreach ($base->condiciones as $condicion) {
+            $otra = $condicion->replicate(['id', 'consulta_id', 'created_at', 'updated_at']);
+            $otra->consulta_id = $nueva->id;
+            $otra->save();
+        }
+    }
+
+    /**
+     * Copiar una cotizacion a otras empresas, o a la misma ("usar como borrador").
+     *
+     * Por defecto con los precios: "al darle copiar no esta llevando los
+     * precios, sale todo 0". Sin precios queda como opcion, para cotizar lo
+     * mismo con la lista de otro cliente.
+     *
+     * A otra empresa, el contacto, la condicion de pago y la lista salen de su
+     * ficha: una puede tener credito y las otras no. A la misma, todo sale de
+     * la base: es la misma cotizacion como punto de partida, y al emitirse toma
+     * un numero nuevo (no es una revision).
+     *
+     * Cada copia nace en borrador y ya se ve en la ficha de su empresa.
      */
     public function copiar(Request $request, Consulta $consulta)
     {
@@ -252,11 +278,13 @@ class ConsultaEscrituraController extends Controller
         $datos = $request->validate([
             'empresas' => ['required', 'array', 'min:1'],
             'empresas.*' => ['exists:empresas,id'],
+            'con_precios' => ['boolean'],
         ]);
+        $conPrecios = $request->boolean('con_precios', true);
 
         $consulta->load('lineas', 'condiciones');
 
-        $borradores = DB::transaction(function () use ($consulta, $datos, $request) {
+        $borradores = DB::transaction(function () use ($consulta, $datos, $request, $conPrecios) {
             $creados = [];
 
             foreach ($datos['empresas'] as $empresaId) {
@@ -266,51 +294,35 @@ class ConsultaEscrituraController extends Controller
                     continue;
                 }
 
+                $misma = $destino->id === $consulta->empresa_id;
+
                 $borrador = $destino->consultas()->create([
                     'tipo' => $consulta->tipo,
                     'fecha' => now()->toDateString(),
-                    'validez_dias' => Consulta::VALIDEZ_POR_DEFECTO,
-                    'contacto_id' => $destino->contactoPrincipal()?->id,
-                    'razon_social_id' => $destino->razonSocialHabitual()?->id,
+                    'validez_dias' => $misma ? $consulta->validez_dias : Consulta::VALIDEZ_POR_DEFECTO,
+                    'contacto_id' => $misma ? $consulta->contacto_id : $destino->contactoPrincipal()?->id,
+                    'razon_social_id' => $misma ? $consulta->razon_social_id : $destino->razonSocialHabitual()?->id,
                     'usuario_id' => $request->user()->id,
                     'moneda_id' => $consulta->moneda_id,
                     'tipo_cambio' => $consulta->tipo_cambio,
-                    // De la ficha del destino, no de la original.
-                    'condicion_pago' => $destino->campos->firstWhere('titulo', 'Tipo de pago')?->valor,
-                    'lista_precios' => $destino->campos->firstWhere('titulo', 'Lista de precios')?->valor,
+                    'condicion_pago' => $misma ? $consulta->condicion_pago
+                        : $destino->campos->firstWhere('titulo', 'Tipo de pago')?->valor,
+                    'lista_precios' => $misma ? $consulta->lista_precios
+                        : $destino->campos->firstWhere('titulo', 'Lista de precios')?->valor,
                     'estado' => 'Borrador',
                     'juego_condiciones' => $consulta->juego_condiciones,
                     'copiada_de_id' => $consulta->id,
-                    // La NOTA y las observaciones de la original no se copian.
+                    // Lo que pidio el cliente y la NOTA son de esa empresa.
+                    'nota' => $misma ? $consulta->nota : null,
+                    'solicitud_texto' => $misma ? $consulta->solicitud_texto : null,
+                    'solicitud_via' => $misma ? $consulta->solicitud_via : null,
+                    'solicitud_fecha' => $misma ? $consulta->solicitud_fecha : null,
                 ]);
 
                 $borrador->recalcularVencimiento();
                 $borrador->save();
 
-                foreach ($consulta->lineas as $linea) {
-                    $copia = $linea->replicate(['id', 'consulta_id', 'created_at', 'updated_at']);
-                    $copia->consulta_id = $borrador->id;
-
-                    // Se copian los datos tecnicos, no los precios: cada empresa
-                    // tiene su lista y su condicion. Los precios se ponen al abrir
-                    // el borrador.
-                    $copia->precio_unitario = null;
-                    $copia->precio_por_kilo = null;
-                    $copia->importe = null;
-
-                    $copia->save();
-                }
-
-                foreach ($consulta->condiciones as $condicion) {
-                    ConsultaCondicion::create([
-                        'consulta_id' => $borrador->id,
-                        'orden' => $condicion->orden,
-                        'titulo' => $condicion->titulo,
-                        'texto' => $condicion->texto,
-                        'imprime' => $condicion->imprime,
-                        'origen' => $condicion->origen,
-                    ]);
-                }
+                $this->clonarContenido($consulta, $borrador, $conPrecios);
 
                 $creados[] = $borrador;
             }
@@ -318,11 +330,13 @@ class ConsultaEscrituraController extends Controller
             return $creados;
         });
 
+        $cuantos = count($borradores);
+
         return response()->json([
-            'mensaje' => count($borradores).' borradores creados. Ninguno se manda hasta confirmarlo.',
+            'mensaje' => $cuantos === 1
+                ? 'Borrador creado. Ya esta en la ficha de la empresa.'
+                : "{$cuantos} borradores creados. Ya estan en la ficha de cada empresa.",
             'borradores' => ConsultaResource::collection(
-                // Las condiciones se copian y hay que devolverlas: sin esto el
-                // borrador se ve sin condiciones aunque las tenga guardadas.
                 Consulta::with(['empresa', 'contacto', 'lineas.material', 'lineas.forma',
                     'lineas.unidadVenta', 'lineas.unidadFactura', 'usuario', 'moneda', 'condiciones'])
                     ->whereIn('id', collect($borradores)->pluck('id'))->get()
@@ -614,19 +628,15 @@ class ConsultaEscrituraController extends Controller
             'lineas.*.calc_medidas.*.valor' => ['nullable', 'numeric'],
             'lineas.*.calc_medidas.*.unidad' => ['nullable', 'string', 'in:mm,cm,m,in,ft'],
 
-            // Alternativas: el mismo item cotizado de otra manera (aereo o
-            // maritimo, por tramos de cantidad, con otro material).
-            'lineas.*.opciones' => ['nullable', 'array', 'max:10'],
-            'lineas.*.opciones.*.etiqueta' => ['required', 'string', 'max:60'],
-            'lineas.*.opciones.*.tipo' => ['nullable', Rule::in(ConsultaLineaOpcion::TIPOS)],
-            'lineas.*.opciones.*.cantidad' => ['nullable', 'numeric', 'min:0'],
-            'lineas.*.opciones.*.precio_unitario' => ['nullable', 'numeric', 'min:0'],
-            'lineas.*.opciones.*.precio_por_kilo' => ['nullable', 'numeric', 'min:0'],
-            'lineas.*.opciones.*.plazo_dias' => ['nullable', 'integer', 'min:0', 'max:999'],
-            'lineas.*.opciones.*.material_id' => ['nullable', 'exists:materiales,id'],
-            'lineas.*.opciones.*.descripcion' => ['nullable', 'string', 'max:255'],
-            'lineas.*.opciones.*.nota' => ['nullable', 'string', 'max:200'],
-            'lineas.*.opciones.*.es_base' => ['boolean'],
+            // Una alternativa es una linea entera que cuelga de otra: el numero
+            // es la posicion de su linea en esta misma lista (las nuevas todavia
+            // no tienen id). Se controla al guardar que apunte a una anterior.
+            'lineas.*.alternativa_de' => ['nullable', 'integer', 'min:0'],
+            'lineas.*.transporte' => ['nullable', Rule::in(ConsultaLinea::TRANSPORTES)],
+            'lineas.*.plazo_dias' => ['nullable', 'integer', 'min:0', 'max:999'],
+            // Con o sin costura, laminada, la norma: lo ofrecido y lo pedido.
+            'lineas.*.caracteristicas' => ['nullable', 'string', 'max:120'],
+            'lineas.*.pedido_caracteristicas' => ['nullable', 'string', 'max:120'],
             'lineas.*.deposito' => ['nullable', 'string', 'max:40'],
             'lineas.*.colada' => ['nullable', 'string', 'max:40'],
 
@@ -714,14 +724,14 @@ class ConsultaEscrituraController extends Controller
     }
 
     /**
-     * Un motivo de cambio escrito a mano queda en la lista.
+     * Un motivo de cambio o una caracteristica escritos a mano quedan en su lista.
      *
      * "Agregar mas opciones de motivos de cambio, debe ser mas administrable".
      * Los motivos que trae el sistema son los que ya se usaban; los que faltan
      * los pone la empresa escribiendolos la primera vez, no yo adivinando:
      * el motivo sale impreso al lado de la diferencia y lo lee el cliente.
      */
-    private function recordarElMotivo(?string $nombre): void
+    private function recordarEnLaLista(string $modelo, ?string $nombre): void
     {
         $nombre = trim((string) $nombre);
 
@@ -729,7 +739,7 @@ class ConsultaEscrituraController extends Controller
             return;
         }
 
-        $yaEsta = MotivoCambio::query()
+        $yaEsta = $modelo::query()
             ->whereRaw('LOWER(nombre) = ?', [mb_strtolower($nombre)])
             ->exists();
 
@@ -737,9 +747,9 @@ class ConsultaEscrituraController extends Controller
             return;
         }
 
-        MotivoCambio::create([
+        $modelo::create([
             'nombre' => $nombre,
-            'orden' => (int) MotivoCambio::max('orden') + 1,
+            'orden' => (int) $modelo::max('orden') + 1,
             'activo' => true,
         ]);
     }
@@ -756,6 +766,8 @@ class ConsultaEscrituraController extends Controller
     {
         $existentes = $consulta->lineas()->get()->keyBy('id');
         $sobreviven = [];
+        // El id que quedo en cada posicion: las alternativas apuntan a una.
+        $idDe = [];
 
         foreach ($lineas as $i => $datos) {
             $calculo = [
@@ -774,7 +786,7 @@ class ConsultaEscrituraController extends Controller
 
             $linea->fill(
                 collect($datos)
-                    ->except(['id', 'calc_medidas', 'calc_piezas', 'calc_cano_id', 'opciones',
+                    ->except(['id', 'calc_medidas', 'calc_piezas', 'calc_cano_id', 'alternativa_de',
                         'aplicar_calculo_al_factor', 'material_nuevo',
                         // El navegador no decide de donde vino el factor.
                         'factor_calculado', 'origen_factor', 'factor_cargado_por', 'factor_cargado_el'])
@@ -782,32 +794,36 @@ class ConsultaEscrituraController extends Controller
             );
             $linea->consulta_id = $consulta->id;
             $linea->orden = $i + 1;
+            $linea->alternativa_de_id = $this->madreDe($lineas, $i, $idDe);
 
             $this->promediarElLargo($linea, $calculo);
             $this->calcularElPeso($linea, $calculo);
 
             // Cuando se cotiza tal cual lo pidieron, lo pedido se completa solo.
-            if ($linea->igual_a_lo_pedido) {
+            // Una alternativa no tiene lo pedido propio: es otra respuesta al
+            // mismo pedido, el de su linea.
+            if ($linea->igual_a_lo_pedido || $linea->alternativa_de_id) {
+                $linea->igual_a_lo_pedido = true;
                 $linea->pedido_material = null;
                 $linea->pedido_forma = null;
                 $linea->pedido_dimensiones = null;
                 $linea->pedido_medidas = null;
+                $linea->pedido_caracteristicas = null;
                 $linea->motivo_cambio = null;
             } else {
-                $this->recordarElMotivo($linea->motivo_cambio);
+                $this->recordarEnLaLista(MotivoCambio::class, $linea->motivo_cambio);
+                $this->recordarEnLaLista(Caracteristica::class, $linea->pedido_caracteristicas);
             }
+
+            $this->recordarEnLaLista(Caracteristica::class, $linea->caracteristicas);
 
             $this->resolverElFactor($linea, (bool) ($datos['aplicar_calculo_al_factor'] ?? false));
 
-            // Primero se guarda la linea, despues sus alternativas, y recien
-            // ahi se recalcula: el importe de la linea sale de la alternativa
-            // base, asi que tienen que existir antes de sacar la cuenta.
             $linea->recalcular();
             $linea->save();
 
             $sobreviven[] = $linea->id;
-            $linea->opciones()->delete();
-            $this->guardarOpciones($linea, $datos['opciones'] ?? []);
+            $idDe[$i] = $linea->id;
         }
 
         // Las que dejaron de venir se sacaron de la cotizacion.
@@ -815,48 +831,26 @@ class ConsultaEscrituraController extends Controller
     }
 
     /**
-     * Las alternativas de la linea.
+     * De que linea es alternativa la de la posicion $i, ya con su id.
      *
-     * Una sola puede ser la base. Si no marcaron ninguna, es la primera: algo
-     * tiene que contar para el total, y no se puede adivinar.
+     * Tiene que ser una linea anterior y que no sea a su vez una alternativa:
+     * una alternativa de una alternativa no tiene lugar en la hoja (1.1.1).
      */
-    private function guardarOpciones(ConsultaLinea $linea, array $opciones): void
+    private function madreDe(array $lineas, int $i, array $idDe): ?int
     {
-        if ($opciones === []) {
-            return;
+        $madre = $lineas[$i]['alternativa_de'] ?? null;
+
+        if ($madre === null) {
+            return null;
         }
 
-        $yaHayBase = false;
-
-        foreach (array_values($opciones) as $i => $datos) {
-            $esBase = ($datos['es_base'] ?? false) && ! $yaHayBase;
-            $yaHayBase = $yaHayBase || $esBase;
-
-            $linea->opciones()->create([
-                'orden' => $i + 1,
-                'etiqueta' => $datos['etiqueta'],
-                'tipo' => $datos['tipo'] ?? 'Otra',
-                'cantidad' => $datos['cantidad'] ?? null,
-                'precio_unitario' => $datos['precio_unitario'] ?? null,
-                'precio_por_kilo' => $datos['precio_por_kilo'] ?? null,
-                'plazo_dias' => $datos['plazo_dias'] ?? null,
-                'material_id' => $datos['material_id'] ?? null,
-                'descripcion' => $datos['descripcion'] ?? null,
-                'nota' => $datos['nota'] ?? null,
-                'es_base' => $esBase,
+        if ($madre >= $i || isset($lineas[$madre]['alternativa_de'])) {
+            throw ValidationException::withMessages([
+                "lineas.{$i}.alternativa_de" => 'Una alternativa va debajo de su linea, y no de otra alternativa.',
             ]);
         }
 
-        $linea->load('opciones');
-
-        if (! $yaHayBase) {
-            $linea->opciones->first()->update(['es_base' => true]);
-            $linea->load('opciones');
-        }
-
-        // Ahora que estan las alternativas, el importe de la linea sale de la base.
-        $linea->recalcular();
-        $linea->save();
+        return $idDe[$madre] ?? null;
     }
 
     /**
@@ -1224,7 +1218,7 @@ class ConsultaEscrituraController extends Controller
     {
         return $consulta->fresh([
             'empresa', 'contacto', 'razonSocial', 'usuario', 'moneda',
-            'lineas.material', 'lineas.forma', 'lineas.unidadVenta', 'lineas.opciones.material',
+            'lineas.material', 'lineas.forma', 'lineas.unidadVenta',
             'lineas.unidadFactura', 'lineas.unidadPedida',
             'condiciones', 'observaciones.usuario', 'impresiones.contacto',
             'impresiones.usuario', 'copiadaDe.empresa', 'emisor',

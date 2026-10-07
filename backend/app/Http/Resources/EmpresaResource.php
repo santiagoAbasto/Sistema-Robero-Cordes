@@ -89,7 +89,7 @@ class EmpresaResource extends JsonResource
 
             // El historial va separado en tres secciones, como en la ficha.
             'cotizaciones' => ConsultaResource::collection(
-                $this->consultas->where('tipo', 'Cotizacion')->where('estado', '!=', 'Borrador')->values()
+                $this->consultas->where('tipo', 'Cotizacion')->values()
             ),
             'pedidos' => ConsultaResource::collection(
                 $this->consultas->where('tipo', 'Pedido')->values()

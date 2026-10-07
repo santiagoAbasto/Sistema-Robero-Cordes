@@ -29,6 +29,7 @@ import {
   mensajeDeError,
   plata,
   traerEmpresa,
+  usarComoBorrador,
   useCarga,
 } from '../../lib/indice'
 import EmpresaForm, { estadoInicial } from './EmpresaForm'
@@ -185,10 +186,10 @@ export default function FichaEmpresa() {
               <Pencil size={15} strokeWidth={2} />
               Modificar
             </Boton>
-            <Link to={`/empresas/${empresa.id}/agregar`}>
+            <Link to={`/empresas/${empresa.id}/agregar?tipo=Cotizacion`}>
               <Boton variante="primario">
                 <Plus size={15} strokeWidth={2.4} />
-                Agregar
+                Nueva cotización
               </Boton>
             </Link>
           </>
@@ -256,7 +257,7 @@ export default function FichaEmpresa() {
         titulo="Cotizaciones"
         consultas={empresa.cotizaciones}
         ayuda="Todo lo que se le cotizó a esta empresa. Cada una guarda su moneda, el tipo de cambio, quién la hizo y su observación interna."
-        accion={{ texto: '+ Agregar cotizacion', to: `/empresas/${empresa.id}/agregar?tipo=Cotizacion` }}
+        accion={{ texto: '+ Nueva cotización', to: `/empresas/${empresa.id}/agregar?tipo=Cotizacion` }}
         empresaId={empresa.id}
       />}
 
@@ -789,6 +790,22 @@ function EntradaHistorial({
   empresaId: number
   sinImprimir?: boolean
 }) {
+  const navigate = useNavigate()
+  const [usando, setUsando] = useState(false)
+
+  // "Usar como borrador": arranca un borrador nuevo con todo lo de esta
+  // cotización, en la misma empresa, y lo abre para editarlo. Sirve para
+  // recotizar sin tocar la que ya salió.
+  async function usarComoBorradorAca() {
+    setUsando(true)
+
+    try {
+      navigate(`/consultas/${await usarComoBorrador(consulta.id, empresaId)}`)
+    } catch {
+      setUsando(false)
+    }
+  }
+
   const lineas = (consulta.lineas ?? []).filter((l) => !l.quitada)
   const observaciones = consulta.observaciones ?? []
 
@@ -967,7 +984,12 @@ function EntradaHistorial({
 
         <div className="ml-auto flex items-center gap-3.5">
           {consulta.tipo !== 'Observacion' && (
-            <Accion to={`/consultas/${consulta.id}/copiar`}>Copiar a otra empresa</Accion>
+            <>
+              <Accion onClick={usarComoBorradorAca} apagado={usando}>
+                {usando ? 'Creando…' : 'Usar como borrador'}
+              </Accion>
+              <Accion to={`/consultas/${consulta.id}/copiar`}>Copiar a otra empresa</Accion>
+            </>
           )}
           {!sinImprimir && (
             <Accion to={`/imprimir?empresa=${empresaId}&consulta=${consulta.id}`}>Imprimir</Accion>

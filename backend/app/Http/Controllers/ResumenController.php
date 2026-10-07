@@ -54,7 +54,7 @@ class ResumenController extends Controller
         return Consulta::with([
             'empresa:id,nombre',
             'moneda:id,nombre,moneda_base',
-            'lineas:id,consulta_id,importe,quitada',
+            'lineas:id,consulta_id,importe,quitada,alternativa_de_id',
         ])
             ->orderByDesc('fecha')
             ->orderByDesc('id')
