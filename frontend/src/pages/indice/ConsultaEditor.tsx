@@ -3069,68 +3069,6 @@ function LineaFila({
         />
       </div>
 
-      <div className="mt-2.5">
-        <Texto
-          etiqueta="Descripcion — es lo que sale impreso"
-          ayuda={
-            linea.descripcionAMano
-              ? 'la escribiste vos: ya no se actualiza sola'
-              : 'se arma con el material, la forma y las medidas'
-          }
-          obligatorio
-          value={linea.descripcion}
-          onChange={(e) => onCambio({ descripcion: e.target.value, descripcionAMano: true })}
-          placeholder="HASTELLOY C-276 BAR RED 38.1 X 145MM"
-        />
-        {linea.descripcionAMano && descArmada && descArmada !== linea.descripcion && (
-          <button
-            type="button"
-            onClick={() =>
-              onCambio({
-                descripcion: descArmada,
-                descripcionAMano: false,
-                dimensiones: dimArmada,
-                dimensionesAMano: false,
-              })
-            }
-            className="mt-1 text-[11px] font-semibold text-brand-600 hover:text-brand"
-          >
-            Volver a armarla con los datos cargados: {descArmada}
-          </button>
-        )}
-      </div>
-
-      {/*
-        Con qué reconoce el cliente este ítem. Sale de su requerimiento y va
-        impreso: es lo que le permite comparar la oferta renglón por renglón
-        contra lo que pidió, y después contra lo que recibe.
-      */}
-      <div className="mt-2.5 grid items-end gap-2.5 lg:grid-cols-[130px_1fr]">
-        <Texto
-          etiqueta="Item del cliente"
-          value={linea.item_cliente ?? ''}
-          onChange={(e) => onCambio({ item_cliente: e.target.value || null })}
-          placeholder="21"
-        />
-        <Texto
-          etiqueta="Codigo de articulo del cliente"
-          value={linea.codigo_cliente ?? ''}
-          onChange={(e) => onCambio({ codigo_cliente: e.target.value || null })}
-          placeholder="SUO1413884-21"
-        />
-      </div>
-
-      <div className="mt-2.5">
-        <AreaTexto
-          etiqueta="Nota del articulo — sale impresa"
-          ayuda="plano, posicion, tratamiento: lo que haya que aclarar de este item"
-          rows={2}
-          value={linea.nota ?? ''}
-          onChange={(e) => onCambio({ nota: e.target.value || null })}
-          placeholder="Plano SUO1413884/1 posicion 21."
-        />
-      </div>
-
       <div className="mt-2.5 grid items-end gap-2.5 lg:grid-cols-6">
         <Texto
           etiqueta="Cantidad"
@@ -3279,6 +3217,68 @@ function LineaFila({
           {codigo(linea.unidad_factura_id).toLowerCase()} = {plata(importe)}
         </p>
       )}
+
+      <div className="mt-2.5">
+        <Texto
+          etiqueta="Descripcion — es lo que sale impreso"
+          ayuda={
+            linea.descripcionAMano
+              ? 'la escribiste vos: ya no se actualiza sola'
+              : 'se arma con el material, la forma y las medidas'
+          }
+          obligatorio
+          value={linea.descripcion}
+          onChange={(e) => onCambio({ descripcion: e.target.value, descripcionAMano: true })}
+          placeholder="HASTELLOY C-276 BAR RED 38.1 X 145MM"
+        />
+        {linea.descripcionAMano && descArmada && descArmada !== linea.descripcion && (
+          <button
+            type="button"
+            onClick={() =>
+              onCambio({
+                descripcion: descArmada,
+                descripcionAMano: false,
+                dimensiones: dimArmada,
+                dimensionesAMano: false,
+              })
+            }
+            className="mt-1 text-[11px] font-semibold text-brand-600 hover:text-brand"
+          >
+            Volver a armarla con los datos cargados: {descArmada}
+          </button>
+        )}
+      </div>
+
+      {/*
+        Con qué reconoce el cliente este ítem. Sale de su requerimiento y va
+        impreso: es lo que le permite comparar la oferta renglón por renglón
+        contra lo que pidió, y después contra lo que recibe.
+      */}
+      <div className="mt-2.5 grid items-end gap-2.5 lg:grid-cols-[130px_1fr]">
+        <Texto
+          etiqueta="Item del cliente"
+          value={linea.item_cliente ?? ''}
+          onChange={(e) => onCambio({ item_cliente: e.target.value || null })}
+          placeholder="21"
+        />
+        <Texto
+          etiqueta="Codigo de articulo del cliente"
+          value={linea.codigo_cliente ?? ''}
+          onChange={(e) => onCambio({ codigo_cliente: e.target.value || null })}
+          placeholder="SUO1413884-21"
+        />
+      </div>
+
+      <div className="mt-2.5">
+        <AreaTexto
+          etiqueta="Nota del articulo — sale impresa"
+          ayuda="plano, posicion, tratamiento: lo que haya que aclarar de este item"
+          rows={2}
+          value={linea.nota ?? ''}
+          onChange={(e) => onCambio({ nota: e.target.value || null })}
+          placeholder="Plano SUO1413884/1 posicion 21."
+        />
+      </div>
 
       {/*
         Marcas y stock. Se guardaban desde siempre y salian impresas, pero no
