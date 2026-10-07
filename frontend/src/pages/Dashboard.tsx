@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   ArrowRight,
   Briefcase,
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import api from '../lib/api'
-import { fecha as fmtFecha, plata, usarComoBorrador, useCarga } from '../lib/indice'
+import { fecha as fmtFecha, plata, useCarga } from '../lib/indice'
 import { Cargando } from '../components/ui'
 import NecesitaAtencion from '../components/NecesitaAtencion'
 
@@ -35,6 +35,7 @@ interface Resumen {
     proveedores: number
     cotizaciones_mes: number
     cotizaciones_mes_pasado: number
+    borradores: number
   }
   ultimas: {
     id: number
@@ -64,7 +65,6 @@ const ESTADOS: Record<string, { dot: string; bg: string; fg: string }> = {
 const QUICK: { label: string; to: string; icon: LucideIcon; fg: string }[] = [
   { label: 'Nueva empresa', to: '/empresas/nueva', icon: Briefcase, fg: 'text-[#7c3aed]' },
   { label: 'Buscar cotizacion', to: '/consultas/condicion', icon: Search, fg: 'text-brand' },
-  { label: 'Borradores', to: '/consultas/condicion?estado=Borrador', icon: FileText, fg: 'text-[#64748b]' },
   { label: 'Consultas por fecha', to: '/consultas/fecha', icon: CalendarRange, fg: 'text-[#0d9488]' },
   { label: 'Imprimir', to: '/imprimir', icon: Printer, fg: 'text-[#d97706]' },
 ]
@@ -138,7 +138,6 @@ function Variacion({ ahora, antes }: { ahora: number; antes: number }) {
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate()
   const { datos, cargando } = useCarga(
     () => api.get<Resumen>('/resumen').then((r) => r.data),
     [],
@@ -149,14 +148,6 @@ export default function Dashboard() {
 
   const { totales, ultimas, materiales } = datos
   const masCotizado = materiales[0]?.veces ?? 1
-
-  async function usarBorrador(id: number, empresaId: number) {
-    try {
-      navigate(`/consultas/${await usarComoBorrador(id, empresaId)}`)
-    } catch {
-      /* el aviso de error ya lo maneja la pantalla de la cotización */
-    }
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -254,60 +245,53 @@ export default function Dashboard() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <div className="min-w-[760px]">
-                <div className="grid grid-cols-[1.4fr_1.1fr_0.8fr_0.8fr_0.9fr_1.2fr] gap-2 border-y border-line bg-app/60 px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
+              <div className="min-w-[820px]">
+                <div className="grid grid-cols-[1.3fr_0.9fr_0.75fr_0.9fr_1fr_1.6fr] gap-2 border-y border-line bg-app/60 px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
                   <span>Empresa</span>
                   <span>Código</span>
                   <span>Fecha</span>
-                  <span>Moneda</span>
                   <span className="text-right">Total</span>
                   <span className="text-right">Estado</span>
+                  <span className="text-right">Acciones</span>
                 </div>
                 {ultimas.map((c, i) => (
                   <div
                     key={c.id}
-                    className={`group grid grid-cols-[1.4fr_1.1fr_0.8fr_0.8fr_0.9fr_1.2fr] items-center gap-2 px-6 py-[13px] transition-colors hover:bg-app ${
+                    className={`grid grid-cols-[1.3fr_0.9fr_0.75fr_0.9fr_1fr_1.6fr] items-center gap-2 px-6 py-[13px] transition-colors hover:bg-app ${
                       i < ultimas.length - 1 ? 'border-b border-line' : ''
                     }`}
                   >
-                    {/* El nombre abre la ficha de la empresa; el código, la cotización. */}
-                    <Link
-                      to={`/empresas/${c.empresa_id}`}
-                      className="truncate text-[13px] font-semibold text-ink hover:text-brand-600 hover:underline"
-                    >
-                      {c.empresa}
-                    </Link>
+                    <span className="truncate text-[13px] font-semibold text-ink">{c.empresa}</span>
+                    {/* Un borrador no tiene número; una importada del sistema viejo tampoco. */}
                     {c.numero_con_revision ? (
-                      <Link
-                        to={`/consultas/${c.id}`}
-                        className="truncate text-[12.5px] font-semibold tabular-nums text-brand-600 hover:underline"
-                      >
+                      <span className="truncate text-[12.5px] font-semibold tabular-nums text-slate-600">
                         {c.numero_con_revision}
-                      </Link>
+                      </span>
                     ) : (
-                      // Sin número: un borrador todavía no lo tiene; una
-                      // importada del sistema viejo salió sin el número nuevo.
-                      <Link to={`/consultas/${c.id}`} className="text-[12px] text-faint hover:underline">
-                        {c.emitida ? '—' : 'sin emitir'}
-                      </Link>
+                      <span className="text-[12px] text-faint">{c.emitida ? '—' : 'sin emitir'}</span>
                     )}
                     <span className="text-[13px] text-muted">{fmtFecha(c.fecha)}</span>
-                    <span className="text-[12.5px] text-muted">{c.moneda_base ?? '—'}</span>
                     <span className="text-right text-[13px] font-semibold text-ink">
                       {plata(c.total)}
                     </span>
-                    <span className="flex items-center justify-end gap-2.5">
-                      {/* Usar como borrador: arranca uno nuevo con todo lo de esta. */}
-                      {c.tipo !== 'Observacion' && (
-                        <button
-                          type="button"
-                          onClick={() => usarBorrador(c.id, c.empresa_id)}
-                          className="whitespace-nowrap text-[11px] font-semibold text-brand-600 opacity-0 transition-opacity hover:text-brand group-hover:opacity-100"
-                        >
-                          Usar como borrador
-                        </button>
-                      )}
+                    <span className="flex justify-end">
                       <EstadoPill estado={c.estado} emitida={c.emitida} />
+                    </span>
+                    {/* Dos botones claros: a la empresa o a la cotización. Con
+                        borradores de por medio, el nombre solo no alcanza. */}
+                    <span className="flex items-center justify-end gap-1.5">
+                      <Link
+                        to={`/empresas/${c.empresa_id}`}
+                        className="rounded-[7px] border border-line-strong bg-white px-2.5 py-1 text-[11.5px] font-semibold text-slate-700 transition-colors hover:bg-app"
+                      >
+                        Ir a empresa
+                      </Link>
+                      <Link
+                        to={`/consultas/${c.id}`}
+                        className="rounded-[7px] border border-brand-200 bg-[#f3f9fe] px-2.5 py-1 text-[11.5px] font-semibold text-brand-600 transition-colors hover:bg-brand-50"
+                      >
+                        Ir a cotización
+                      </Link>
                     </span>
                   </div>
                 ))}
@@ -318,6 +302,26 @@ export default function Dashboard() {
 
         {/* columna derecha */}
         <div className="flex flex-col gap-5">
+          {/* Borradores: lo que quedó a medias, para abrirlos todos de una. */}
+          <Link
+            to="/consultas/condicion?estado=Borrador"
+            className="group rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-colors hover:border-brand-200 hover:bg-brand-50"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[13px] font-medium text-muted">Borradores sin emitir</p>
+                <p className="mt-1 text-[26px] font-bold text-ink">{totales.borradores}</p>
+              </div>
+              <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#f1f5f9] text-[#64748b]">
+                <FileText size={20} strokeWidth={2} />
+              </span>
+            </div>
+            <span className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600">
+              Ver todos los borradores
+              <ArrowRight size={13} strokeWidth={2.4} className="transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </Link>
+
           <div className="rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)]">
             <h2 className="text-[16px] font-semibold text-ink">Accesos rápidos</h2>
             <div className="mt-4 grid grid-cols-2 gap-3">

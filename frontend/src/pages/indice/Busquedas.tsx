@@ -17,6 +17,7 @@ import { Casilla, Lista, Texto } from '../../components/ui/form'
 import {
   buscarConsultas,
   buscarEmpresas,
+  estadoDeConsulta,
   fecha as fmtFecha,
   plata,
   useCarga,
@@ -459,16 +460,8 @@ function TablaConsultas({
               <Td derecha className="font-semibold text-ink">{plata(c.total)}</Td>
               <Td className="text-brand-600">{c.quien_lo_hizo}</Td>
               <Td>
-                <Chip
-                  tono={
-                    c.estado === 'Vendida' ? 'verde'
-                      : c.esta_vencida ? 'ambar'
-                      : c.estado === 'Borrador' ? 'neutro'
-                      : 'brand'
-                  }
-                >
-                  {c.esta_vencida && c.estado !== 'Vendida' ? 'Vencida por tiempo' : c.estado}
-                </Chip>
+                {/* "Confirmada" sin emitir sale como "Falta emisión"; emitida, "Emitida". */}
+                <Chip tono={estadoDeConsulta(c).tono}>{estadoDeConsulta(c).texto}</Chip>
               </Td>
               <Td>
                 <div className="flex items-center justify-end gap-3">

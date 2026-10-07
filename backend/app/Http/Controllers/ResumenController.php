@@ -40,6 +40,9 @@ class ResumenController extends Controller
                 'proveedores' => Empresa::activas()->conRelacion('Proveedor')->count(),
                 'cotizaciones_mes' => $cotizacionesMes,
                 'cotizaciones_mes_pasado' => $cotizacionesMesPasado,
+                // Borradores sin terminar: para tener a mano lo que quedó a
+                // medias y poder abrirlos todos de una.
+                'borradores' => Consulta::where('estado', 'Borrador')->count(),
             ],
             'ultimas' => $this->ultimasCotizaciones(),
             'materiales' => $this->materialesMasCotizados($hoy),
