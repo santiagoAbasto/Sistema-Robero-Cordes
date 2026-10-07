@@ -29,6 +29,7 @@ import {
   traerConsulta,
   traerEmpresa,
   tituloDeConsulta,
+  estadoDeConsulta,
   usarComoBorrador,
   useCarga,
   useCatalogos,
@@ -409,8 +410,10 @@ export default function ConsultaEditor() {
           tipo,
           numero_con_revision: existente?.numero_con_revision ?? null,
           empresa: { nombre: empresaActual.nombre },
+          estado: existente?.estado,
+          emitida,
         })
-  }, [esNueva, tipo, existente?.numero_con_revision, empresaActual])
+  }, [esNueva, tipo, existente?.numero_con_revision, existente?.estado, emitida, empresaActual])
   const [cabecera, setCabecera] = useState({
     fecha: hoy(),
     validez_dias: 7,
@@ -1027,15 +1030,21 @@ export default function ConsultaEditor() {
                 tipo,
                 numero_con_revision: existente?.numero_con_revision ?? null,
                 empresa: { nombre: empresaActual.nombre },
+                estado: existente?.estado,
+                emitida,
               })
         }
         chips={
-          // Una observación no se emite: no es borrador ni emitida.
+          // El mismo estado que afuera: emitida muestra su número; una
+          // confirmada sin emitir es "Falta emisión", no "Borrador". Una
+          // observación no se emite, así que no lleva chip.
           esNueva || tipo === 'Observacion' ? undefined : emitida ? (
             <Chip tono="verde">{existente?.numero_con_revision ?? 'Emitida'}</Chip>
+          ) : existente?.revision_de_id && existente?.estado === 'Borrador' ? (
+            <Chip tono="ambar">Revisión en borrador</Chip>
           ) : (
-            <Chip tono="ambar">
-              {existente?.revision_de_id ? 'Revisión en borrador' : 'Borrador'}
+            <Chip tono={estadoDeConsulta({ estado: existente?.estado ?? 'Borrador', emitida: false }).tono}>
+              {estadoDeConsulta({ estado: existente?.estado ?? 'Borrador', emitida: false }).texto}
             </Chip>
           )
         }

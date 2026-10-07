@@ -14,7 +14,7 @@ import {
   Td,
   Th,
 } from '../../components/ui'
-import { buscarConsultas, fecha as fmtFecha, plata, useCarga } from '../../lib/indice'
+import { buscarConsultas, estadoDeConsulta, fecha as fmtFecha, plata, useCarga } from '../../lib/indice'
 import type { Consulta } from '../../types/indice'
 import Paginador from '../../components/Paginador'
 
@@ -239,9 +239,9 @@ function Vencimiento({ c }: { c: Consulta }) {
 }
 
 function ChipEstado({ c }: { c: Consulta }) {
-  return (
-    <Chip tono={c.estado === 'Cerrada por declinacion' ? 'neutro' : 'ambar'}>{c.estado}</Chip>
-  )
+  const e = estadoDeConsulta(c)
+
+  return <Chip tono={c.estado === 'Cerrada por declinacion' ? 'neutro' : e.tono}>{e.texto}</Chip>
 }
 
 /**

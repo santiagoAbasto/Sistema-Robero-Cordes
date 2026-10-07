@@ -908,8 +908,12 @@ function EntradaHistorial({
             {consulta.numero_con_revision}
           </span>
         ) : (
+          // Sin número todavía: un borrador real, o una confirmada que falta
+          // emitir —no es un borrador, ya se dio por buena—.
           !consulta.emitida && !consulta.id_sistema && consulta.tipo !== 'Observacion' && (
-            <Chip tono="ambar">Borrador</Chip>
+            <Chip tono={consulta.estado === 'Confirmada' ? 'ambar' : 'neutro'}>
+              {consulta.estado === 'Confirmada' ? 'Falta emisión' : 'Borrador'}
+            </Chip>
           )
         )}
         {/* De que era, para no tener que abrirla para saberlo. */}
