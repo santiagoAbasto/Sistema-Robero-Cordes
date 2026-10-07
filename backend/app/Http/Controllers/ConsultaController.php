@@ -54,7 +54,14 @@ class ConsultaController extends Controller
             // envios de la hoja. Se cuentan en la consulta y no recorriendo
             // las relaciones, que serian dos consultas mas por fila.
             ->withCount(['observaciones', 'impresiones'])
-            ->when(! $request->boolean('incluir_borradores'), fn ($q) => $q->firmes())
+            // Los borradores se esconden por defecto (firmes), salvo que se
+            // pidan a propósito: con incluir_borradores, o filtrando
+            // justamente por estado=Borrador —si no, pedirlos devolvía 0, que
+            // es lo que mostraba el acceso "Borradores" del dashboard.
+            ->when(
+                ! $request->boolean('incluir_borradores') && $request->query('estado') !== 'Borrador',
+                fn ($q) => $q->firmes(),
+            )
             ->with(self::RELACIONES)
             ->orderByDesc('fecha')->orderByDesc('id')
             ->paginate((int) $request->query('por_pagina', 25));
