@@ -6,6 +6,7 @@ use App\Models\Consulta;
 use App\Models\Impresion;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -142,11 +143,41 @@ class PdfController extends Controller
             );
         }
 
-        $archivo = str($titulo.'-'.$nombreEnPdf.'-'.$consulta->fecha?->format('Y-m-d'))
-            ->slug()->append('.pdf')->value();
+        $archivo = $this->nombreDeArchivo($titulo, $consulta, $nombreEnPdf);
 
         return $request->boolean('descargar')
             ? $pdf->download($archivo)
             : $pdf->stream($archivo);
+    }
+
+    /**
+     * El nombre del archivo PDF, para que al descargarlo se guarde claro.
+     *
+     * "Cotizacion 2026-0011 R0 - ACERINOX - 07-10-2026.pdf": el tipo, el numero
+     * con su revision cuando ya se emitio, la empresa y la fecha. Un borrador
+     * todavia no tiene numero, asi que sale sin el.
+     *
+     * Antes se pasaba todo por slug() y quedaba "cotizacion-acerinox-s-a-..."
+     * —minusculas, sin la revision y con cada punto convertido en guion—. Ahora
+     * se conservan las mayusculas y los espacios; solo se pasan los acentos a
+     * ASCII (un acento en el nombre del archivo se rompe en la descarga) y se
+     * sacan los caracteres que no valen en un nombre de archivo.
+     */
+    private function nombreDeArchivo(string $titulo, Consulta $consulta, string $nombreEnPdf): string
+    {
+        $partes = array_filter([
+            $titulo,
+            $consulta->numeroConRevision(),
+            $nombreEnPdf,
+            $consulta->fecha?->format('d-m-Y'),
+        ]);
+
+        $limpio = preg_replace(
+            ['#[/\\\\:*?"<>|]+#', '/\s+/'],
+            [' ', ' '],
+            Str::ascii(implode(' - ', $partes)),
+        );
+
+        return trim((string) $limpio).'.pdf';
     }
 }

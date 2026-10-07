@@ -18,6 +18,7 @@ import api from '../../lib/api'
 import {
   buscarEmpresas,
   fecha as fmtFecha,
+  nombreDeLaHoja,
   plata,
   traerEmpresa,
   useCarga,
@@ -182,7 +183,7 @@ function ElegirImpresion({
       if (descargar) {
         const a = document.createElement('a')
         a.href = url
-        a.download = `${consulta.tipo}-${nombreEnPdf}-${consulta.fecha}.pdf`
+        a.download = `${nombreDeLaHoja(consulta, nombreEnPdf)}.pdf`
         a.click()
       } else {
         window.open(url, '_blank')
