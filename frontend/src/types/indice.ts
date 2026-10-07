@@ -76,36 +76,8 @@ export interface LineaPedida {
   /** El código es para mostrar; el id es el que elige el desplegable al abrir. */
   unidad_id: number | null
   texto: string | null
-}
-
-/** Por qué una alternativa es distinta. */
-export const TIPOS_DE_OPCION = ['Transporte', 'Cantidad', 'Material', 'Plazo', 'Otra'] as const
-export type TipoDeOpcion = (typeof TIPOS_DE_OPCION)[number]
-
-/**
- * Una alternativa de la línea: el mismo ítem cotizado de otra manera.
- *
- * Aérea o marítima, por tramos de cantidad, con otro material. Pisa solo lo que
- * cambia; lo que deja vacío lo hereda de la línea. La base es la que cuenta
- * para el total de la cotización.
- */
-export interface OpcionDeLinea {
-  id: number
-  etiqueta: string
-  tipo: TipoDeOpcion
-  es_base: boolean
-  cantidad: string | null
-  precio_unitario: string | null
-  precio_por_kilo: string | null
-  plazo_dias: number | null
-  material_id: number | null
-  material: string | null
-  descripcion: string | null
-  nota: string | null
-  /** Ya resueltas contra la línea. */
-  cantidad_final: number | null
-  precio_final: number | null
-  importe: number
+  /** Con o sin costura, la norma que pidió el cliente. */
+  caracteristicas: string | null
 }
 
 export interface ConsultaLinea {
@@ -158,8 +130,16 @@ export interface ConsultaLinea {
   largo_max_mm: string | null
   /** Lo que pesa lo cotizado, si se calculó. */
   peso_kg: string | null
-  /** Alternativas: el mismo item cotizado de otra manera. */
-  opciones: OpcionDeLinea[]
+  /** Con o sin costura, laminada, la norma: lo ofrecido, que sale impreso. */
+  caracteristicas: string | null
+  /**
+   * Alternativas: cada una es una línea entera que cuelga de otra. En la hoja
+   * va como 1.1, 1.2 debajo de su línea y no suma al total. `alternativa_de_id`
+   * apunta a la línea madre; la vía y el plazo son lo suyo.
+   */
+  alternativa_de_id: number | null
+  transporte: string | null
+  plazo_dias: number | null
   /** La foto del calculo: medidas, densidad y formula del dia que se cotizo. */
   calculo: CalculoDePeso | null
   cantidad_facturar: string | null
@@ -422,6 +402,10 @@ export interface Catalogos {
   /** Si los predictivos de direccion estan configurados. */
   direcciones_activas: boolean
   rubros: { id: number; nombre: string }[]
+  /** Con o sin costura, laminada, las normas: sugerencias que crecen con el uso. */
+  caracteristicas: string[]
+  /** Las vías de una alternativa de transporte: Marítimo, Aéreo. */
+  transportes: string[]
   formas: Forma[]
   materiales: {
     id: number
@@ -502,19 +486,16 @@ export interface LineaInterpretada {
   pedido_forma?: string | null
   /** Falso cuando no se reconoció el material: hay que mirarlo antes de mandar. */
   igual_a_lo_pedido: boolean
+  /** Con o sin costura, la norma: lo que ya venía escrito en el renglón. */
+  caracteristicas?: string | null
   /**
-   * Las variantes que pidió el cliente en su mail, ya armadas: aérea y
-   * marítima, tramos de cantidad, dos materiales a comparar. Vienen sin precio.
+   * Las variantes que pidió el cliente son líneas aparte: la primera es la
+   * madre y cada otra cuelga de ella. `alternativa_de` es la posición de su
+   * madre en la lista; la vía y el plazo son lo que las distingue.
    */
-  alternativas: {
-    etiqueta: string
-    tipo: string
-    es_base: boolean
-    cantidad: number | null
-    precio_unitario: number | null
-    plazo_dias: number | null
-    material_id: number | null
-  }[]
+  alternativa_de?: number | null
+  transporte?: string | null
+  plazo_dias?: number | null
 }
 
 export interface Paginado<T> {

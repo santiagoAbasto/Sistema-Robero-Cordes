@@ -53,7 +53,7 @@ class PdfController extends Controller
 
         $consulta->load([
             'empresa.contactos.medios.tipoMedio',
-            'lineas.unidadVenta', 'lineas.unidadFactura', 'lineas.opciones.material',
+            'lineas.unidadVenta', 'lineas.unidadFactura',
             'condiciones', 'usuario', 'moneda', 'razonSocial',
         ]);
 
@@ -104,7 +104,8 @@ class PdfController extends Controller
             // empresa usa para cruzar con su otro sistema, no condiciones
             // comerciales.
             'condiciones' => $consulta->condiciones->where('imprime', true),
-            'total' => (float) $lineas->sum('importe'),
+            // Las alternativas se ofrecen para elegir: no suman.
+            'total' => (float) $lineas->filter(fn ($l) => $l->cuentaParaElTotal())->sum('importe'),
             'titulo' => $titulo,
             'marca' => $this->marca(),
             'simbolo' => $consulta->moneda?->simbolo() ?? '',

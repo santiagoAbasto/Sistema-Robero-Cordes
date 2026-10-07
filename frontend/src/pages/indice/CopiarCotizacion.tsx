@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Copy } from 'lucide-react'
+import { Copy, X } from 'lucide-react'
 import {
   Aviso,
   Boton,
@@ -16,6 +16,7 @@ import {
   Th,
 } from '../../components/ui'
 import { Guardado } from '../../components/ui/form'
+import Paginador from '../../components/Paginador'
 import {
   buscarEmpresas,
   copiarConsulta,
@@ -40,21 +41,36 @@ export default function CopiarCotizacion() {
 
   const [busqueda, setBusqueda] = useState('')
   const busquedaDif = useDebounce(busqueda, 300)
-  const [elegidas, setElegidas] = useState<number[]>([])
+  const [pagina, setPagina] = useState(1)
+  // La selección guarda nombre además del id: una empresa elegida en la página
+  // 1 tiene que seguir viéndose como chip aunque la lista esté en la página 4.
+  const [elegidas, setElegidas] = useState<{ id: number; nombre: string }[]>([])
+  const [conPrecios, setConPrecios] = useState(true)
   const [copiando, setCopiando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
 
   const { datos: original, cargando } = useCarga(() => traerConsulta(consultaId!), [consultaId])
-  const { datos: listado } = useCarga(() => buscarEmpresas({ buscar: busquedaDif }), [busquedaDif])
+  const { datos: listado } = useCarga(
+    () => buscarEmpresas({ buscar: busquedaDif, page: pagina }),
+    [busquedaDif, pagina],
+  )
+
+  // Buscar algo nuevo vuelve a la primera página: si no, se busca y queda en la
+  // página 4 de la búsqueda anterior, vacía.
+  useEffect(() => setPagina(1), [busquedaDif])
 
   const candidatas = useMemo(
     () => (listado?.data ?? []).filter((e) => e.id !== original?.empresa?.id),
     [listado, original],
   )
 
-  function alternar(id: number) {
-    setElegidas((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const elegida = (id: number) => elegidas.some((e) => e.id === id)
+
+  function alternar(id: number, nombre: string) {
+    setElegidas((prev) =>
+      prev.some((e) => e.id === id) ? prev.filter((e) => e.id !== id) : [...prev, { id, nombre }],
+    )
   }
 
   async function copiar() {
@@ -68,8 +84,11 @@ export default function CopiarCotizacion() {
     setError(null)
 
     try {
-      await copiarConsulta(Number(consultaId), elegidas)
-      setAviso(`${elegidas.length} borradores creados. Ninguno se manda hasta confirmarlo.`)
+      await copiarConsulta(Number(consultaId), elegidas.map((e) => e.id), conPrecios)
+      setAviso(
+        `${elegidas.length} ${elegidas.length === 1 ? 'borrador creado' : 'borradores creados'}` +
+          `${conPrecios ? ' con precios' : ' sin precios'}. Ya están en la ficha de cada empresa.`,
+      )
       navigate(`/consultas/${consultaId}/borradores`)
     } catch (err) {
       setError(mensajeDeError(err))
@@ -183,47 +202,74 @@ export default function CopiarCotizacion() {
               />
             </div>
 
+            {elegidas.length > 0 && (
+              <div className="mx-[22px] mb-3 flex flex-wrap gap-1.5">
+                {elegidas.map((e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => alternar(e.id, e.nombre)}
+                    className="flex items-center gap-1 rounded-full border border-brand-200 bg-[#f3f9fe] py-1 pl-2.5 pr-1.5 text-[11.5px] font-semibold text-brand-600 hover:bg-brand-50"
+                  >
+                    {e.nombre}
+                    <X size={12} strokeWidth={2.4} />
+                  </button>
+                ))}
+              </div>
+            )}
+
             <Tabla>
               <thead>
                 <tr>
                   <Th ancho="46px" />
                   <Th>EMPRESA</Th>
-                  <Th ancho="170px">Condicion de pago</Th>
-                  <Th ancho="140px">Lista de precios</Th>
+                  <Th ancho="160px">Localidad</Th>
+                  <Th ancho="150px">Rubro</Th>
                 </tr>
               </thead>
               <tbody>
                 {candidatas.map((e) => {
-                  const elegida = elegidas.includes(e.id)
+                  const marcada = elegida(e.id)
 
                   return (
                     <tr
                       key={e.id}
-                      onClick={() => alternar(e.id)}
-                      className={`cursor-pointer transition-colors ${elegida ? 'bg-[#f3f9fe]' : 'hover:bg-app'}`}
+                      onClick={() => alternar(e.id, e.nombre)}
+                      className={`cursor-pointer transition-colors ${marcada ? 'bg-[#f3f9fe]' : 'hover:bg-app'}`}
                     >
                       <Td>
                         <span
                           className={`grid h-4 w-4 place-items-center rounded-[5px] border ${
-                            elegida ? 'border-brand bg-brand text-white' : 'border-slate-300 bg-white'
+                            marcada ? 'border-brand bg-brand text-white' : 'border-slate-300 bg-white'
                           }`}
                         >
-                          {elegida && <span className="text-[9px] font-bold">✓</span>}
+                          {marcada && <span className="text-[9px] font-bold">✓</span>}
                         </span>
                       </Td>
                       <Td>
                         <span className="font-semibold text-ink">{e.nombre}</span>
-                        <span className="ml-2 text-[10.5px] text-faint">
-                          {e.relaciones.join(' · ')}
-                        </span>
+                        {e.relaciones.length > 0 && (
+                          <span className="ml-2 text-[10.5px] text-faint">
+                            {e.relaciones.join(' · ')}
+                          </span>
+                        )}
                       </Td>
-                      <Td>—</Td>
-                      <Td>—</Td>
+                      <Td>{[e.localidad, e.provincia].filter(Boolean).join(', ') || '—'}</Td>
+                      <Td>{e.rubro ?? '—'}</Td>
                     </tr>
                   )
                 })}
               </tbody>
             </Tabla>
+
+            <Paginador
+              pagina={listado?.meta.current_page ?? 1}
+              paginas={listado?.meta.last_page ?? 1}
+              total={listado?.meta.total ?? 0}
+              porPagina={listado?.meta.per_page ?? 25}
+              onIr={setPagina}
+              que="empresas"
+            />
 
             <NotaPie>
               La condición de pago, la lista de precios y el contacto salen de la ficha de cada
@@ -232,14 +278,42 @@ export default function CopiarCotizacion() {
           </Card>
         </div>
 
-        {/* 3 · qué se copia y qué se ajusta */}
+        {/* 3 · con o sin precios + qué se copia */}
         <div className="flex flex-col gap-[18px]">
+          <Card className="flex flex-col gap-3 p-[22px]">
+            <h2 className="text-[15px] font-semibold text-ink">3 · Con precios o sin precios</h2>
+            <p className="text-[12px] leading-relaxed text-muted">
+              Con precios es lo de siempre. Sin precios copia las líneas y las medidas pero deja los
+              importes en blanco: sirve para recotizar lo mismo en otra empresa con otra lista.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { on: true, titulo: 'Con precios', pie: 'Se copian los importes' },
+                { on: false, titulo: 'Sin precios', pie: 'Importes en blanco' },
+              ].map((op) => (
+                <button
+                  key={String(op.on)}
+                  type="button"
+                  onClick={() => setConPrecios(op.on)}
+                  className={`rounded-[9px] border px-3 py-2.5 text-left transition-colors ${
+                    conPrecios === op.on
+                      ? 'border-brand bg-[#f3f9fe]'
+                      : 'border-line-strong bg-white hover:bg-app'
+                  }`}
+                >
+                  <p className="text-[13px] font-bold text-ink">{op.titulo}</p>
+                  <p className="text-[11px] text-muted">{op.pie}</p>
+                </button>
+              ))}
+            </div>
+          </Card>
+
           <Card className="flex flex-col gap-3.5 p-[22px]">
-            <h2 className="text-[15px] font-semibold text-ink">3 · Que se copia y que se ajusta</h2>
+            <h2 className="text-[15px] font-semibold text-ink">Que se copia y que se ajusta</h2>
 
             <Bloque titulo="Se copia igual" tono="verde" items={[
               'Las lineas: material, medida y cantidad',
-              'Los precios unitarios',
+              conPrecios ? 'Los precios unitarios' : 'Sin precios: los importes van en blanco',
               'Las condiciones tecnicas',
               'La moneda de la cotizacion',
             ]} />
@@ -272,8 +346,8 @@ export default function CopiarCotizacion() {
           <Card className="flex flex-col gap-2 p-[22px]">
             <h3 className="text-[13.5px] font-bold text-ink">Se crean como borrador</h3>
             <p className="text-[12px] leading-relaxed text-muted">
-              Ninguno se manda solo. Quedan en una lista aparte hasta que alguien los abre, los
-              revisa y los confirma. Mientras son borrador no figuran en el historial de la empresa.
+              Ninguno se manda solo. Cada borrador queda en la ficha de su empresa, listo para abrir,
+              revisar y confirmar cuando haga falta.
             </p>
           </Card>
         </div>

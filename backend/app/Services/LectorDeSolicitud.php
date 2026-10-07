@@ -308,6 +308,9 @@ class LectorDeSolicitud
             'cantidad' => $cantidad,
             'unidad_venta_id' => $unidad?->id,
             'unidad' => $unidad?->codigo,
+            // Con o sin costura, laminada, la norma: lo que el cliente ya
+            // escribio en el renglon no hace falta volver a tipearlo.
+            'caracteristicas' => $this->caracteristicasDe($renglon),
             // Lo que pidió el cliente arranca igual a lo que se va a cotizar.
             'igual_a_lo_pedido' => true,
             // Las variantes —aerea y maritima, tramos de cantidad— se agregan
@@ -315,6 +318,46 @@ class LectorDeSolicitud
             // que la pantalla no tenga que preguntar de donde vino la lectura.
             'alternativas' => [],
         ];
+    }
+
+    /**
+     * Las caracteristicas del producto que ya vienen escritas en el renglon.
+     *
+     * "Caño s/c", "barra estirada", "bajo ASTM B348": lo que completa al
+     * material y la medida. Se lee como viene —s/c y c/c son como lo escriben
+     * en los mails— y se deja listo para imprimir. Las normas salen tal cual
+     * estan nombradas (ASTM, AMS), que es lo que el cliente certifica.
+     */
+    private function caracteristicasDe(string $renglon): ?string
+    {
+        $t = ' '.mb_strtolower($renglon).' ';
+        $encontradas = [];
+
+        if (preg_match('~(?<![a-z])s\s*/\s*c(?![a-z])|sin\s+costura~u', $t)) {
+            $encontradas[] = 'SIN COSTURA';
+        } elseif (preg_match('~(?<![a-z])c\s*/\s*c(?![a-z])|con\s+costura~u', $t)) {
+            $encontradas[] = 'CON COSTURA';
+        }
+
+        $procesos = [
+            'LAMINADA' => 'laminad', 'ESTIRADA EN FRIO' => 'estirad', 'FORJADA' => 'forjad',
+            'RECTIFICADA' => 'rectificad', 'RECOCIDA' => 'recocid',
+        ];
+        foreach ($procesos as $canonico => $raiz) {
+            if (str_contains($t, $raiz)) {
+                $encontradas[] = $canonico;
+            }
+        }
+
+        if (preg_match_all('~\b(ASTM|AMS|API|SAE)\s*([A-Z]?\s?\d{2,4}[A-Z]?)~iu', $renglon, $m, PREG_SET_ORDER)) {
+            foreach ($m as $norma) {
+                $encontradas[] = mb_strtoupper($norma[1].' '.preg_replace('/\s+/', '', $norma[2]));
+            }
+        }
+
+        $texto = implode(' · ', array_values(array_unique($encontradas)));
+
+        return $texto !== '' ? mb_substr($texto, 0, 120) : null;
     }
 
     private function normalizar(string $texto): string

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Calculator, Check, Eye, EyeOff, Lock, Plus, Ruler, Trash2, Wand2, Scale } from 'lucide-react'
+import { Calculator, Check, Eye, EyeOff, Layers, Lock, Plus, Ruler, Trash2, Wand2, Scale } from 'lucide-react'
 import {
   Accion,
   Aviso,
@@ -27,6 +27,7 @@ import {
   nuevaRevision,
   traerConsulta,
   traerEmpresa,
+  tituloDeConsulta,
   useCarga,
   useCatalogos,
   hoy,
@@ -70,7 +71,6 @@ import CalculadoraDePeso, {
   schedulesAgrupados,
   type EstadoCalculadora,
 } from '../../components/CalculadoraDePeso'
-import AlternativasDeLinea from '../../components/AlternativasDeLinea'
 import { ModalContacto } from './modales'
 import Revisiones from './Revisiones'
 import Versiones from './Versiones'
@@ -100,6 +100,12 @@ const PASOS: { clave: Paso; titulo: string }[] = [
 
 interface LineaForm extends DatosLinea {
   clave: string
+  /**
+   * Si esta línea es una alternativa, la `clave` de su línea madre. Se trabaja
+   * por clave y no por índice —el índice cambia al agregar o quitar líneas— y
+   * al guardar se traduce a la posición que espera el servidor.
+   */
+  madreClave?: string | null
   /** Lo cargado en la calculadora de peso de esta linea. */
   calc: EstadoCalculadora
   /**
@@ -118,6 +124,33 @@ interface LineaForm extends DatosLinea {
    */
   dimensionesAMano?: boolean
   descripcionAMano?: boolean
+}
+
+/**
+ * El número de ítem de cada línea: 1, 2, 3, y las alternativas 1.1, 1.2.
+ *
+ * Es lo que sale en la hoja. Las líneas llegan agrupadas (la madre y abajo sus
+ * alternativas), así que alcanza con contar madres y, dentro de cada una, sus
+ * alternativas.
+ */
+function etiquetasDeItem(lineas: LineaForm[]): string[] {
+  let madre = 0
+  const nroDe: Record<string, number> = {}
+  const subDe: Record<string, number> = {}
+
+  return lineas.map((l) => {
+    if (!l.madreClave) {
+      madre += 1
+      nroDe[l.clave] = madre
+
+      return String(madre)
+    }
+
+    const n = nroDe[l.madreClave] ?? madre
+    subDe[l.madreClave] = (subDe[l.madreClave] ?? 0) + 1
+
+    return `${n}.${subDe[l.madreClave]}`
+  })
 }
 
 function lineaVacia(): LineaForm {
@@ -178,7 +211,7 @@ function calcGuardada(l: ConsultaLinea, forma: Forma | null): EstadoCalculadora 
 }
 
 function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
-  return (c.lineas ?? []).map((l) => {
+  const lineas = (c.lineas ?? []).map((l) => {
     const forma = catalogos?.formas.find((f) => f.id === l.forma_id) ?? null
     const calc = calcGuardada(l, forma)
     const cano = catalogos?.canos?.find((x) => x.id === calc.canoId) ?? null
@@ -189,10 +222,17 @@ function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
       min: l.largo_min_mm,
       max: l.largo_max_mm,
     })
-    const descArmada = armarDescripcion(l.material, forma, dimArmada)
+    const descArmada = armarDescripcion(l.material, forma, dimArmada, l.caracteristicas)
 
     return {
     clave: String(l.id),
+    // La madre se referencia por clave: como las líneas existentes usan su id
+    // de string como clave, la clave de la madre es su id.
+    madreClave: l.alternativa_de_id ? String(l.alternativa_de_id) : null,
+    transporte: l.transporte,
+    plazo_dias: l.plazo_dias,
+    caracteristicas: l.caracteristicas,
+    pedido_caracteristicas: l.pedido?.caracteristicas ?? null,
     descripcion: l.descripcion,
     codigo_cliente: l.codigo_cliente,
     item_cliente: l.item_cliente,
@@ -244,20 +284,32 @@ function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
       l.origen_factor === 'manual'
         ? { quien: l.factor_cargado_por, cuando: l.factor_cargado_el }
         : null,
-    opciones: (l.opciones ?? []).map((o) => ({
-      etiqueta: o.etiqueta,
-      tipo: o.tipo,
-      es_base: o.es_base,
-      cantidad: o.cantidad ? Number(o.cantidad) : null,
-      precio_unitario: o.precio_unitario ? Number(o.precio_unitario) : null,
-      precio_por_kilo: o.precio_por_kilo ? Number(o.precio_por_kilo) : null,
-      plazo_dias: o.plazo_dias,
-      material_id: o.material_id,
-      descripcion: o.descripcion,
-      nota: o.nota,
-      })),
     }
   })
+
+  return agruparAlternativas(lineas)
+}
+
+/**
+ * Cada alternativa, justo debajo de su madre.
+ *
+ * El servidor puede devolverlas en cualquier orden; en la pantalla van
+ * agrupadas (la línea y abajo sus 1.1, 1.2) para que se lean y numeren bien.
+ * Una alternativa cuya madre no está se trata como línea suelta.
+ */
+function agruparAlternativas(lineas: LineaForm[]): LineaForm[] {
+  const madres = lineas.filter((l) => !l.madreClave)
+  const salida: LineaForm[] = []
+
+  for (const madre of madres) {
+    salida.push(madre)
+    salida.push(...lineas.filter((l) => l.madreClave === madre.clave))
+  }
+
+  // Las que quedaron sin madre (dato viejo raro) no se pierden: van al final.
+  salida.push(...lineas.filter((l) => !salida.includes(l)))
+
+  return salida
 }
 
 export default function ConsultaEditor() {
@@ -343,6 +395,20 @@ export default function ConsultaEditor() {
   const empresaActual = empresa
 
   const [tipo, setTipo] = useState(params.get('tipo') ?? 'Cotizacion')
+
+  // La pestaña del navegador dice de qué cotización se trata: "COTIZACIÓN
+  // 2026-0011 R0 · ACERINOX", para encontrarla entre varias abiertas.
+  useEffect(() => {
+    if (!empresaActual) return
+
+    document.title = esNueva
+      ? `${tipo} nueva · ${empresaActual.nombre}`
+      : tituloDeConsulta({
+          tipo,
+          numero_con_revision: existente?.numero_con_revision ?? null,
+          empresa: { nombre: empresaActual.nombre },
+        })
+  }, [esNueva, tipo, existente?.numero_con_revision, empresaActual])
   const [cabecera, setCabecera] = useState({
     fecha: hoy(),
     validez_dias: 7,
@@ -551,7 +617,9 @@ export default function ConsultaEditor() {
     como si ya estuviera completo.
   */
   const [total, sinImporte] = useMemo(() => {
-    const vivas = lineas.filter((l) => !l.quitada)
+    // Las alternativas (1.1, 1.2) no suman: se ofrecen para que el cliente
+    // elija, igual que en la hoja.
+    const vivas = lineas.filter((l) => !l.quitada && !l.madreClave)
     const importes = vivas.map(calcularImporte)
 
     return [
@@ -560,15 +628,15 @@ export default function ConsultaEditor() {
     ] as const
   }, [lineas])
 
-  const iguales = lineas.filter((l) => !l.quitada && l.igual_a_lo_pedido).length
-  const vigentes = lineas.filter((l) => !l.quitada).length
+  const iguales = lineas.filter((l) => !l.quitada && !l.madreClave && l.igual_a_lo_pedido).length
+  const vigentes = lineas.filter((l) => !l.quitada && !l.madreClave).length
 
-  // Cuántos kilos suman las líneas que se facturan por peso.
+  // Cuántos kilos suman las líneas que se facturan por peso (sin alternativas).
   const kgId = catalogos?.unidades.find((u) => u.codigo === 'KG')?.id
   const totalKilos = useMemo(
     () =>
       lineas
-        .filter((l) => !l.quitada && l.unidad_factura_id === kgId && l.factor_conversion)
+        .filter((l) => !l.quitada && !l.madreClave && l.unidad_factura_id === kgId && l.factor_conversion)
         .reduce((s, l) => s + Number(l.cantidad ?? 0) * Number(l.factor_conversion ?? 0), 0),
     [lineas, kgId],
   )
@@ -617,6 +685,7 @@ export default function ConsultaEditor() {
       // servidor y lo guarda con la densidad y la formula que uso ese dia.
       lineas: conDatos.map(({
         clave: _clave,
+        madreClave: _madre,
         calc,
         factorAMano: _fam,
         factorEscrito: _fe,
@@ -628,6 +697,10 @@ export default function ConsultaEditor() {
         // Con el id el servidor actualiza la línea en vez de recrearla, y así
         // no pierde de dónde vino su factor.
         id: /^\d+$/.test(_clave) ? Number(_clave) : null,
+        // La alternativa viaja como la POSICIÓN de su madre en esta lista, que
+        // es lo que el servidor espera. Como las alternativas van agrupadas
+        // debajo de su madre, su posición siempre es anterior.
+        alternativa_de: _madre ? conDatos.findIndex((x) => x.clave === _madre) : null,
         calc_medidas: Object.keys(calc.medidas).length > 0 ? calc.medidas : null,
         calc_piezas: Number(calc.piezas) || null,
         calc_cano_id: calc.canoId,
@@ -770,7 +843,14 @@ export default function ConsultaEditor() {
         return
       }
 
-      const nuevas: LineaForm[] = r.lineas.map((l) => {
+      // Las claves se asignan antes del map: una alternativa viene como el
+      // índice de su línea madre (`alternativa_de`), y así puede apuntar a la
+      // clave de esa madre.
+      const claves = r.lineas.map(() => crypto.randomUUID())
+
+      const nuevas: LineaForm[] = r.lineas.map((l, i) => {
+        const esAlternativa = l.alternativa_de != null
+
         // Las medidas que se entendieron, en los campos de su forma.
         const medidas = medidasDeLaLinea(
           { diametro_mm: l.diametro_mm, espesor_mm: l.espesor_mm, ancho_mm: l.ancho_mm, largo_mm: l.largo_mm },
@@ -778,7 +858,13 @@ export default function ConsultaEditor() {
         )
 
         return {
-        clave: crypto.randomUUID(),
+        clave: claves[i],
+        // Si es una alternativa, de qué línea cuelga. La vía y el plazo son lo
+        // que la distingue.
+        madreClave: esAlternativa ? claves[l.alternativa_de as number] : null,
+        transporte: l.transporte ?? null,
+        plazo_dias: l.plazo_dias ?? null,
+        caracteristicas: l.caracteristicas ?? null,
         descripcion: l.descripcion,
         material_id: l.material_id,
         forma_id: l.forma_id,
@@ -787,15 +873,16 @@ export default function ConsultaEditor() {
         cantidad: l.cantidad,
         unidad_venta_id: l.unidad_venta_id,
         // Lo que dijo el lector: si no reconoció el material la línea queda sin
-        // dar por buena, para que alguien la mire antes de mandarla.
-        igual_a_lo_pedido: l.igual_a_lo_pedido ?? true,
+        // dar por buena, para que alguien la mire antes de mandarla. Una
+        // alternativa no tiene pedido propio: es otra respuesta al mismo.
+        igual_a_lo_pedido: esAlternativa ? true : (l.igual_a_lo_pedido ?? true),
         // Lo que el cliente escribió queda a la vista al lado de lo que se
         // cotiza: es la única forma de notar que pidió 316L y hay 316.
-        pedido_material: l.pedido_material,
+        pedido_material: esAlternativa ? null : l.pedido_material,
         // De una ficha de la web viene la forma que pidio: con ella el bloque
         // amarillo abre con Diametro, Largo y Piezas en vez de una caja suelta.
-        pedido_forma: l.pedido_forma ?? null,
-        pedido_dimensiones: l.dimensiones,
+        pedido_forma: esAlternativa ? null : (l.pedido_forma ?? null),
+        pedido_dimensiones: esAlternativa ? null : l.dimensiones,
         /*
           Si la linea ya viene distinta, lo que pidio arranca con las medidas
           que se leyeron: salieron del pedido, asi que son las del cliente.
@@ -804,11 +891,10 @@ export default function ConsultaEditor() {
           las copiaba; venir distinta desde el lector no.
         */
         pedido_medidas:
-          l.igual_a_lo_pedido === false && Object.keys(medidas).length > 0 ? { ...medidas } : null,
+          !esAlternativa && l.igual_a_lo_pedido === false && Object.keys(medidas).length > 0
+            ? { ...medidas }
+            : null,
         precio_unitario: null,
-        // Las variantes que pidió el cliente vienen armadas: quedan las
-        // etiquetas y las cantidades, y solo hay que poner los precios.
-        opciones: l.alternativas ?? [],
         // Las medidas que se entendieron ya quedan puestas en la calculadora.
         calc: {
           ...calculadoraVacia(),
@@ -821,7 +907,8 @@ export default function ConsultaEditor() {
       })
 
       // Reemplaza todo: volver a leer el mismo texto no va sumando copias.
-      setLineas(nuevas)
+      // Agrupadas, cada alternativa queda debajo de su madre.
+      setLineas(agruparAlternativas(nuevas))
 
       // Lo que sigue es revisarlas y ponerles precio.
       setPaso('lineas')
@@ -913,7 +1000,11 @@ export default function ConsultaEditor() {
         titulo={
           esNueva
             ? `${tipo} para ${empresa.nombre}`
-            : `${tipo} de ${empresa.nombre}`
+            : tituloDeConsulta({
+                tipo,
+                numero_con_revision: existente?.numero_con_revision ?? null,
+                empresa: { nombre: empresaActual.nombre },
+              })
         }
         chips={
           // Una observación no se emite: no es borrador ni emitida.
@@ -1870,10 +1961,52 @@ function Lineas({
           precio_unitario: null,
           precio_por_kilo: null,
           quitada: false,
-          // Las alternativas son de esa línea, no de la copia.
-          opciones: [],
+          // Una copia es una línea aparte, no una alternativa de la anterior.
+          madreClave: null,
+          calc: { ...ultima.calc, medidas: { ...ultima.calc.medidas } },
         },
       ]
+    })
+
+  /*
+    Crear alternativa: el mismo ítem cotizado de otra manera —otra medida
+    cercana, marítimo o aéreo—. Cuelga de la última línea (o de su madre, si la
+    última ya es una alternativa) y sale debajo, como 1.1, 1.2. Hereda lo
+    ofrecido pero sin precio ni pedido: es otra respuesta, no otro renglón.
+  */
+  const crearAlternativa = () =>
+    setLineas((p) => {
+      if (p.length === 0) return p
+
+      const ultima = p[p.length - 1]
+      const madre = ultima.madreClave ? (p.find((l) => l.clave === ultima.madreClave) ?? ultima) : ultima
+
+      const nueva: LineaForm = {
+        ...madre,
+        clave: crypto.randomUUID(),
+        madreClave: madre.clave,
+        precio_unitario: null,
+        precio_por_kilo: null,
+        quitada: false,
+        transporte: null,
+        plazo_dias: null,
+        igual_a_lo_pedido: true,
+        pedido_material: null,
+        pedido_forma: null,
+        pedido_dimensiones: null,
+        pedido_medidas: null,
+        pedido_caracteristicas: null,
+        cantidad_pedida: null,
+        unidad_pedida_id: null,
+        motivo_cambio: null,
+        calc: { ...madre.calc, medidas: { ...madre.calc.medidas } },
+      }
+
+      // Después del último miembro del grupo de la madre (ella y sus alternativas).
+      const grupo = p.filter((l) => l.clave === madre.clave || l.madreClave === madre.clave)
+      const idx = p.indexOf(grupo[grupo.length - 1])
+
+      return [...p.slice(0, idx + 1), nueva, ...p.slice(idx + 1)]
     })
 
   return (
@@ -1890,25 +2023,33 @@ function Lineas({
       />
 
       <div className="flex flex-col gap-3 border-t border-[#eef2f6] px-[22px] py-4">
-        {lineas.map((l, i) => (
-          <LineaFila
-            key={l.clave}
-            numero={i + 1}
-            linea={l}
-            catalogos={catalogos}
-            onCambio={(c) => cambiarLinea(l.clave, c)}
-            onQuitar={() => setLineas((p) => p.filter((x) => x.clave !== l.clave))}
-          />
-        ))}
+        {(() => {
+          const etiquetas = etiquetasDeItem(lineas)
+
+          return lineas.map((l, i) => (
+            <LineaFila
+              key={l.clave}
+              etiqueta={etiquetas[i]}
+              esAlternativa={Boolean(l.madreClave)}
+              linea={l}
+              catalogos={catalogos}
+              onCambio={(c) => cambiarLinea(l.clave, c)}
+              onQuitar={() => setLineas((p) => p.filter((x) => x.clave !== l.clave))}
+            />
+          ))
+        })()}
 
         {/*
-          Los mismos dos botones abajo. Con diez líneas cargadas, agregar la
-          once obligaba a subir hasta el título y volver a bajar.
+          Los mismos botones abajo. Con diez líneas cargadas, agregar la once
+          obligaba a subir hasta el título y volver a bajar.
         */}
         <div className="flex flex-wrap items-center gap-3 pt-0.5">
           <Accion onClick={agregar}>+ Agregar linea</Accion>
           {lineas.length > 0 && (
-            <Accion onClick={copiarLaUltima}>+ Copiar la anterior, sin precio</Accion>
+            <>
+              <Accion onClick={copiarLaUltima}>+ Copiar la anterior, sin precio</Accion>
+              <Accion onClick={crearAlternativa}>+ Crear alternativa</Accion>
+            </>
           )}
         </div>
       </div>
@@ -2370,13 +2511,15 @@ function MedidasDeLaForma({
 }
 
 function LineaFila({
-  numero,
+  etiqueta,
+  esAlternativa,
   linea,
   catalogos,
   onCambio,
   onQuitar,
 }: {
-  numero: number
+  etiqueta: string
+  esAlternativa: boolean
   linea: LineaForm
   catalogos: Catalogos | null
   onCambio: (c: Partial<LineaForm>) => void
@@ -2408,7 +2551,9 @@ function LineaFila({
     min: linea.largo_min_mm,
     max: linea.largo_max_mm,
   })
-  const descArmada = armarDescripcion(nombreMaterial, formaElegida, dimArmada)
+  // La característica ofrecida —"s/c", "ASTM B348"— entra en la descripción
+  // impresa, salvo que ya esté escrita a mano.
+  const descArmada = armarDescripcion(nombreMaterial, formaElegida, dimArmada, linea.caracteristicas)
 
   useEffect(() => {
     const cambios: Partial<LineaForm> = {}
@@ -2480,6 +2625,36 @@ function LineaFila({
     catalogos?.formas.find((f) => f.nombre === linea.pedido_forma) ?? null
   const camposDeLoPedido = formaPedida?.campos ?? []
 
+  // El caño que pidió el cliente: se reconoce por su diámetro exterior y su
+  // pared, para que el selector arranque donde quedó.
+  const canoPedido = useMemo(() => {
+    const o = linea.pedido_medidas?.outer?.valor
+    const w = linea.pedido_medidas?.wall?.valor
+
+    if (!o || !w) return null
+
+    return (
+      (catalogos?.canos ?? []).find(
+        (c) => Number(c.diametro_mm) === Number(o) && Number(c.pared_mm) === Number(w),
+      ) ?? null
+    )
+  }, [linea.pedido_medidas, catalogos])
+
+  const medidasDeCanoPedido = useMemo(() => {
+    const vistas = new Map<string, CanoEstandar>()
+
+    for (const c of catalogos?.canos ?? []) {
+      if (!vistas.has(c.nombre)) vistas.set(c.nombre, c)
+    }
+
+    return [...vistas.values()]
+  }, [catalogos])
+
+  const schedulesDelPedido = useMemo(
+    () => schedulesAgrupados((catalogos?.canos ?? []).filter((c) => c.nombre === canoPedido?.nombre)),
+    [catalogos, canoPedido],
+  )
+
   /**
    * Cambia una medida de lo pedido y rearma el texto que sale impreso.
    *
@@ -2493,8 +2668,34 @@ function LineaFila({
 
     onCambio({
       pedido_medidas: medidas,
-      pedido_dimensiones: armarDimensiones(formaPedida, medidas, null) || null,
+      pedido_dimensiones: armarDimensiones(formaPedida, medidas, canoPedido) || null,
     })
+  }
+
+  /** Elegir un caño pedido completa su diámetro exterior y su pared. */
+  function elegirCanoPedido(id: number | null) {
+    const elegido = catalogos?.canos?.find((c) => c.id === id) ?? null
+    const base = linea.pedido_medidas ?? {}
+    const medidas = elegido
+      ? {
+          ...base,
+          outer: { valor: String(elegido.diametro_mm), unidad: 'mm' },
+          wall: { valor: String(elegido.pared_mm), unidad: 'mm' },
+        }
+      : base
+
+    onCambio({
+      pedido_medidas: medidas,
+      pedido_dimensiones: armarDimensiones(formaPedida, medidas, elegido) || null,
+    })
+  }
+
+  function elegirMedidaDeCanoPedido(nombre: string) {
+    if (!nombre) return elegirCanoPedido(null)
+
+    const primero = schedulesAgrupados((catalogos?.canos ?? []).filter((c) => c.nombre === nombre))[0]
+
+    elegirCanoPedido(primero?.id ?? null)
   }
 
   function alternarIgualALoPedido() {
@@ -2527,34 +2728,49 @@ function LineaFila({
   return (
     <div
       className={`rounded-[10px] border p-3 ${
-        linea.quitada ? 'border-line bg-[#fcfaf6] opacity-70' : 'border-line bg-white'
+        linea.quitada
+          ? 'border-line bg-[#fcfaf6] opacity-70'
+          : esAlternativa
+            ? 'ml-5 border-brand-200 bg-[#f7fbff]'
+            : 'border-line bg-white'
       }`}
     >
       <div className="mb-2.5 flex flex-wrap items-center gap-2.5">
-        <span className="grid h-6 w-6 place-items-center rounded-md bg-slate-100 text-[11px] font-bold text-slate-500">
-          {numero}
-        </span>
-
-        <button
-          type="button"
-          onClick={alternarIgualALoPedido}
-          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
-            linea.igual_a_lo_pedido
-              ? 'border-[#cdebd8] bg-[#f4fbf6] text-success-ink'
-              : 'border-[#f3d9a6] bg-[#fff8ee] text-warning-ink'
+        <span
+          className={`grid h-6 min-w-[24px] place-items-center rounded-md px-1 text-[11px] font-bold ${
+            esAlternativa ? 'bg-brand-100 text-brand-600' : 'bg-slate-100 text-slate-500'
           }`}
         >
-          <span
-            className={`grid h-4 w-4 place-items-center rounded-[5px] border ${
+          {etiqueta}
+        </span>
+
+        {esAlternativa ? (
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-[#eef6fe] px-3 py-1.5 text-[12px] font-semibold text-brand-600">
+            <Layers size={13} strokeWidth={2.2} />
+            Alternativa de lo que se ofrece
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={alternarIgualALoPedido}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
               linea.igual_a_lo_pedido
-                ? 'border-success-ink bg-success-ink text-white'
-                : 'border-[#e0b57a] bg-white'
+                ? 'border-[#cdebd8] bg-[#f4fbf6] text-success-ink'
+                : 'border-[#f3d9a6] bg-[#fff8ee] text-warning-ink'
             }`}
           >
-            {linea.igual_a_lo_pedido && <Check size={10} strokeWidth={3.5} />}
-          </span>
-          {linea.igual_a_lo_pedido ? 'Igual a lo que pidio' : 'Distinto a lo que pidio'}
-        </button>
+            <span
+              className={`grid h-4 w-4 place-items-center rounded-[5px] border ${
+                linea.igual_a_lo_pedido
+                  ? 'border-success-ink bg-success-ink text-white'
+                  : 'border-[#e0b57a] bg-white'
+              }`}
+            >
+              {linea.igual_a_lo_pedido && <Check size={10} strokeWidth={3.5} />}
+            </span>
+            {linea.igual_a_lo_pedido ? 'Igual a lo que pidio' : 'Distinto a lo que pidio'}
+          </button>
+        )}
 
         {linea.quitada && <Chip tono="neutro">quitada</Chip>}
 
@@ -2564,7 +2780,7 @@ function LineaFila({
           </Accion>
           <button
             type="button"
-            aria-label={`Borrar la linea ${numero}`}
+            aria-label={`Borrar la linea ${etiqueta}`}
             onClick={onQuitar}
             className="text-faint transition-colors hover:text-danger"
           >
@@ -2618,7 +2834,76 @@ function LineaFila({
             Con una forma que no esta en el catalogo no sabemos que campos
             lleva: ahi sigue la caja de texto, y las lineas viejas tambien.
           */}
-          {camposDeLoPedido.length > 0 ? (
+          {formaPedida?.usa_cano ? (
+            <>
+              {/* El caño que pidió el cliente se elige por su medida y su
+                  schedule, igual que en lo que se ofrece: no con diámetro
+                  exterior y pared sueltos. */}
+              <div className="grid gap-2 sm:grid-cols-2 lg:col-span-4">
+                <div>
+                  <Etiqueta>Medida del caño</Etiqueta>
+                  <select
+                    aria-label="Medida del caño pedido"
+                    value={canoPedido?.nombre ?? ''}
+                    onChange={(e) => elegirMedidaDeCanoPedido(e.target.value)}
+                    className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
+                  >
+                    <option value="">Medida especial — la cargo yo</option>
+                    {medidasDeCanoPedido.map((m) => (
+                      <option key={m.nombre} value={m.nombre}>
+                        {m.nombre} · Ø{m.diametro_mm} mm
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Etiqueta>Schedule</Etiqueta>
+                  <select
+                    aria-label="Schedule del caño pedido"
+                    value={
+                      schedulesDelPedido.find((g) => Number(g.pared) === Number(canoPedido?.pared_mm))?.id ?? ''
+                    }
+                    disabled={!canoPedido}
+                    onChange={(e) => elegirCanoPedido(e.target.value ? Number(e.target.value) : null)}
+                    className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
+                  >
+                    <option value="">{canoPedido ? 'Elegí el schedule' : '—'}</option>
+                    {schedulesDelPedido.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        SCH {g.etiqueta} · pared {g.pared} mm
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="lg:col-span-2">
+                <Etiqueta>Largo</Etiqueta>
+                <div className="flex">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    aria-label="Largo pedido"
+                    value={linea.pedido_medidas?.length?.valor ?? ''}
+                    onChange={(e) => cambiarMedidaPedida('length', { valor: e.target.value })}
+                    className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                  />
+                  <select
+                    aria-label="Unidad del largo pedido"
+                    value={linea.pedido_medidas?.length?.unidad ?? 'mm'}
+                    onChange={(e) => cambiarMedidaPedida('length', { unidad: e.target.value })}
+                    className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                  >
+                    {UNIDADES_MEDIDA.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </>
+          ) : camposDeLoPedido.length > 0 ? (
             camposDeLoPedido.map((campo) => {
               const cargada = linea.pedido_medidas?.[campo.clave] ?? { valor: '', unidad: 'mm' }
 
@@ -2675,6 +2960,15 @@ function LineaFila({
               onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
             }
             opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
+          />
+          <Combo
+            id={`pedido-caracteristicas-${linea.clave}`}
+            etiqueta="Caracteristicas que pidio"
+            className="lg:col-span-3"
+            value={linea.pedido_caracteristicas ?? ''}
+            onChange={(e) => onCambio({ pedido_caracteristicas: e.target.value || null })}
+            placeholder="con/sin costura, laminada, norma"
+            opciones={catalogos?.caracteristicas ?? []}
           />
           {/*
             El motivo se elige o se escribe, y lo escrito queda en la lista.
@@ -2739,6 +3033,38 @@ function LineaFila({
         catalogos={catalogos}
         onCambio={onCambio}
       />
+
+      {/*
+        Con o sin costura, laminada, la norma. Es lo ofrecido: entra en la
+        descripción impresa. La lista de sugerencias crece con lo que se escribe.
+      */}
+      <div className="mt-2.5 grid items-end gap-2.5 lg:grid-cols-[1fr_170px_120px]">
+        <Combo
+          id={`caracteristicas-${linea.clave}`}
+          etiqueta="Caracteristicas"
+          ayuda="con/sin costura, laminada, norma"
+          value={linea.caracteristicas ?? ''}
+          onChange={(e) => onCambio({ caracteristicas: e.target.value || null })}
+          placeholder="SIN COSTURA · ASTM B348"
+          opciones={catalogos?.caracteristicas ?? []}
+        />
+        <Lista
+          etiqueta="Transporte"
+          ayuda="para una alternativa"
+          value={linea.transporte ?? ''}
+          onChange={(e) => onCambio({ transporte: e.target.value || null })}
+          opciones={[
+            { valor: '', texto: '— sin via —' },
+            ...(catalogos?.transportes ?? []).map((t) => ({ valor: t, texto: t })),
+          ]}
+        />
+        <Texto
+          etiqueta="Entrega (dias)"
+          value={linea.plazo_dias != null ? String(linea.plazo_dias) : ''}
+          onChange={(e) => onCambio({ plazo_dias: e.target.value ? Number(e.target.value) : null })}
+          placeholder="40"
+        />
+      </div>
 
       <div className="mt-2.5">
         <Texto
@@ -2989,19 +3315,6 @@ function LineaFila({
             />
           </div>
         )}
-      </div>
-
-      <div className="mt-2.5">
-        <AlternativasDeLinea
-          opciones={linea.opciones ?? []}
-          linea={{
-            cantidad: linea.cantidad,
-            precio_unitario: linea.precio_unitario,
-            material_id: linea.material_id,
-          }}
-          materiales={catalogos?.materiales ?? []}
-          onCambio={(opciones) => onCambio({ opciones })}
-        />
       </div>
 
       <div className="mt-2.5">

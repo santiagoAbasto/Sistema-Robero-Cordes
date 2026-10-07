@@ -49,6 +49,16 @@ class LectorDeSolicitudTest extends TestCase
      * sin forma — y sin forma no hay donde poner las medidas, con lo cual no
      * hay peso y no hay precio.
      */
+    /** Las caracteristicas que ya trae el renglon se leen solas. */
+    public function test_lee_costura_proceso_y_norma(): void
+    {
+        $this->assertSame('SIN COSTURA', $this->leer('10 caños s/c 1" sch 40 x 6000mm')['caracteristicas']);
+        $this->assertSame('CON COSTURA', $this->leer('5 caños c/c 2" x 3000mm')['caracteristicas']);
+        $this->assertSame('ESTIRADA EN FRIO', $this->leer('3 barras estiradas en frio 20mm x 1000')['caracteristicas']);
+        $this->assertSame('SIN COSTURA · ASTM B348', $this->leer('4 caños titanio s/c bajo ASTM B348 dia 25mm x 2000')['caracteristicas']);
+        $this->assertNull($this->leer('2 barras redondas 30mm x 1000')['caracteristicas']);
+    }
+
     #[DataProvider('pedidosConForma')]
     public function test_reconoce_las_formas_del_catalogo(string $renglon, string $forma): void
     {

@@ -327,8 +327,7 @@ class Consulta extends Model
         }
 
         $kilos = $this->lineas
-            ->where('quitada', false)
-            ->filter(fn ($l) => $l->unidadFactura?->codigo === 'KG')
+            ->filter(fn ($l) => $l->cuentaParaElTotal() && $l->unidadFactura?->codigo === 'KG')
             ->sum('cantidad_facturar');
 
         return $kilos > 0 ? round((float) $kilos, 2) : null;
@@ -343,7 +342,8 @@ class Consulta extends Model
             return 0.0;
         }
 
-        return (float) $this->lineas->where('quitada', false)->sum('importe');
+        // Las alternativas no suman: se ofrecen para que el cliente elija.
+        return (float) $this->lineas->filter(fn ($l) => $l->cuentaParaElTotal())->sum('importe');
     }
 
     /**
@@ -371,7 +371,8 @@ class Consulta extends Model
             return null;
         }
 
-        $vigentes = $this->lineas->where('quitada', false);
+        // Las alternativas responden al pedido de su linea: no se cuentan aparte.
+        $vigentes = $this->lineas->filter(fn ($l) => $l->cuentaParaElTotal());
 
         if ($vigentes->isEmpty()) {
             return null;

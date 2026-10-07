@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\ConsultaLineaOpcion;
 use App\Models\Forma;
 use App\Models\Material;
 use App\Models\Unidad;
@@ -396,7 +395,7 @@ class InterpreteIA
             $forma = $formas->firstWhere('nombre', data_get($cruda, 'forma'));
             $unidad = $unidades->firstWhere('codigo', data_get($cruda, 'unidad'));
 
-            $lineas[] = [
+            $linea = [
                 'descripcion' => $descripcion,
                 // Lo que pidio el cliente queda escrito aparte de lo que se
                 // cotiza: es la unica forma de ver despues si coincidian.
@@ -417,13 +416,44 @@ class InterpreteIA
                 // se puede dar por igual a lo pedido: la tilde queda sin marcar
                 // para que alguien la mire antes de mandar la cotizacion.
                 'igual_a_lo_pedido' => $material !== null,
-                // Las variantes que pidio el cliente, ya armadas. Vienen sin
-                // precio: el cliente pide, no cotiza.
-                'alternativas' => $this->alternativasDe($cruda, $materiales),
             ];
+
+            /*
+              Las variantes que pidio el cliente ("aerea y maritima", "por 100
+              y por 500 kg"): la primera es la linea, y cada una de las otras
+              una linea alternativa que cuelga de ella. Sin precio: el cliente
+              pide, la persona cotiza.
+            */
+            $variantes = $this->alternativasDe($cruda, $materiales);
+            $madre = count($lineas);
+            $lineas[] = $this->conVariante($linea, $variantes[0] ?? null);
+
+            foreach (array_slice($variantes, 1) as $variante) {
+                $lineas[] = $this->conVariante($linea, $variante) + ['alternativa_de' => $madre];
+            }
         }
 
         return $lineas;
+    }
+
+    /** La linea con lo que cambia la variante: la via, la cantidad o el material. */
+    private function conVariante(array $linea, ?array $variante): array
+    {
+        if ($variante === null) {
+            return $linea;
+        }
+
+        return match ($variante['tipo']) {
+            'Transporte' => $linea + ['transporte' => match (mb_strtolower($variante['etiqueta'])) {
+                'aereo', 'aéreo' => 'Aéreo',
+                default => 'Marítimo',
+            }],
+            'Cantidad' => ['cantidad' => $variante['cantidad'] ?? $linea['cantidad']] + $linea,
+            'Material' => $variante['material_id']
+                ? ['material_id' => $variante['material_id'], 'material' => $variante['material']] + $linea
+                : $linea,
+            default => $linea,
+        };
     }
 
     /**
@@ -462,7 +492,7 @@ class InterpreteIA
      */
     private function alternativasDe(mixed $cruda, $materiales): array
     {
-        $tiposValidos = ConsultaLineaOpcion::TIPOS;
+        $tiposValidos = ['Transporte', 'Cantidad', 'Material', 'Otra'];
         $alternativas = [];
 
         foreach ((array) data_get($cruda, 'alternativas', []) as $i => $a) {
@@ -479,10 +509,8 @@ class InterpreteIA
                 'etiqueta' => mb_substr($etiqueta, 0, 60),
                 'tipo' => in_array($tipo, $tiposValidos, true) ? $tipo : 'Otra',
                 'cantidad' => $this->numero(data_get($a, 'cantidad')),
-                'precio_unitario' => null,
-                'plazo_dias' => null,
                 'material_id' => $material?->id,
-                'es_base' => $i === 0,
+                'material' => $material?->nombre,
             ];
         }
 

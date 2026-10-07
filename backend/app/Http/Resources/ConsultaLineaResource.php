@@ -19,6 +19,7 @@ class ConsultaLineaResource extends JsonResource
             'forma' => $this->forma?->nombre,
             'forma_id' => $this->forma_id,
             'dimensiones' => $this->dimensiones,
+            'caracteristicas' => $this->caracteristicas,
             'descripcion' => $this->descripcion,
             'codigo_cliente' => $this->codigo_cliente,
             'item_cliente' => $this->item_cliente,
@@ -48,6 +49,7 @@ class ConsultaLineaResource extends JsonResource
                 'unidad_id' => $this->unidad_pedida_id,
                 'texto' => $this->pedido_texto,
                 'medidas' => $this->pedido_medidas,
+                'caracteristicas' => $this->pedido_caracteristicas,
             ],
 
             // cantidades y unidades
@@ -84,26 +86,11 @@ class ConsultaLineaResource extends JsonResource
             'deposito' => $this->deposito,
             'colada' => $this->colada,
 
-            // Las alternativas: el mismo item cotizado de otra manera. La base
-            // es la que cuenta para el total; las demas son opciones.
-            'opciones' => $this->whenLoaded('opciones', fn () => $this->opciones->map(fn ($o) => [
-                'id' => $o->id,
-                'etiqueta' => $o->etiqueta,
-                'tipo' => $o->tipo,
-                'es_base' => $o->es_base,
-                'cantidad' => $o->cantidad,
-                'precio_unitario' => $o->precio_unitario,
-                'precio_por_kilo' => $o->precio_por_kilo,
-                'plazo_dias' => $o->plazo_dias,
-                'material_id' => $o->material_id,
-                'material' => $o->material?->nombre,
-                'descripcion' => $o->descripcion,
-                'nota' => $o->nota,
-                // Ya resueltas contra la linea, para no repetir la cuenta.
-                'cantidad_final' => $o->laCantidad(),
-                'precio_final' => $o->elPrecio(),
-                'importe' => $o->importe,
-            ]), []),
+            // De que linea es alternativa: en la hoja va como 1.1, 1.2 debajo
+            // de ella, y no suma al total.
+            'alternativa_de_id' => $this->alternativa_de_id,
+            'transporte' => $this->transporte,
+            'plazo_dias' => $this->plazo_dias,
         ];
     }
 }

@@ -89,14 +89,24 @@ export function armarDimensiones(
 /**
  * La descripción: es lo que sale impreso en la cotización.
  *
- * Material, forma y medida, en ese orden, que es como se escribe hoy a mano.
- * El nombre de la forma es el que tenga cargado: si prefieren "BAR RED" en vez
- * de "BARRA REDONDA", se renombra desde la pantalla de formas.
+ * Material, forma, medida y la característica ofrecida, en ese orden, que es
+ * como se escribe hoy a mano. El nombre de la forma es el que tenga cargado:
+ * si prefieren "BAR RED" en vez de "BARRA REDONDA", se renombra desde la
+ * pantalla de formas. La característica —"s/c", "ASTM B348"— se suma al final
+ * si no está ya escrita en la descripción, para no repetirla.
  */
 export function armarDescripcion(
   material: string | null,
   forma: Forma | null,
   dimensiones: string,
+  caracteristicas?: string | null,
 ): string {
-  return [material, forma?.nombre, dimensiones].filter(Boolean).join(' ').trim()
+  const base = [material, forma?.nombre, dimensiones].filter(Boolean).join(' ').trim()
+  const extra = caracteristicas?.trim()
+
+  if (extra && !base.toUpperCase().includes(extra.toUpperCase())) {
+    return `${base} ${extra}`.trim()
+  }
+
+  return base
 }
