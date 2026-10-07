@@ -61,7 +61,9 @@ class ResumenController extends Controller
         ])
             ->orderByDesc('fecha')
             ->orderByDesc('id')
-            ->take(6)
+            // Varias para que el dashboard las pagine de a diez: con seis la
+            // tarjeta quedaba a medio llenar.
+            ->take(30)
             ->get()
             ->map(fn (Consulta $c) => [
                 'id' => $c->id,
