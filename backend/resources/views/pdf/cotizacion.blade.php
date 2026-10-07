@@ -41,7 +41,10 @@
         .lineas td.item { font-weight: bold; color: #0a2e45; }
         .lineas tr.alternativa td { color: #475569; border-top: none !important; padding-top: 2pt; }
         .lineas tr.alternativa td.item { color: #64748b; padding-left: 6pt; }
-        .nota-total { font-size: 7pt; color: #64748b; padding-top: 3pt; }
+        /* "Alternativa" como titulo del renglon; la via de una linea comun. */
+        .lineas .alt-titulo { font-weight: bold; color: #0a2e45; font-size: 7.8pt; padding-bottom: 1.5pt; }
+        .lineas .via { font-weight: bold; color: #0a6ca6; font-size: 7.4pt; padding-bottom: 1pt; }
+        .total-nota { font-weight: normal; font-size: 7.5pt; color: #64748b; }
         .lineas .etiqueta {
             display: inline-block; background: #f1f5f9; color: #0a2e45;
             font-weight: bold; font-size: 7.4pt; padding: 1pt 4pt; border-radius: 3pt;
@@ -179,13 +182,10 @@
 @if ($incluyeImportes)
     <table class="total">
         <tr>
-            <td>Total</td>
+            <td>Total @if ($hayAlternativas)<span class="total-nota">(sin considerar las alternativas)</span>@endif</td>
             <td style="width:80pt">@include('pdf.plata', ['monto' => $total])</td>
         </tr>
     </table>
-    @if ($hayAlternativas)
-        <div class="nota-total">Las alternativas (1.1, 1.2...) se ofrecen para elegir: no estan sumadas en el total.</div>
-    @endif
 @endif
 
 @if ($condiciones->isNotEmpty())
