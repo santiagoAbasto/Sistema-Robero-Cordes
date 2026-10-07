@@ -379,6 +379,35 @@ export function tituloDeConsulta(c: {
   return [`${clase} ${nro}`, empresa].filter(Boolean).join(' · ')
 }
 
+/**
+ * El nombre del archivo PDF al descargarlo: claro y profesional.
+ *
+ * "Cotización 2026-0011 R0 - ACERINOX - 07-10-2026": el tipo, el número con su
+ * revisión cuando ya se emitió, la empresa y la fecha. Un borrador todavía no
+ * tiene número, así que sale sin él. Se sacan los caracteres que no valen en un
+ * nombre de archivo, pero se conservan las mayúsculas y los acentos. Sin la
+ * extensión: la agrega quien lo descarga.
+ */
+export function nombreDeLaHoja(
+  c: {
+    tipo: string
+    numero_con_revision: string | null
+    fecha: string | null
+    empresa?: { nombre: string } | null
+  },
+  empresaNombre?: string,
+): string {
+  const clase = c.tipo === 'Pedido' ? 'Pedido' : c.tipo === 'Observacion' ? 'Observación' : 'Cotización'
+  const dia = c.fecha ? fecha(c.fecha).replace(/\//g, '-') : null
+
+  return [clase, c.numero_con_revision, empresaNombre ?? c.empresa?.nombre, dia]
+    .filter(Boolean)
+    .join(' - ')
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /** "2026-07-20" -> "20/07/2026" */
 export function fecha(valor: string | null | undefined): string {
   if (!valor) return '—'

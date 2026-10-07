@@ -22,6 +22,7 @@ import {
   emitirConsulta,
   fecha as fmtFecha,
   mensajeDeError,
+  nombreDeLaHoja,
   plata,
   interpretarTexto,
   nuevaRevision,
@@ -745,7 +746,7 @@ export default function ConsultaEditor() {
         const donde = await traerLaHoja(
           id,
           pestana,
-          `${tipo}-${emitida.numero_con_revision ?? empresaActual!.nombre}`,
+          nombreDeLaHoja(emitida, empresaActual!.nombre),
         )
 
         setAviso(
@@ -772,7 +773,9 @@ export default function ConsultaEditor() {
       await traerLaHoja(
         Number(consultaId),
         pestana,
-        `${tipo}-${existente?.numero_con_revision ?? empresaActual!.nombre}`,
+        existente
+          ? nombreDeLaHoja(existente, empresaActual!.nombre)
+          : `${tipo} - ${empresaActual!.nombre}`,
       )
     } catch (err) {
       pestana?.close()
