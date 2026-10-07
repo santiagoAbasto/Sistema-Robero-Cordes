@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight,
@@ -142,12 +143,20 @@ export default function Dashboard() {
     () => api.get<Resumen>('/resumen').then((r) => r.data),
     [],
   )
+  const [pagina, setPagina] = useState(1)
 
   if (cargando) return <Cargando texto="Armando el resumen…" />
   if (!datos) return null
 
   const { totales, ultimas, materiales } = datos
   const masCotizado = materiales[0]?.veces ?? 1
+
+  // Las últimas, de a diez, con paginador: así la tarjeta se llena y no quedan
+  // seis filas con medio metro de blanco debajo.
+  const porPagina = 10
+  const paginas = Math.max(1, Math.ceil(ultimas.length / porPagina))
+  const paginaActual = Math.min(pagina, paginas)
+  const visibles = ultimas.slice((paginaActual - 1) * porPagina, paginaActual * porPagina)
 
   return (
     <div className="flex flex-col gap-6">
@@ -223,7 +232,7 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
         {/* últimas cotizaciones */}
         <div className="rounded-card border border-line bg-white shadow-[var(--shadow-card)] lg:col-span-2">
           <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-5">
@@ -244,6 +253,7 @@ export default function Dashboard() {
               Todavía no hay cotizaciones cargadas.
             </p>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <div className="min-w-[820px]">
                 <div className="grid grid-cols-[1.3fr_0.9fr_0.75fr_0.9fr_1fr_1.6fr] gap-2 border-y border-line bg-app/60 px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-faint">
@@ -254,11 +264,11 @@ export default function Dashboard() {
                   <span className="text-right">Estado</span>
                   <span className="text-right">Acciones</span>
                 </div>
-                {ultimas.map((c, i) => (
+                {visibles.map((c, i) => (
                   <div
                     key={c.id}
                     className={`grid grid-cols-[1.3fr_0.9fr_0.75fr_0.9fr_1fr_1.6fr] items-center gap-2 px-6 py-[13px] transition-colors hover:bg-app ${
-                      i < ultimas.length - 1 ? 'border-b border-line' : ''
+                      i < visibles.length - 1 ? 'border-b border-line' : ''
                     }`}
                   >
                     <span className="truncate text-[13px] font-semibold text-ink">{c.empresa}</span>
@@ -297,6 +307,32 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
+            {paginas > 1 && (
+              <div className="flex items-center justify-between gap-3 border-t border-line px-6 py-3">
+                <span className="text-[12px] text-faint">
+                  Página {paginaActual} de {paginas}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                    disabled={paginaActual <= 1}
+                    className="rounded-[7px] border border-line-strong bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-app disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Anteriores
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPagina((p) => Math.min(paginas, p + 1))}
+                    disabled={paginaActual >= paginas}
+                    className="rounded-[7px] border border-line-strong bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 transition-colors hover:bg-app disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Siguientes
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </div>
 
