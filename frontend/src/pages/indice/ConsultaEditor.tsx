@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Calculator, Check, Eye, EyeOff, Layers, Lock, Plus, Ruler, Trash2, Wand2, Scale } from 'lucide-react'
+import { Calculator, Check, Copy, Eye, EyeOff, FilePlus2, Layers, Lock, Plus, Ruler, Trash2, Wand2, Scale } from 'lucide-react'
 import {
   Accion,
   Aviso,
@@ -29,6 +29,7 @@ import {
   traerConsulta,
   traerEmpresa,
   tituloDeConsulta,
+  usarComoBorrador,
   useCarga,
   useCatalogos,
   hoy,
@@ -806,6 +807,25 @@ export default function ConsultaEditor() {
   }
 
   /**
+   * "Usar como borrador": un borrador nuevo con todo lo de ésta, en la misma
+   * empresa, y lo abre. Sirve para recotizar sin tocar la que ya salió.
+   */
+  const [usandoBorrador, setUsandoBorrador] = useState(false)
+  async function usarComoBorradorAca() {
+    if (!empresaActual) return
+
+    setUsandoBorrador(true)
+    setError(null)
+
+    try {
+      navigate(`/consultas/${await usarComoBorrador(Number(consultaId), empresaActual.id)}`)
+    } catch (err) {
+      setError(mensajeDeError(err))
+      setUsandoBorrador(false)
+    }
+  }
+
+  /**
    * Precarga: se pega el texto del cliente y el sistema propone las líneas.
    *
    * Reemplazan a las que hay. Antes se sumaban, y cada clic agregaba otra
@@ -1098,6 +1118,37 @@ export default function ConsultaEditor() {
       />
 
       {error && <Aviso tono="ambar">{error}</Aviso>}
+
+      {/*
+        Accesos directos, arriba de todo: reutilizar esta cotización sin tener
+        que volver a la ficha. "Usar como borrador" arranca uno nuevo con todo
+        lo de ésta; "Copiar a otra empresa" lleva a elegir empresas con o sin
+        precios. Una observación no se cotiza, así que no los lleva.
+      */}
+      {!esNueva && tipo !== 'Observacion' && (
+        <div className="flex flex-wrap items-center gap-2.5 rounded-[12px] border border-line bg-white p-2.5 shadow-[0_1px_2px_rgba(16,24,40,.04)]">
+          <span className="pl-1 text-[10.5px] font-bold uppercase tracking-wide text-faint">
+            Accesos directos
+          </span>
+          <button
+            type="button"
+            onClick={usarComoBorradorAca}
+            disabled={usandoBorrador}
+            className="inline-flex items-center gap-1.5 rounded-[9px] border border-brand-200 bg-[#f3f9fe] px-3 py-1.5 text-[12.5px] font-semibold text-brand-600 transition-colors hover:bg-brand-50 disabled:opacity-60"
+          >
+            <FilePlus2 size={14} strokeWidth={2.2} />
+            {usandoBorrador ? 'Creando…' : 'Usar como borrador'}
+          </button>
+          <Link
+            to={`/consultas/${consultaId}/copiar`}
+            className="inline-flex items-center gap-1.5 rounded-[9px] border border-line-strong bg-white px-3 py-1.5 text-[12.5px] font-semibold text-slate-700 transition-colors hover:bg-app"
+          >
+            <Copy size={14} strokeWidth={2.2} />
+            Copiar a otra empresa
+            <span className="text-[10.5px] font-medium text-faint">· con o sin precios</span>
+          </Link>
+        </div>
+      )}
 
       {/* R0, R1, R2: las versiones de esta cotización, como solapas. */}
       {!esNueva && <Versiones consultaId={Number(consultaId)} />}

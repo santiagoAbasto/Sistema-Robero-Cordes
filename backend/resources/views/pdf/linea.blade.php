@@ -19,12 +19,19 @@
     <td>{{ $cantidad($linea->cantidad) }}</td>
     <td>{{ $linea->unidadVenta?->codigo }}</td>
     <td>
+        {{--
+            La alternativa lleva "Alternativa" como titulo, con su via y su
+            plazo, y la descripcion abajo, alineada con la de la linea. La via
+            de una linea comun va como un renglon chico arriba de la descripcion.
+        --}}
+        @php
+            $entrega = $linea->plazo_dias ? 'entrega aprox. '.$linea->plazo_dias.' dias' : '';
+            $via = trim($linea->transporte.($linea->transporte && $entrega ? ' · ' : '').$entrega);
+        @endphp
         @if ($esAlternativa)
-            <span class="etiqueta">Alternativa</span>
-        @endif
-        {{-- La via y el plazo van adelante: es lo que distingue una de otra. --}}
-        @if ($linea->transporte)
-            <span class="etiqueta">{{ $linea->transporte }}@if ($linea->plazo_dias) &middot; entrega aprox. {{ $linea->plazo_dias }} dias @endif</span>
+            <div class="alt-titulo">Alternativa{{ $via !== '' ? ' · '.$via : '' }}</div>
+        @elseif ($via !== '')
+            <div class="via">{{ $via }}</div>
         @endif
         {{-- El item del cliente va adelante: es como el compara su
              requerimiento contra la oferta, renglon por renglon. --}}
@@ -38,7 +45,7 @@
             {{ $linea->caracteristicas }}
         @endif
         @if ($linea->aprox)<span class="aprox">(aprox.)</span>@endif
-        @if (! $linea->transporte && $linea->plazo_dias)
+        @if (! $esAlternativa && ! $linea->transporte && $linea->plazo_dias)
             <div class="nota-linea">Entrega aprox. {{ $linea->plazo_dias }} dias</div>
         @endif
         @if ($linea->codigo_cliente)
