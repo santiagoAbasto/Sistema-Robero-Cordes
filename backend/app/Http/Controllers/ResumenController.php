@@ -67,6 +67,11 @@ class ResumenController extends Controller
                 'fecha' => $c->fecha?->toDateString(),
                 'tipo' => $c->tipo,
                 'estado' => $c->estado,
+                // El numero con su revision (2026-0011 R0): es el codigo por el
+                // que pregunta el cliente. Null mientras no se emitio.
+                'numero_con_revision' => $c->numeroConRevision(),
+                // Emitida de verdad, para distinguir "falta emision" de "emitida".
+                'emitida' => $c->estaEmitida(),
                 'moneda' => $c->moneda?->nombre,
                 // "Dolar", "Euro", "Peso argentino": el nombre completo no
                 // entra en la columna de la tabla.
