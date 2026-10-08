@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../lib/auth'
 import {
   ArrowRight,
   Briefcase,
@@ -9,6 +10,7 @@ import {
   Plus,
   Printer,
   Search,
+  Trash2,
   TrendingDown,
   TrendingUp,
   Users,
@@ -37,6 +39,7 @@ interface Resumen {
     cotizaciones_mes: number
     cotizaciones_mes_pasado: number
     borradores: number
+    borradores_eliminados: number
   }
   ultimas: {
     id: number
@@ -139,6 +142,8 @@ function Variacion({ ahora, antes }: { ahora: number; antes: number }) {
 }
 
 export default function Dashboard() {
+  const { user } = useAuth()
+  const esAdmin = user?.role === 'Administrador'
   const { datos, cargando } = useCarga(
     () => api.get<Resumen>('/resumen').then((r) => r.data),
     [],
@@ -357,6 +362,28 @@ export default function Dashboard() {
               <ArrowRight size={13} strokeWidth={2.4} className="transition-transform group-hover:translate-x-0.5" />
             </span>
           </Link>
+
+          {/* Papelera: solo para administradores, que son los que descartan. */}
+          {esAdmin && (
+          <Link
+            to="/consultas/eliminados"
+            className="group rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-colors hover:border-brand-200 hover:bg-brand-50"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[13px] font-medium text-muted">Borradores eliminados</p>
+                <p className="mt-1 text-[26px] font-bold text-ink">{totales.borradores_eliminados}</p>
+              </div>
+              <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#fbeaea] text-[#b4472a]">
+                <Trash2 size={20} strokeWidth={2} />
+              </span>
+            </div>
+            <span className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600">
+              Ver la papelera y restaurar
+              <ArrowRight size={13} strokeWidth={2.4} className="transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </Link>
+          )}
 
           <div className="rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)]">
             <h2 className="text-[16px] font-semibold text-ink">Accesos rápidos</h2>

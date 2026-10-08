@@ -15,10 +15,11 @@ import {
   Td,
   Th,
 } from '../../components/ui'
-import { Confirmar, Guardado } from '../../components/ui/form'
+import { Guardado } from '../../components/ui/form'
+import DescartarBorrador from '../../components/DescartarBorrador'
+import { useAuth } from '../../lib/auth'
 import {
   confirmarConsulta,
-  descartarConsulta,
   fecha as fmtFecha,
   mensajeDeError,
   plata,
@@ -30,6 +31,8 @@ import {
 /** Los borradores que salieron de copiar una cotización a otras empresas. */
 export default function Borradores() {
   const { consultaId } = useParams<{ consultaId: string }>()
+  const { user } = useAuth()
+  const esAdmin = user?.role === 'Administrador'
   const [aviso, setAviso] = useState<string | null>(null)
   const [aDescartar, setADescartar] = useState<{ id: number; empresa: string } | null>(null)
   const [trabajando, setTrabajando] = useState(false)
@@ -46,22 +49,6 @@ export default function Borradores() {
     try {
       await confirmarConsulta(id)
       setAviso('Confirmada. Ya figura en el historial de la empresa.')
-      recargar()
-    } catch (err) {
-      setAviso(mensajeDeError(err))
-    } finally {
-      setTrabajando(false)
-    }
-  }
-
-  async function descartar() {
-    if (!aDescartar) return
-    setTrabajando(true)
-
-    try {
-      await descartarConsulta(aDescartar.id)
-      setAviso('Borrador descartado.')
-      setADescartar(null)
       recargar()
     } catch (err) {
       setAviso(mensajeDeError(err))
@@ -192,14 +179,16 @@ export default function Borradores() {
                                 <Check size={12} strokeWidth={3} />
                                 Confirmar
                               </button>
-                              <Accion
-                                apagado
-                                onClick={() =>
-                                  setADescartar({ id: b.id, empresa: b.empresa?.nombre ?? '' })
-                                }
-                              >
-                                Quitar
-                              </Accion>
+                              {esAdmin && (
+                                <Accion
+                                  apagado
+                                  onClick={() =>
+                                    setADescartar({ id: b.id, empresa: b.empresa?.nombre ?? '' })
+                                  }
+                                >
+                                  Quitar
+                                </Accion>
+                              )}
                             </>
                           )}
                         </div>
@@ -242,14 +231,13 @@ export default function Borradores() {
         </Card>
       </div>
 
-      <Confirmar
-        abierto={aDescartar !== null}
-        titulo="Descartar el borrador"
-        detalle={`Se descarta el borrador de ${aDescartar?.empresa}. No afecta a la cotización de la que salió.`}
-        textoConfirmar="Descartar"
+      <DescartarBorrador
+        consulta={aDescartar}
         onCerrar={() => setADescartar(null)}
-        onConfirmar={descartar}
-        trabajando={trabajando}
+        onListo={(m) => {
+          setAviso(m)
+          recargar()
+        }}
       />
 
       <Guardado mensaje={aviso} onCerrar={() => setAviso(null)} />

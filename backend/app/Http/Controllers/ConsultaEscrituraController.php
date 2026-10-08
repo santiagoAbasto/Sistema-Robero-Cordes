@@ -22,6 +22,8 @@ use App\Services\CalculadoraFactor;
 use App\Services\InterpreteIA;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -354,9 +356,18 @@ class ConsultaEscrituraController extends Controller
         return new ConsultaResource($this->recargar($consulta));
     }
 
+    /**
+     * Manda un borrador a la papelera.
+     *
+     * "Que puedan sacar los borradores y no hacer basura". Descartar no es
+     * gratis: borra algo, asi que lo hace solo un administrador y escribiendo
+     * su clave. Si la erra tres veces, espera una hora —no para castigar, para
+     * que un descuido no barra borradores de a uno a los golpes—. No se pierde:
+     * queda en la papelera 30 dias y se puede restaurar. Todo queda anotado.
+     */
     public function destroy(Request $request, Consulta $consulta)
     {
-        $this->soloSiPuedeModificar($request);
+        $this->soloAdministradorConClave($request);
 
         // Sólo se descarta lo que todavía es borrador. Lo confirmado no se borra.
         if ($consulta->estado !== 'Borrador') {
@@ -365,10 +376,80 @@ class ConsultaEscrituraController extends Controller
             ], 422);
         }
 
-        $consulta->anotarCambio('Archivado', 'estado', 'Borrador', 'descartado');
+        $consulta->anotarCambio('Eliminado', 'estado', 'Borrador', 'a la papelera');
+        $consulta->forceFill(['eliminada_por' => $request->user()->id])->save();
         $consulta->delete();
 
-        return response()->json(['mensaje' => 'Borrador descartado.']);
+        return response()->json(['mensaje' => 'Borrador enviado a la papelera. Se puede restaurar por 30 días.']);
+    }
+
+    /** Saca un borrador de la papelera. No borra nada: lo vuelve a poner. */
+    public function restaurar(Request $request, Consulta $consulta)
+    {
+        abort_unless(
+            $request->user()?->role === 'Administrador',
+            403,
+            'Solo un administrador puede restaurar borradores de la papelera.',
+        );
+
+        if (! $consulta->trashed()) {
+            return response()->json(['message' => 'Ese borrador no está en la papelera.'], 422);
+        }
+
+        $consulta->restore();
+        $consulta->forceFill(['eliminada_por' => null])->save();
+        $consulta->anotarCambio('Restaurado', 'estado', 'en la papelera', 'restaurado');
+
+        return response()->json(['mensaje' => 'Borrador restaurado.']);
+    }
+
+    /**
+     * Para descartar: administrador, y que escriba su propia clave.
+     *
+     * Tres intentos fallidos por persona y despues una hora de espera: lo
+     * pidieron asi para que nadie vaya tanteando claves ni barriendo borradores
+     * a los apurones.
+     */
+    private function soloAdministradorConClave(Request $request): void
+    {
+        $usuario = $request->user();
+
+        abort_unless(
+            $usuario?->role === 'Administrador',
+            403,
+            'Solo un administrador puede descartar borradores.',
+        );
+
+        $clave = "descartar-borrador:{$usuario->id}";
+
+        if (RateLimiter::tooManyAttempts($clave, 3)) {
+            $minutos = (int) ceil(RateLimiter::availableIn($clave) / 60);
+
+            throw ValidationException::withMessages([
+                'password' => "Erraste la clave 3 veces. Probá de nuevo en {$minutos} ".($minutos === 1 ? 'minuto' : 'minutos').'.',
+            ])->status(429);
+        }
+
+        $datos = $request->validate([
+            'password' => ['required', 'string'],
+        ], [
+            'password.required' => 'Escribí tu clave para confirmar.',
+        ]);
+
+        if (! Hash::check($datos['password'], $usuario->password)) {
+            // Cuenta el intento fallido; se mantiene una hora.
+            RateLimiter::hit($clave, 3600);
+            $quedan = 3 - RateLimiter::attempts($clave);
+
+            throw ValidationException::withMessages([
+                'password' => $quedan > 0
+                    ? "Clave incorrecta. Te ".($quedan === 1 ? 'queda 1 intento' : "quedan {$quedan} intentos").'.'
+                    : 'Clave incorrecta. Esperá una hora para volver a intentar.',
+            ]);
+        }
+
+        // Clave correcta: se limpian los intentos.
+        RateLimiter::clear($clave);
     }
 
     /**

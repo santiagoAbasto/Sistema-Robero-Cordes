@@ -36,6 +36,7 @@ import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
 import { ModalCampo, ModalContacto, ModalRazonSocial } from './modales'
 import Enlaces from './Enlaces'
+import Revisiones from './Revisiones'
 import type { CampoEmpresa, Consulta, Contacto, Empresa, RazonSocial } from '../../types/indice'
 
 
@@ -829,6 +830,8 @@ function EntradaHistorial({
 }) {
   const navigate = useNavigate()
   const [usando, setUsando] = useState(false)
+  // "Ver cambios" de una cotización nueva: su historial de guardados, acá mismo.
+  const [verCambios, setVerCambios] = useState(false)
 
   // "Usar como borrador": arranca un borrador nuevo con todo lo de esta
   // cotización, en la misma empresa, y lo abre para editarlo. Sirve para
@@ -1033,15 +1036,24 @@ function EntradaHistorial({
         )}
 
         <div className="ml-auto flex items-center gap-3.5">
-          {/* Antes y después: abre la pantalla de cómo llegaron los datos (el
-              dato del sistema viejo vs. el de ahora), ya buscando ésta. */}
-          <Accion
-            to={`/config/antes-y-ahora?que=cotizaciones${
-              consulta.id_sistema ? `&buscar=${encodeURIComponent(consulta.id_sistema)}` : ''
-            }`}
-          >
-            Antes y después
-          </Accion>
+          {/*
+            Si vino del sistema viejo: "Antes y después" abre la comparación de
+            cómo llegó el dato, ya apuntada a ESTA cotización (no a todas las de
+            la empresa). Si es nueva, el antes/después no tiene sentido —no hubo
+            "antes"—, así que en su lugar va "Ver cambios": el historial de lo
+            que se le fue haciendo.
+          */}
+          {consulta.id_sistema ? (
+            <Accion to={`/config/antes-y-ahora?que=cotizaciones&cotizacion=${consulta.id}`}>
+              Antes y después
+            </Accion>
+          ) : (
+            consulta.tipo !== 'Observacion' && (
+              <Accion apagado={verCambios} onClick={() => setVerCambios((v) => !v)}>
+                {verCambios ? 'Ocultar cambios' : 'Ver cambios'}
+              </Accion>
+            )
+          )}
           {consulta.tipo !== 'Observacion' && (
             <>
               <Accion onClick={usarComoBorradorAca} apagado={usando}>
@@ -1057,6 +1069,13 @@ function EntradaHistorial({
           <Accion to={`/consultas/${consulta.id}`}>{consulta.emitida ? 'Ver' : 'Modificar'}</Accion>
         </div>
       </div>
+
+      {/* El historial de esta cotización, acá mismo, cuando se pide "Ver cambios". */}
+      {verCambios && (
+        <div className="mt-3">
+          <Revisiones consultaId={consulta.id} vacio="Todavía no se le hizo ningún cambio." />
+        </div>
+      )}
         </>
       )}
     </li>

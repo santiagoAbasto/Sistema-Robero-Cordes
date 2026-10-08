@@ -695,8 +695,35 @@ export async function actualizarConsulta(id: number, datos: DatosConsulta) {
   return data.data
 }
 
-export async function descartarConsulta(id: number) {
-  await api.delete(`/consultas/${id}`)
+/**
+ * Manda un borrador a la papelera. Pide la clave del admin: el servidor la
+ * verifica, cuenta los intentos y bloquea una hora a la tercera errada.
+ */
+export async function descartarConsulta(id: number, password: string) {
+  await api.delete(`/consultas/${id}`, { data: { password } })
+}
+
+/** Saca un borrador de la papelera y lo vuelve a poner. */
+export async function restaurarBorrador(id: number) {
+  await api.post(`/consultas/${id}/restaurar`)
+}
+
+export interface BorradorEliminado {
+  id: number
+  empresa: string | null
+  empresa_id: number
+  fecha: string | null
+  total: number
+  eliminada_por: string | null
+  eliminada_el: string | null
+  dias_restantes: number
+}
+
+/** La papelera: lo descartado que todavía se puede restaurar (solo admin). */
+export async function traerEliminados() {
+  const { data } = await api.get<{ data: BorradorEliminado[] }>('/consultas-eliminados')
+
+  return data.data
 }
 
 export async function confirmarConsulta(id: number) {

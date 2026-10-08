@@ -16,6 +16,7 @@ import ConsultaEditor from './pages/indice/ConsultaEditor'
 import ControlDeCambios from './pages/indice/ControlDeCambios'
 import CopiarCotizacion from './pages/indice/CopiarCotizacion'
 import Borradores from './pages/indice/Borradores'
+import BorradoresEliminados from './pages/indice/BorradoresEliminados'
 import Imprimir from './pages/indice/Imprimir'
 import QuienVeQue from './pages/indice/QuienVeQue'
 import FormasYFormulas from './pages/indice/FormasYFormulas'
@@ -68,6 +69,7 @@ export default function App() {
               {/* Consultas */}
               <Route path="/consultas/fecha" element={<ConsultasPorFecha />} />
               <Route path="/consultas/condicion" element={<BuscarConsultas />} />
+              <Route path="/consultas/eliminados" element={<BorradoresEliminados />} />
               <Route path="/consultas/:consultaId" element={<ConsultaEditor />} />
               <Route path="/consultas/:consultaId/copiar" element={<CopiarCotizacion />} />
               <Route path="/consultas/:consultaId/borradores" element={<Borradores />} />
