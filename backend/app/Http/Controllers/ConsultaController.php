@@ -100,6 +100,47 @@ class ConsultaController extends Controller
         ]);
     }
 
+    /**
+     * La papelera: los borradores descartados que todavía se pueden restaurar.
+     *
+     * Primero se barren los que ya pasaron los 30 días —esos se borran para
+     * siempre, acá, porque Railway no corre un cron que lo haga solo—. Lo que
+     * queda se muestra con quién lo descartó y cuántos días le quedan.
+     */
+    public function eliminados(Request $request)
+    {
+        abort_unless(
+            $request->user()?->role === 'Administrador',
+            403,
+            'Solo un administrador puede ver la papelera.',
+        );
+
+        $limite = now()->subDays(Consulta::DIAS_EN_PAPELERA);
+
+        // Los vencidos se van de verdad (con sus líneas, por el cascade).
+        Consulta::onlyTrashed()->where('deleted_at', '<', $limite)->get()
+            ->each(fn (Consulta $c) => $c->forceDelete());
+
+        $papelera = Consulta::onlyTrashed()
+            ->where('deleted_at', '>=', $limite)
+            ->with(['empresa:id,nombre', 'eliminadaPor:id,name', 'lineas:id,consulta_id,importe,quitada,alternativa_de_id'])
+            ->orderByDesc('deleted_at')
+            ->get()
+            ->map(fn (Consulta $c) => [
+                'id' => $c->id,
+                'empresa' => $c->empresa?->nombre,
+                'empresa_id' => $c->empresa_id,
+                'fecha' => $c->fecha?->toDateString(),
+                'total' => round($c->total, 2),
+                'eliminada_por' => $c->eliminadaPor?->name,
+                'eliminada_el' => $c->deleted_at?->toIso8601String(),
+                // Cuántos días le quedan en la papelera antes de borrarse solo.
+                'dias_restantes' => max(0, Consulta::DIAS_EN_PAPELERA - (int) $c->deleted_at->startOfDay()->diffInDays(now()->startOfDay())),
+            ]);
+
+        return response()->json(['data' => $papelera]);
+    }
+
     /** Los borradores que salieron de una cotización copiada a otras empresas. */
     public function borradores(Consulta $consulta)
     {

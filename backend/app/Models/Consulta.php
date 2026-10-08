@@ -7,6 +7,7 @@ use App\Models\Concerns\RegistraCambios;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Una consulta es una cotización, un pedido o una observación.
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class Consulta extends Model
 {
-    use RegistraCambios;
+    use RegistraCambios, SoftDeletes;
 
     protected $table = 'consultas';
 
@@ -255,6 +256,15 @@ class Consulta extends Model
     {
         return $this->belongsTo(User::class, 'emitida_por');
     }
+
+    /** Quien la mando a la papelera. Solo para los borradores descartados. */
+    public function eliminadaPor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'eliminada_por');
+    }
+
+    /** Dias que le quedan en la papelera antes de borrarse para siempre. */
+    public const DIAS_EN_PAPELERA = 30;
 
     public function moneda(): BelongsTo
     {

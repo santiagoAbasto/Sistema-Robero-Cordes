@@ -77,6 +77,12 @@ export default function AntesYAhora() {
   const queInicial = QUE.find((q) => q.id === params.get('que'))?.id ?? 'cotizaciones'
   const [que, setQue] = useState<Que>(queInicial)
   const [buscar, setBuscar] = useState(params.get('buscar') ?? '')
+  // Apuntada a UNA cotización (desde su ficha): muestra solo esa, no las de
+  // toda la empresa. Al buscar o cambiar de pestaña se suelta y se ven todas.
+  const [cotizacion, setCotizacion] = useState<number | null>(() => {
+    const v = params.get('cotizacion')
+    return v ? Number(v) : null
+  })
   const [pagina, setPagina] = useState(1)
   const [datos, setDatos] = useState<Respuesta | null>(null)
   const [cargando, setCargando] = useState(false)
@@ -88,7 +94,9 @@ export default function AntesYAhora() {
     setError(null)
 
     api
-      .get<Respuesta>('/migracion/comparacion', { params: { que, buscar, pagina } })
+      .get<Respuesta>('/migracion/comparacion', {
+        params: { que, buscar, pagina, cotizacion: cotizacion ?? undefined },
+      })
       .then(({ data }) => vigente && setDatos(data))
       .catch(() => vigente && setError('No se pudo leer la comparación. Es solo para administradores.'))
       .finally(() => vigente && setCargando(false))
@@ -96,10 +104,11 @@ export default function AntesYAhora() {
     return () => {
       vigente = false
     }
-  }, [que, buscar, pagina])
+  }, [que, buscar, pagina, cotizacion])
 
   function cambiarQue(nuevo: Que) {
     setQue(nuevo)
+    setCotizacion(null)
     setPagina(1)
   }
 
@@ -135,10 +144,24 @@ export default function AntesYAhora() {
           value={buscar}
           onChange={(e) => {
             setBuscar(e.target.value)
+            setCotizacion(null)
             setPagina(1)
           }}
           placeholder="Ej.: FERRUM, Titanio, 4201-5000"
         />
+
+        {cotizacion !== null && (
+          <p className="flex flex-wrap items-center gap-2 rounded-[7px] border border-brand-200 bg-brand-50/50 px-3 py-2 text-[12px] text-brand-700">
+            Mostrando una sola cotización.
+            <button
+              type="button"
+              onClick={() => setCotizacion(null)}
+              className="font-semibold underline hover:text-brand-600"
+            >
+              Ver todas las de la migración
+            </button>
+          </p>
+        )}
 
         {datos && (
           <p className="flex flex-wrap items-center gap-2 text-[11.5px] text-muted">

@@ -121,9 +121,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reportes/seguimiento', [\App\Http\Controllers\SeguimientoController::class, 'reporte']);
 
     Route::get('/consultas', [ConsultaController::class, 'index']);
+    // La papelera: borradores descartados que se pueden restaurar (solo admin).
+    // Va antes de /consultas/{consulta} para que no la capture como un id.
+    Route::get('/consultas-eliminados', [ConsultaController::class, 'eliminados']);
     Route::get('/consultas/{consulta}', [ConsultaController::class, 'show']);
     Route::put('/consultas/{consulta}', [ConsultaEscrituraController::class, 'update']);
     Route::delete('/consultas/{consulta}', [ConsultaEscrituraController::class, 'destroy']);
+    // Sacar un borrador de la papelera. El binding tiene que ver los borrados.
+    Route::post('/consultas/{consulta}/restaurar', [ConsultaEscrituraController::class, 'restaurar'])->withTrashed();
 
     Route::get('/consultas/{consulta}/borradores', [ConsultaController::class, 'borradores']);
     Route::get('/consultas/{consulta}/relacionadas', [ConsultaController::class, 'relacionadas']);

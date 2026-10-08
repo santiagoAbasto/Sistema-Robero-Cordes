@@ -13,7 +13,9 @@ import {
   Td,
   Th,
 } from '../../components/ui'
-import { Casilla, Lista, Texto } from '../../components/ui/form'
+import { Casilla, Guardado, Lista, Texto } from '../../components/ui/form'
+import DescartarBorrador from '../../components/DescartarBorrador'
+import { useAuth } from '../../lib/auth'
 import {
   buscarConsultas,
   buscarEmpresas,
@@ -220,7 +222,7 @@ export function ConsultasPorFecha() {
     tipo: '',
   })
 
-  const { datos, cargando } = useCarga(
+  const { datos, cargando, recargar } = useCarga(
     () =>
       buscarConsultas({
         desde: f.desde,
@@ -289,7 +291,9 @@ export function ConsultasPorFecha() {
           <SinResultados titulo="No hubo movimientos en ese período" detalle="Probá ampliando las fechas." />
         )}
 
-        {!cargando && consultas.length > 0 && <TablaConsultas consultas={consultas} />}
+        {!cargando && consultas.length > 0 && (
+          <TablaConsultas consultas={consultas} onDescartado={recargar} />
+        )}
       </Card>
     </div>
   )
@@ -314,7 +318,7 @@ export function BuscarConsultas() {
     sin_respuesta: false,
   })
 
-  const { datos, cargando } = useCarga(
+  const { datos, cargando, recargar } = useCarga(
     () =>
       buscarConsultas({
         material_id: f.material_id ? Number(f.material_id) : '',
@@ -399,7 +403,9 @@ export function BuscarConsultas() {
           />
         )}
 
-        {!cargando && consultas.length > 0 && <TablaConsultas consultas={consultas} conMaterial />}
+        {!cargando && consultas.length > 0 && (
+          <TablaConsultas consultas={consultas} conMaterial onDescartado={recargar} />
+        )}
       </Card>
     </div>
   )
@@ -410,10 +416,18 @@ export function BuscarConsultas() {
 function TablaConsultas({
   consultas,
   conMaterial,
+  onDescartado,
 }: {
   consultas: import('../../types/indice').Consulta[]
   conMaterial?: boolean
+  /** Se descartó un borrador: el padre vuelve a cargar la lista. */
+  onDescartado?: () => void
 }) {
+  const { user } = useAuth()
+  const esAdmin = user?.role === 'Administrador'
+  const [aDescartar, setADescartar] = useState<{ id: number; empresa: string } | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
+
   return (
     <>
       <Tabla>
@@ -467,6 +481,15 @@ function TablaConsultas({
                 <div className="flex items-center justify-end gap-3">
                   <Accion to={`/consultas/${c.id}`}>Abrir</Accion>
                   <Accion to={`/imprimir?empresa=${c.empresa?.id}&consulta=${c.id}`}>Imprimir</Accion>
+                  {/* Descartar un borrador: sólo admin, y con su clave. */}
+                  {esAdmin && c.estado === 'Borrador' && (
+                    <Accion
+                      apagado
+                      onClick={() => setADescartar({ id: c.id, empresa: c.empresa?.nombre ?? '' })}
+                    >
+                      Descartar
+                    </Accion>
+                  )}
                 </div>
               </Td>
             </tr>
@@ -477,6 +500,16 @@ function TablaConsultas({
       <NotaPie>
         Desde acá se abre la cotización o se imprime, sin tener que pasar por la ficha de la empresa.
       </NotaPie>
+
+      <DescartarBorrador
+        consulta={aDescartar}
+        onCerrar={() => setADescartar(null)}
+        onListo={(m) => {
+          setAviso(m)
+          onDescartado?.()
+        }}
+      />
+      <Guardado mensaje={aviso} onCerrar={() => setAviso(null)} />
     </>
   )
 }

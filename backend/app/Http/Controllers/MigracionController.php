@@ -133,6 +133,8 @@ class MigracionController extends Controller
             'que' => ['required', Rule::in(['materiales', 'empresas', 'cotizaciones'])],
             'buscar' => ['nullable', 'string', 'max:80'],
             'pagina' => ['nullable', 'integer', 'min:1'],
+            // Para ver el antes/ahora de UNA cotización, no las de toda la empresa.
+            'cotizacion' => ['nullable', 'integer'],
         ]);
 
         $archivo = match ($datos['que']) {
@@ -154,6 +156,24 @@ class MigracionController extends Controller
 
         foreach ($this->leerCsv($archivo) as $i => $fila) {
             $filas[] = ['i' => $i, 'fila' => $fila];
+        }
+
+        /*
+          Una cotización puntual: desde su ficha, "Antes y después" abre esta
+          pantalla apuntando a ESA cotización y no a las de toda la empresa.
+
+          Las cotizaciones se emparejan con el Access por posición —el archivo
+          no trae un número propio, la columna ID es la de la empresa y se
+          repite—, así que la fila de una cotización es su lugar en la lista
+          ordenada por id. withTrashed para que un borrador en la papelera no
+          corra las posiciones del resto.
+        */
+        if ($datos['que'] === 'cotizaciones' && ! empty($datos['cotizacion'])) {
+            $pos = Consulta::withTrashed()->orderBy('id')->pluck('id')->search((int) $datos['cotizacion']);
+
+            $filas = $pos === false
+                ? []
+                : array_values(array_filter($filas, fn (array $f) => $f['i'] === $pos));
         }
 
         $buscar = trim($datos['buscar'] ?? '');
@@ -338,10 +358,11 @@ class MigracionController extends Controller
     private function compararCotizaciones(array $enPantalla): array
     {
         // La lista de ids ordenada es liviana; las fichas se traen solo para
-        // las veinte posiciones que se estan mirando.
-        $ids = Consulta::orderBy('id')->pluck('id');
+        // las veinte posiciones que se estan mirando. withTrashed para que la
+        // posicion sea siempre la misma, haya o no borradores en la papelera.
+        $ids = Consulta::withTrashed()->orderBy('id')->pluck('id');
 
-        $enBase = Consulta::with(['lineas.material', 'lineas.forma', 'empresa'])
+        $enBase = Consulta::withTrashed()->with(['lineas.material', 'lineas.forma', 'empresa'])
             ->whereIn('id', array_filter(array_map(fn ($f) => $ids->get($f['i']), $enPantalla)))
             ->get()->keyBy('id');
 
