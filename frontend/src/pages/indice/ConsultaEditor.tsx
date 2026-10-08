@@ -2404,7 +2404,7 @@ function MedidasDeLaForma({
   }
 
   return (
-    <div className="mt-2.5">
+    <div className="mt-2">
       <div className="mb-1.5 flex items-center gap-2">
         <Ruler size={12} strokeWidth={2.2} className="text-faint" />
         <span className="text-[10.5px] font-semibold uppercase tracking-wide text-faint">
@@ -2451,7 +2451,7 @@ function MedidasDeLaForma({
         </div>
       )}
 
-      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {campos.map((campo) => {
           const cargada = linea.calc.medidas[campo.clave] ?? { valor: '', unidad: 'mm' }
           const puestoPorCano = Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')
@@ -2557,7 +2557,7 @@ function MedidasDeLaForma({
 
       {/* Sólo donde tiene sentido: un disco o una esfera no llevan largo. */}
       {campos.some((c) => c.clave === 'length') && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
           <Casilla marcada={largoVariable} onChange={alternarLargoVariable}>
             Largos variables
           </Casilla>
@@ -2684,8 +2684,11 @@ function LineaFila({
     esta en el catalogo— asi que se busca por nombre. Si no aparece, no
     sabemos que medidas lleva y queda la caja de texto libre.
   */
+  // Si la forma pedida no está cargada aparte, se usa la de lo ofrecido: casi
+  // siempre es la misma, y así las medidas de lo pedido salen con sus campos
+  // (Diametro, Largo, Piezas) y no como una caja de texto suelta.
   const formaPedida =
-    catalogos?.formas.find((f) => f.nombre === linea.pedido_forma) ?? null
+    catalogos?.formas.find((f) => f.nombre === linea.pedido_forma) ?? formaElegida
   const camposDeLoPedido = formaPedida?.campos ?? []
 
   // El caño que pidió el cliente: se reconoce por su diámetro exterior y su
@@ -2790,7 +2793,7 @@ function LineaFila({
 
   return (
     <div
-      className={`rounded-[10px] border p-3 ${
+      className={`overflow-hidden rounded-[10px] border p-2.5 ${
         linea.quitada
           ? 'border-line bg-[#fcfaf6] opacity-70'
           : esAlternativa
@@ -2798,7 +2801,7 @@ function LineaFila({
             : 'border-line bg-white'
       }`}
     >
-      <div className="mb-2.5 flex flex-wrap items-center gap-2.5">
+      <div className="mb-2 flex flex-wrap items-center gap-2.5">
         <span
           className={`grid h-6 min-w-[24px] place-items-center rounded-md px-1 text-[11px] font-bold ${
             esAlternativa ? 'bg-brand-100 text-brand-600' : 'bg-slate-100 text-slate-500'
@@ -2863,46 +2866,48 @@ function LineaFila({
         forma, medidas, cantidad y unidad.
       */}
       {!linea.igual_a_lo_pedido && (
-        <div className="mb-2.5 grid gap-2.5 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] p-2.5 lg:grid-cols-6">
-          <p className="text-[10.5px] font-bold uppercase tracking-wide text-warning-ink lg:col-span-6">
+        /*
+          Lo que pidió el cliente: una banda a sangre completa (-mx-2.5 px-2.5)
+          que arranca en el mismo borde que lo de abajo. Así "pidió" y "ofrece"
+          se leen en paralelo —material sobre material, cantidad sobre cantidad—
+          en vez de ser una cajita corrida hacia adentro.
+        */
+        <div className="-mx-2.5 mb-2 border-y border-[#f3d9a6] bg-[#fff8ee] px-2.5 py-2">
+          <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-warning-ink">
             Lo que pidió el cliente
           </p>
-          <Combo
-            id={`pedido-material-${linea.clave}`}
-            etiqueta="Material"
-            className="lg:col-span-2"
-            value={linea.pedido_material ?? ''}
-            onChange={(e) => onCambio({ pedido_material: e.target.value || null })}
-            placeholder="Elegi de la lista o escribi lo que pidio"
-            opciones={(catalogos?.materiales ?? []).map((m) => m.nombre)}
-          />
-          <Combo
-            id={`pedido-forma-${linea.clave}`}
-            etiqueta="Forma"
-            value={linea.pedido_forma ?? ''}
-            onChange={(e) => onCambio({ pedido_forma: e.target.value || null })}
-            placeholder="BARRA REDONDA"
-            opciones={(catalogos?.formas ?? []).map((f) => f.nombre)}
-          />
+          <div className="grid gap-2 lg:grid-cols-2">
+            <Combo
+              id={`pedido-material-${linea.clave}`}
+              etiqueta="Material"
+              value={linea.pedido_material ?? ''}
+              onChange={(e) => onCambio({ pedido_material: e.target.value || null })}
+              placeholder="Elegi de la lista o escribi lo que pidio"
+              opciones={(catalogos?.materiales ?? []).map((m) => m.nombre)}
+            />
+            <Combo
+              id={`pedido-forma-${linea.clave}`}
+              etiqueta="Forma"
+              value={linea.pedido_forma ?? ''}
+              onChange={(e) => onCambio({ pedido_forma: e.target.value || null })}
+              placeholder="BARRA REDONDA"
+              opciones={(catalogos?.formas ?? []).map((f) => f.nombre)}
+            />
+          </div>
+
           {/*
-            Las medidas de lo pedido, con los nombres que les pone la forma.
-
-            Era una caja llamada "Medidas" donde cada uno escribia lo que le
-            parecia —"DIA 65 X 145", "Ø65x145mm"— mientras que arriba, en lo
-            que se cotiza, hay un campo por medida: Diametro y Largo para una
-            barra, Ancho y Largo para una chapa. Las dos mitades de la misma
-            linea no se podian comparar de un vistazo, que es para lo que esta
-            este bloque.
-
-            Con una forma que no esta en el catalogo no sabemos que campos
-            lleva: ahi sigue la caja de texto, y las lineas viejas tambien.
+            Las medidas de lo pedido, con los nombres que les pone la forma, y
+            en las mismas columnas (cols-4) que las de lo ofrecido: Diametro
+            cae sobre Diametro, Largo sobre Largo. Con una forma que no está en
+            el catálogo queda la caja de texto, como las líneas viejas.
           */}
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {formaPedida?.usa_cano ? (
             <>
               {/* El caño que pidió el cliente se elige por su medida y su
                   schedule, igual que en lo que se ofrece: no con diámetro
                   exterior y pared sueltos. */}
-              <div className="grid gap-2 sm:grid-cols-2 lg:col-span-4">
+              <div className="grid gap-2 sm:grid-cols-2 lg:col-span-3">
                 <div>
                   <Etiqueta>Medida del caño</Etiqueta>
                   <select
@@ -2939,7 +2944,7 @@ function LineaFila({
                   </select>
                 </div>
               </div>
-              <div className="lg:col-span-2">
+              <div>
                 <Etiqueta>Largo</Etiqueta>
                 <div className="flex">
                   <input
@@ -3002,37 +3007,60 @@ function LineaFila({
           ) : (
             <Texto
               etiqueta="Medidas"
+              className="lg:col-span-2"
               value={linea.pedido_dimensiones ?? ''}
               onChange={(e) => onCambio({ pedido_dimensiones: e.target.value || null })}
               placeholder="DIA 65 X 145 MM"
             />
           )}
-          <Texto
-            etiqueta="Cantidad"
-            type="number"
-            step="0.01"
-            value={linea.cantidad_pedida ?? ''}
-            onChange={(e) =>
-              onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
-            }
-          />
-          <Lista
-            etiqueta="Unidad"
-            value={linea.unidad_pedida_id ?? ''}
-            onChange={(e) =>
-              onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
-            }
-            opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
-          />
-          <Combo
-            id={`pedido-caracteristicas-${linea.clave}`}
-            etiqueta="Caracteristicas que pidio"
-            className="lg:col-span-3"
-            value={linea.pedido_caracteristicas ?? ''}
-            onChange={(e) => onCambio({ pedido_caracteristicas: e.target.value || null })}
-            placeholder="con/sin costura, laminada, norma"
-            opciones={catalogos?.caracteristicas ?? []}
-          />
+          {/* Piezas, como en lo que se ofrece: lo pedido se lee igual. */}
+          {formaPedida && (
+            <div>
+              <Etiqueta>Piezas</Etiqueta>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                aria-label="Piezas pedidas"
+                value={linea.cantidad_pedida ?? ''}
+                onChange={(e) =>
+                  onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
+                }
+                className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+              />
+            </div>
+          )}
+          </div>
+
+          {/* Cantidad y Unidad en las mismas columnas (col 1 y 2) que lo de abajo. */}
+          <div className="mt-2 grid gap-2 lg:grid-cols-6">
+            <Texto
+              etiqueta="Cantidad"
+              type="number"
+              step="0.01"
+              value={linea.cantidad_pedida ?? ''}
+              onChange={(e) =>
+                onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
+              }
+            />
+            <Lista
+              etiqueta="Unidad"
+              value={linea.unidad_pedida_id ?? ''}
+              onChange={(e) =>
+                onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
+              }
+              opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
+            />
+            <Combo
+              id={`pedido-caracteristicas-${linea.clave}`}
+              etiqueta="Caracteristicas que pidio"
+              className="lg:col-span-4"
+              value={linea.pedido_caracteristicas ?? ''}
+              onChange={(e) => onCambio({ pedido_caracteristicas: e.target.value || null })}
+              placeholder="con/sin costura, laminada, norma"
+              opciones={catalogos?.caracteristicas ?? []}
+            />
+          </div>
           {/*
             El motivo se elige o se escribe, y lo escrito queda en la lista.
 
@@ -3041,15 +3069,16 @@ function LineaFila({
             agregar una octava era tocar el codigo. Igual que la condicion de
             pago, la primera vez se escribe y de ahi en mas esta en la lista.
           */}
-          <Combo
-            id={`motivo-${linea.clave}`}
-            etiqueta="Motivo del cambio"
-            className="lg:col-span-6"
-            value={linea.motivo_cambio ?? ''}
-            onChange={(e) => onCambio({ motivo_cambio: e.target.value || null })}
-            placeholder="Elegi de la lista o escribi por que se cotiza distinto"
-            opciones={catalogos?.motivos_cambio ?? []}
-          />
+          <div className="mt-2">
+            <Combo
+              id={`motivo-${linea.clave}`}
+              etiqueta="Motivo del cambio"
+              value={linea.motivo_cambio ?? ''}
+              onChange={(e) => onCambio({ motivo_cambio: e.target.value || null })}
+              placeholder="Elegi de la lista o escribi por que se cotiza distinto"
+              opciones={catalogos?.motivos_cambio ?? []}
+            />
+          </div>
         </div>
       )}
 
@@ -3059,7 +3088,7 @@ function LineaFila({
         </p>
       )}
 
-      <div className="grid items-end gap-2.5 lg:grid-cols-2">
+      <div className="grid items-end gap-2 lg:grid-cols-2">
         <ElegirMaterial linea={linea} catalogos={catalogos} onCambio={onCambio} />
         <Lista
           etiqueta="FORMA"
@@ -3101,7 +3130,7 @@ function LineaFila({
         Con o sin costura, laminada, la norma. Es lo ofrecido: entra en la
         descripción impresa. La lista de sugerencias crece con lo que se escribe.
       */}
-      <div className="mt-2.5 grid items-end gap-2.5 lg:grid-cols-[1fr_170px_120px]">
+      <div className="mt-2 grid items-end gap-2 lg:grid-cols-[1fr_170px_120px]">
         <Combo
           id={`caracteristicas-${linea.clave}`}
           etiqueta="Caracteristicas"
@@ -3129,7 +3158,7 @@ function LineaFila({
         />
       </div>
 
-      <div className="mt-2.5 grid items-end gap-2.5 lg:grid-cols-6">
+      <div className="mt-2 grid items-end gap-2 lg:grid-cols-6">
         <Texto
           etiqueta="Cantidad"
           type="number"
@@ -3278,7 +3307,7 @@ function LineaFila({
         </p>
       )}
 
-      <div className="mt-2.5">
+      <div className="mt-2">
         <Texto
           etiqueta="Descripcion — es lo que sale impreso"
           ayuda={
@@ -3314,7 +3343,7 @@ function LineaFila({
         impreso: es lo que le permite comparar la oferta renglón por renglón
         contra lo que pidió, y después contra lo que recibe.
       */}
-      <div className="mt-2.5 grid items-end gap-2.5 lg:grid-cols-[130px_1fr]">
+      <div className="mt-2 grid items-end gap-2 lg:grid-cols-[130px_1fr]">
         <Texto
           etiqueta="Item del cliente"
           value={linea.item_cliente ?? ''}
@@ -3329,7 +3358,7 @@ function LineaFila({
         />
       </div>
 
-      <div className="mt-2.5">
+      <div className="mt-2">
         <AreaTexto
           etiqueta="Nota del articulo — sale impresa"
           ayuda="plano, posicion, tratamiento: lo que haya que aclarar de este item"
@@ -3345,7 +3374,7 @@ function LineaFila({
         habia donde verlas ni corregirlas al editar: la unica forma de poner
         una colada era el sistema anterior.
       */}
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-app px-3 py-2">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-app px-3 py-2">
         <Casilla marcada={Boolean(linea.aprox)} onChange={(v) => onCambio({ aprox: v })}>
           Medida y peso aproximados
         </Casilla>
@@ -3380,7 +3409,7 @@ function LineaFila({
         )}
       </div>
 
-      <div className="mt-2.5">
+      <div className="mt-2">
         <button
           type="button"
           onClick={() => setCalculando((v) => !v)}
