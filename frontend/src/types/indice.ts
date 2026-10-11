@@ -151,6 +151,8 @@ export interface ConsultaLinea {
   aprox: boolean
   idem: boolean
   quitada: boolean
+  no_cotizada: boolean
+  motivo_no_cotiza: string | null
   desde_stock: boolean
   deposito: string | null
   colada: string | null
@@ -389,6 +391,8 @@ export interface CalculoDePeso {
 export interface Catalogos {
   relaciones: Relacion[]
   motivos_cambio: string[]
+  /** Motivos predeterminados por los que no se cotiza un ítem. */
+  motivos_no_cotiza: string[]
   tipos_consulta: TipoConsulta[]
   estados: EstadoConsulta[]
   solicitud_vias: string[]

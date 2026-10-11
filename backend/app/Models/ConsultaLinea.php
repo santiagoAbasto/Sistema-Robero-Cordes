@@ -54,6 +54,7 @@ class ConsultaLinea extends Model
         'idem' => 'boolean',
         'desde_stock' => 'boolean',
         'quitada' => 'boolean',
+        'no_cotizada' => 'boolean',
         // Si el factor lo saco la cuenta o lo puso una persona.
         'factor_calculado' => 'boolean',
         'cantidad' => 'decimal:2',
@@ -144,10 +145,29 @@ class ConsultaLinea extends Model
         return $this->alternativa_de_id !== null;
     }
 
-    /** Lo que suma: lo que no se quito, sin las alternativas, que se ofrecen para elegir. */
+    /**
+     * Los motivos predeterminados por los que no se cotiza un item.
+     *
+     * Son los de siempre; con el campo libre se puede escribir otro. La lista
+     * fija mantiene limpios los graficos del apartado de declinadas.
+     */
+    public const MOTIVOS_DECLINACION = [
+        'No trabajamos ese material',
+        'Por el plazo de entrega',
+        'Por las dimensiones',
+        'No conseguimos el material',
+        'Fuera de nuestra línea',
+    ];
+
+    /**
+     * Lo que suma: lo que no se quito ni se declino, sin las alternativas.
+     *
+     * Una linea "no se cotiza" queda en la hoja —el cliente ve que ese item no
+     * se lo cotizamos y por que— pero no suma al total.
+     */
     public function cuentaParaElTotal(): bool
     {
-        return ! $this->quitada && ! $this->esAlternativa();
+        return ! $this->quitada && ! $this->no_cotizada && ! $this->esAlternativa();
     }
 
     public function unidadPedida(): BelongsTo

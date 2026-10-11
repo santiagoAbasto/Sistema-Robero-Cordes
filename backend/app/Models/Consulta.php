@@ -201,6 +201,15 @@ class Consulta extends Model
     public const CERRADA = 'Cerrada por declinacion';
 
     /**
+     * No la cotizamos NOSOTROS: no se trabaja ese material, el plazo, la medida.
+     *
+     * Es distinta de "Cerrada por declinacion", que es el cliente que dijo que
+     * no a una oferta. Acá no llegamos a ofrecer: es un cierre sin numero, ni
+     * borrador ni emitida. Se da sola cuando ninguna linea se cotiza.
+     */
+    public const DECLINADA = 'Declinada';
+
+    /**
      * Los estados que puede tener una cotizacion, en el orden en que suceden.
      *
      * Esta lista es la unica: la validacion de escritura y la lista que se le
@@ -213,9 +222,42 @@ class Consulta extends Model
         'Sin cotizar',
         'Confirmada',
         'Vendida',
+        self::DECLINADA,
         self::CERRADA,
         self::VENCIDA,
     ];
+
+    /**
+     * Pone la cotización en "Declinada" si no se cotiza ninguna línea, y la
+     * reabre si vuelve a cotizarse alguna.
+     *
+     * "Si todas las líneas no se cotizan, se guarda como declinada." Una emitida
+     * o un final (vendida, cerrada, vencida) no se toca sola. Las alternativas y
+     * las líneas quitadas no cuentan. El cambio de estado queda en el control de
+     * cambios por el observador de siempre (RegistraCambios).
+     */
+    public function recalcularDeclinacion(): void
+    {
+        if ($this->estaEmitida()
+            || in_array($this->estado, ['Vendida', self::CERRADA, self::VENCIDA], true)) {
+            return;
+        }
+
+        $vigentes = $this->lineas->where('quitada', false)->whereNull('alternativa_de_id');
+
+        if ($vigentes->isEmpty()) {
+            return;
+        }
+
+        $todasDeclinadas = $vigentes->every(fn ($l) => (bool) $l->no_cotizada);
+
+        if ($todasDeclinadas && $this->estado !== self::DECLINADA) {
+            $this->update(['estado' => self::DECLINADA]);
+        } elseif (! $todasDeclinadas && $this->estado === self::DECLINADA) {
+            // Vuelve a tener algo para ofrecer: se reabre al estado normal.
+            $this->update(['estado' => 'Confirmada']);
+        }
+    }
 
     /** Los dos finales de los que no se vuelve solo: los cierra una persona. */
     public const ESTADOS_DE_CIERRE = [self::CERRADA, self::VENCIDA];

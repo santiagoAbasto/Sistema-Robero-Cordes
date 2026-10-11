@@ -59,6 +59,77 @@ class LectorDeSolicitudTest extends TestCase
         $this->assertNull($this->leer('2 barras redondas 30mm x 1000')['caracteristicas']);
     }
 
+    /**
+     * El material que el cliente dice una sola vez baja a cada item.
+     *
+     * "La ia no trae el material": el cliente escribe "En ALLOY 20:" arriba de
+     * una lista, o "aisi 420" en su propio renglon, y cada item se queda sin
+     * material. Ahora baja: del catalogo cuando esta, o como "lo que pidio"
+     * cuando no —AISI 420 no es ninguno de los 420 cargados, lo elige una
+     * persona—. La cantidad dicha en su renglon tambien se engancha.
+     */
+    public function test_el_material_dicho_una_vez_baja_a_los_items(): void
+    {
+        Material::create(['nombre' => 'ALLOY 20', 'activo' => true]);
+
+        $alloy = $this->lector->interpretar(
+            "En ALLOY 20 - UNS N08020:\nCaño 2\" x 1500 mm - Cant.: 1\nBrida 2\" - Cant.: 2"
+        )['lineas'];
+
+        $this->assertCount(2, $alloy);
+        $this->assertSame('ALLOY 20', $alloy[0]['material']);
+        $this->assertSame('ALLOY 20', $alloy[1]['material']);
+        $this->assertEqualsWithDelta(1.0, $alloy[0]['cantidad'], 0.001);
+        $this->assertEqualsWithDelta(2.0, $alloy[1]['cantidad'], 0.001);
+
+        // Dicho despues del item y fuera del catalogo: queda como lo que pidio.
+        $barra = $this->lector->interpretar(
+            "Cantidad: 6\nbarra cuadrada 12 x 1000mm\naisi 420"
+        )['lineas'][0];
+
+        $this->assertSame('BARRA CUADRADA', $barra['forma']);
+        $this->assertEqualsWithDelta(6.0, $barra['cantidad'], 0.001);
+        $this->assertFalse($barra['igual_a_lo_pedido']);
+        $this->assertSame('AISI 420', $barra['pedido_material']);
+    }
+
+    /**
+     * Una captura de pantalla llega en vertical: la forma en un renglon y abajo
+     * cada medida y el material con su rotulo. Es UN item, no tres renglones.
+     */
+    public function test_lee_una_captura_vertical(): void
+    {
+        $r = $this->lector->interpretar(
+            "BARRA CUADRADA\nSeccion: 12 mm\nLongitud: 1000 mm\nMaterial: Acero ASTM A276 420"
+        );
+
+        $this->assertCount(1, $r['lineas']);
+        $linea = $r['lineas'][0];
+        $this->assertSame('BARRA CUADRADA', $linea['forma']);
+        $this->assertEqualsWithDelta(1000.0, $linea['largo_mm'], 0.001);
+        $this->assertFalse($linea['igual_a_lo_pedido']);
+        $this->assertSame('Acero ASTM A276 420', $linea['pedido_material']);
+        $this->assertSame([], $r['sin_reconocer']);
+    }
+
+    /**
+     * Las pulgadas con fraccion: "1 1/2"" no es "2"". Se guardan como las
+     * escribe el cliente, con los dos diametros de una reduccion, y el largo
+     * escrito aparte en mm se toma.
+     */
+    public function test_lee_pulgadas_y_fracciones(): void
+    {
+        $cano = $this->lector->interpretar('1 caño s/c 1 1/2" Sch. 40 - Largo: 1500 mm')['lineas'][0];
+        // La medida entera, no "2"" (antes se comia el "1 " de la fraccion).
+        $this->assertStringStartsWith('1 1/2"', $cano['dimensiones']);
+        $this->assertEqualsWithDelta(1500.0, $cano['largo_mm'], 0.001);
+
+        // La reduccion lleva sus dos medidas, cada una con su fraccion.
+        $red = $this->lector->interpretar('1 caño 1 1/2" x 1 1/4"')['lineas'][0];
+        $this->assertStringContainsString('1 1/2"', $red['dimensiones']);
+        $this->assertStringContainsString('1 1/4"', $red['dimensiones']);
+    }
+
     #[DataProvider('pedidosConForma')]
     public function test_reconoce_las_formas_del_catalogo(string $renglon, string $forma): void
     {

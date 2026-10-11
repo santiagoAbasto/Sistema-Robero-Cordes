@@ -60,6 +60,9 @@
         .nota-linea { font-size: 7.6pt; color: #334155; padding-top: 1pt; }
         .pedido { font-size: 7pt; color: #9a6207; padding-top: 1pt; }
         .aprox { font-size: 7.4pt; color: #5b6b7b; margin-left: 3pt; }
+        /* Un item que no se cotiza: se ve, con su motivo, pero sin precio. */
+        .no-cotiza { font-size: 7pt; font-weight: bold; color: #b4472a; padding-top: 1pt; }
+        .no-cotiza-importe { text-align: center; font-size: 7pt; font-style: italic; color: #b4472a; }
 
         .total { width: 100%; margin-top: 6pt; border-top: 1pt solid #0f172a; }
         .total td { padding-top: 5pt; font-size: 10pt; font-weight: bold; }

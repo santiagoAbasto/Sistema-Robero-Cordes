@@ -54,10 +54,34 @@ class FirmaDeMailTest extends TestCase
         $this->assertSame('Pablo Ferreyra', $d['contacto']);
         $this->assertSame('Supervisor de Mantenimiento', $d['cargo']);
         $this->assertSame('pferreyra@apex.com.ar', $d['mail']);
-        $this->assertSame('(2954) 15-412233', $d['telefono']);
+        $this->assertSame('+54 9 295441-2233', $d['telefono']);
         $this->assertSame('www.apex.com.ar', $d['web']);
         $this->assertSame('Parque Industrial, Calle 9 esq. 10', $d['direccion']);
         $this->assertSame('6300', $d['codigo_postal']);
+    }
+
+    /**
+     * El fijo y el celular: los dos, no solo el primero.
+     *
+     * "La ia solo toma un numero": una firma con "Tel / Fax" y "Celular"
+     * traia uno solo, y encima mezclaba formatos. Ahora salen los dos, cada
+     * uno con su tipo y en el mismo formato +54.
+     */
+    public function test_trae_los_dos_telefonos_normalizados(): void
+    {
+        $d = $this->leer(
+            "Ing. Alejandro Koblecovsky\nFinanzas - Aceros Corona S.R.L.\n"
+            ."Tel / Fax:: +54 11 46997003 int 109\nCelular: 115009-3040"
+        );
+
+        // El primero queda como el principal.
+        $this->assertSame('+54 11 4699-7003 int 109', $d['telefono']);
+        $this->assertSame('Telefono', $d['tipo_telefono']);
+
+        $tels = collect($d['telefonos']);
+        $this->assertCount(2, $tels);
+        $this->assertTrue($tels->contains(fn ($t) => $t['valor'] === '+54 11 4699-7003 int 109' && $t['tipo'] === 'Telefono'));
+        $this->assertTrue($tels->contains(fn ($t) => $t['valor'] === '+54 9 11 5009-3040' && $t['tipo'] === 'Celular'));
     }
 
     /**
@@ -127,7 +151,7 @@ class FirmaDeMailTest extends TestCase
     public function test_no_confunde_cualquier_numero_con_un_telefono(): void
     {
         $this->assertNull($this->leer("Juan Perez\nCalle Falsa 1234\nCP 1870")['telefono']);
-        $this->assertSame('11 4567-8900', $this->leer("Juan Perez\nTel: 11 4567-8900")['telefono']);
+        $this->assertSame('+54 11 4567-8900', $this->leer("Juan Perez\nTel: 11 4567-8900")['telefono']);
     }
 
     /** Un texto que no es una firma no inventa nada. */
@@ -169,7 +193,7 @@ class FirmaDeMailTest extends TestCase
         $this->assertSame('Sulfoquimica S.A.', $d['empresa'], 'el nombre legal, no el del dominio');
         $this->assertSame('Panamá 8051', $d['direccion']);
         $this->assertSame('1682', $d['codigo_postal']);
-        $this->assertSame('1145672389', $d['telefono']);
+        $this->assertSame('+54 9 11 4567-2389', $d['telefono']);
     }
 
     /**
@@ -209,7 +233,7 @@ class FirmaDeMailTest extends TestCase
             $this->assertSame('Diego Arce', $d['contacto']);
             $this->assertNull($d['cargo'], 'NOMBRE es una etiqueta, no un cargo');
             $this->assertSame('darce@implantestraumatologicos.com', $d['mail']);
-            $this->assertSame('011 4812-3365', $d['telefono']);
+            $this->assertSame('+54 11 4812-3365', $d['telefono']);
             $this->assertSame($argentina->id, $d['pais_id']);
         }
     }

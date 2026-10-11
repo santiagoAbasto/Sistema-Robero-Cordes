@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Calculator, Check, Copy, Eye, EyeOff, FilePlus2, Layers, Lock, Plus, Ruler, Trash2, Wand2, Scale } from 'lucide-react'
+import { Calculator, Check, Copy, Eye, EyeOff, FilePlus2, Layers, Lock, Plus, Trash2, Wand2, Scale } from 'lucide-react'
 import {
   Accion,
   Aviso,
@@ -24,6 +24,7 @@ import {
   mensajeDeError,
   nombreDeLaHoja,
   plata,
+  imagenPegada,
   interpretarTexto,
   nuevaRevision,
   traerConsulta,
@@ -271,6 +272,8 @@ function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
     deposito: l.deposito ?? null,
     colada: l.colada ?? null,
     quitada: l.quitada,
+    no_cotizada: l.no_cotizada ?? false,
+    motivo_no_cotiza: l.motivo_no_cotiza ?? null,
     diametro_mm: l.diametro_mm ? Number(l.diametro_mm) : null,
     espesor_mm: l.espesor_mm ? Number(l.espesor_mm) : null,
     ancho_mm: l.ancho_mm ? Number(l.ancho_mm) : null,
@@ -834,11 +837,12 @@ export default function ConsultaEditor() {
    * Reemplazan a las que hay. Antes se sumaban, y cada clic agregaba otra
    * tanda: con el mismo pedido Belén terminó con 3 líneas y Roberto con 1.
    */
-  async function precargarDesdeTexto() {
-    const texto = cabecera.solicitud_texto.trim()
+  async function precargar(entrada?: string | File) {
+    const esImagen = entrada instanceof File
+    const texto = esImagen ? '' : cabecera.solicitud_texto.trim()
 
-    if (!texto) {
-      setError('Pegá primero el texto del mail o del WhatsApp en "Lo que pidió el cliente".')
+    if (!esImagen && !texto) {
+      setError('Pegá el texto del mail o del WhatsApp en "Lo que pidió el cliente", o subí una captura.')
 
       return
     }
@@ -859,7 +863,10 @@ export default function ConsultaEditor() {
     setError(null)
 
     try {
-      const r = await interpretarTexto(texto)
+      const r = await interpretarTexto(esImagen ? (entrada as File) : texto)
+
+      // Lo que la IA leyó de la captura queda a la vista, para revisarlo.
+      if (esImagen && r.texto) setCabecera((c) => ({ ...c, solicitud_texto: r.texto }))
 
       if (r.lineas.length === 0) {
         // El aviso dice POR QUE no salio: sin eso, un problema de la IA se lee
@@ -1338,7 +1345,7 @@ export default function ConsultaEditor() {
               cabecera={cabecera}
               setCabecera={setCabecera}
               catalogos={catalogos}
-              onPrecargar={precargarDesdeTexto}
+              onPrecargar={precargar}
               precargando={precargando}
             />
           </div>
@@ -1494,7 +1501,7 @@ function Solicitud({
   cabecera: Record<string, unknown>
   setCabecera: (v: never) => void
   catalogos: Catalogos | null
-  onPrecargar: () => void
+  onPrecargar: (entrada?: string | File) => void
   precargando: boolean
 }) {
   const c = cabecera as {
@@ -1540,28 +1547,52 @@ function Solicitud({
 
       <AreaTexto
         etiqueta="Lo que mando el cliente"
-        ayuda="pegalo tal cual, del mail o del WhatsApp"
+        ayuda="pegalo tal cual, o pegá una captura (Ctrl+V)"
         // Seis y no cuatro: ahora se lee mientras se cargan las líneas de
         // abajo, así que un pedido de tres ítems tiene que entrar sin scroll.
         filas={6}
         value={c.solicitud_texto}
         onChange={(e) => set('solicitud_texto', e.target.value)}
+        onPaste={(e) => {
+          // Si lo pegado es SOLO una imagen (una captura), se lee la imagen;
+          // si trae texto, gana el texto, como siempre.
+          const imagen = imagenPegada(e)
+          if (imagen) {
+            e.preventDefault()
+            onPrecargar(imagen)
+          }
+        }}
         placeholder={'Hola Roberto, necesito cotizar:\n6 UN HASTELLOY C-276 BAR RED 38.1 X 145MM\n4 un AISI 316TI barra DIA 65 X 145MM'}
       />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Boton variante="primario" onClick={onPrecargar} disabled={precargando}>
+        <Boton variante="primario" onClick={() => onPrecargar()} disabled={precargando}>
           <Wand2 size={15} strokeWidth={2.2} />
-          {precargando ? 'Leyendo…' : 'Cargar las lineas desde el texto'}
+          {precargando ? 'Leyendo…' : 'Cargar las lineas'}
         </Boton>
+        {catalogos?.ia_activa && (
+          <label className="cursor-pointer text-[12px] font-semibold text-brand-600 underline">
+            o subí una captura
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const imagen = e.target.files?.[0]
+                e.target.value = ''
+                if (imagen) onPrecargar(imagen)
+              }}
+            />
+          </label>
+        )}
         {catalogos?.ia_activa ? (
           <Chip tono="violeta">con IA</Chip>
         ) : (
           <Chip tono="neutro">sin IA</Chip>
         )}
-        <p className="min-w-[280px] flex-1 text-[11.5px] leading-relaxed text-[#6c93ae]">
-          El sistema separa cantidad, unidad, material, forma y medida. Nada se guarda solo: son
-          líneas propuestas para revisar y corregir.
+        <p className="min-w-[260px] flex-1 text-[11.5px] leading-relaxed text-[#6c93ae]">
+          Del texto o de una captura: separa cantidad, unidad, material, forma y medida. Son líneas
+          propuestas para revisar.
         </p>
       </div>
     </Card>
@@ -2024,6 +2055,8 @@ function Lineas({
           precio_unitario: null,
           precio_por_kilo: null,
           quitada: false,
+          no_cotizada: false,
+          motivo_no_cotiza: null,
           // Una copia es una línea aparte, no una alternativa de la anterior.
           madreClave: null,
           calc: { ...ultima.calc, medidas: { ...ultima.calc.medidas } },
@@ -2051,6 +2084,8 @@ function Lineas({
         precio_unitario: null,
         precio_por_kilo: null,
         quitada: false,
+        no_cotizada: false,
+        motivo_no_cotiza: null,
         transporte: null,
         plazo_dias: null,
         igual_a_lo_pedido: true,
@@ -2404,14 +2439,7 @@ function MedidasDeLaForma({
   }
 
   return (
-    <div className="mt-2">
-      <div className="mb-1.5 flex items-center gap-2">
-        <Ruler size={12} strokeWidth={2.2} className="text-faint" />
-        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-faint">
-          Medidas de {forma.nombre.toLowerCase()}
-        </span>
-      </div>
-
+    <div className="mt-1.5">
       {/*
         Dos pasos: primero la medida, después el schedule. En una sola lista son
         324 renglones. Y los schedules que comparten pared van juntos —para 2"
@@ -2419,12 +2447,12 @@ function MedidasDeLaForma({
         medida pasa de diez renglones a seis.
       */}
       {forma.usa_cano && (
-        <div className="mb-2 grid gap-2 sm:grid-cols-2 lg:w-2/3">
+        <div className="mb-2 grid gap-1.5 sm:grid-cols-2 lg:w-2/3">
           <select
             aria-label="Medida del caño"
             value={cano?.nombre ?? ''}
             onChange={(e) => elegirMedidaDeCano(e.target.value)}
-            className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
+            className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
           >
             <option value="">Caño de medida especial — cargo las medidas yo</option>
             {medidasDeCano.map((m) => (
@@ -2439,7 +2467,7 @@ function MedidasDeLaForma({
             value={linea.calc.canoId ?? ''}
             disabled={!cano}
             onChange={(e) => elegirCano(e.target.value ? Number(e.target.value) : null)}
-            className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
+            className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
           >
             <option value="">{cano ? 'Elegí el schedule' : '—'}</option>
             {schedulesDeLaMedida.map((g) => (
@@ -2451,7 +2479,7 @@ function MedidasDeLaForma({
         </div>
       )}
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
         {campos.map((campo) => {
           const cargada = linea.calc.medidas[campo.clave] ?? { valor: '', unidad: 'mm' }
           const puestoPorCano = Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')
@@ -2473,9 +2501,9 @@ function MedidasDeLaForma({
                     onChange={(e) =>
                       ponerRango(leer(e.target.value), linea.largo_max_mm ?? null, cargada.unidad)
                     }
-                    className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                    className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
                   />
-                  <span className="flex h-[36px] items-center border-y border-line-strong bg-app px-2 text-[11px] text-muted">
+                  <span className="flex h-7 items-center border-y border-line-strong bg-app px-2 text-[11px] text-muted">
                     a
                   </span>
                   <input
@@ -2487,7 +2515,7 @@ function MedidasDeLaForma({
                     onChange={(e) =>
                       ponerRango(linea.largo_min_mm ?? null, leer(e.target.value), cargada.unidad)
                     }
-                    className="h-[36px] min-w-0 flex-1 border-y border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                    className="h-7 min-w-0 flex-1 border-y border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
                   />
                   <select
                     aria-label="Unidad del largo"
@@ -2499,7 +2527,7 @@ function MedidasDeLaForma({
                         e.target.value,
                       )
                     }
-                    className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                    className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
                   >
                     {UNIDADES_MEDIDA.map((u) => (
                       <option key={u} value={u}>
@@ -2523,13 +2551,13 @@ function MedidasDeLaForma({
                   value={cargada.valor}
                   onChange={(e) => cambiarMedida(campo.clave, { valor: e.target.value })}
                   disabled={puestoPorCano}
-                  className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand disabled:bg-[#f1f5f9] disabled:text-muted"
+                  className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand disabled:bg-[#f1f5f9] disabled:text-muted"
                 />
                 <select
                   value={cargada.unidad}
                   onChange={(e) => cambiarMedida(campo.clave, { unidad: e.target.value })}
                   disabled={puestoPorCano}
-                  className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand disabled:bg-[#f1f5f9]"
+                  className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand disabled:bg-[#f1f5f9]"
                 >
                   {UNIDADES_MEDIDA.map((u) => (
                     <option key={u} value={u}>
@@ -2550,14 +2578,14 @@ function MedidasDeLaForma({
             min="0"
             value={linea.calc.piezas}
             onChange={(e) => onCambio({ calc: { ...linea.calc, piezas: e.target.value } })}
-            className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+            className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
           />
         </div>
       </div>
 
       {/* Sólo donde tiene sentido: un disco o una esfera no llevan largo. */}
       {campos.some((c) => c.clave === 'length') && (
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
           <Casilla marcada={largoVariable} onChange={alternarLargoVariable}>
             Largos variables
           </Casilla>
@@ -2793,12 +2821,20 @@ function LineaFila({
 
   return (
     <div
-      className={`overflow-hidden rounded-[10px] border p-2.5 ${
+      /*
+        Línea compacta: los inputs de los componentes compartidos (Combo, Texto,
+        Lista) miden 36px en toda la app; acá, con la cotización llena de
+        renglones, se bajan a 28px (h-7) y texto 12px SOLO dentro de la línea,
+        para aprovechar el ancho y no mover tanto el ojo. El resto sigue igual.
+      */
+      className={`overflow-hidden rounded-[10px] border p-2.5 [&_input]:h-7 [&_select]:h-7 [&_input]:text-[12px] [&_select]:text-[12px] ${
         linea.quitada
           ? 'border-line bg-[#fcfaf6] opacity-70'
           : esAlternativa
             ? 'ml-5 border-brand-200 bg-[#f7fbff]'
-            : 'border-line bg-white'
+            : linea.no_cotizada
+              ? 'border-[#f3d9a6] bg-[#fffaf0]'
+              : 'border-line bg-white'
       }`}
     >
       <div className="mb-2 flex flex-wrap items-center gap-2.5">
@@ -2819,7 +2855,7 @@ function LineaFila({
           <button
             type="button"
             onClick={alternarIgualALoPedido}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${
               linea.igual_a_lo_pedido
                 ? 'border-[#cdebd8] bg-[#f4fbf6] text-success-ink'
                 : 'border-[#f3d9a6] bg-[#fff8ee] text-warning-ink'
@@ -2839,8 +2875,16 @@ function LineaFila({
         )}
 
         {linea.quitada && <Chip tono="neutro">quitada</Chip>}
+        {linea.no_cotizada && <Chip tono="ambar">No se cotiza</Chip>}
 
         <div className="ml-auto flex items-center gap-3">
+          {/* No se cotiza: el item queda en la hoja, con su motivo, sin importe.
+              Las alternativas no se declinan: son otra respuesta al mismo pedido. */}
+          {!esAlternativa && !linea.quitada && (
+            <Accion onClick={() => onCambio({ no_cotizada: !linea.no_cotizada })} apagado={!linea.no_cotizada}>
+              {linea.no_cotizada ? 'Volver a cotizar' : 'No se cotiza'}
+            </Accion>
+          )}
           <Accion onClick={() => onCambio({ quitada: !linea.quitada })} apagado={!linea.quitada}>
             {linea.quitada ? 'Volver a poner' : 'Quitar de la cotizacion'}
           </Accion>
@@ -2854,6 +2898,21 @@ function LineaFila({
           </button>
         </div>
       </div>
+
+      {/* Por qué no se cotiza este ítem: sale impreso al lado, y no suma. */}
+      {linea.no_cotizada && (
+        <div className="mb-2 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] p-2.5">
+          <Combo
+            id={`motivo-no-cotiza-${linea.clave}`}
+            etiqueta="Por qué no se cotiza"
+            ayuda="sale impreso al lado del ítem"
+            value={linea.motivo_no_cotiza ?? ''}
+            onChange={(e) => onCambio({ motivo_no_cotiza: e.target.value || null })}
+            placeholder="Elegí el motivo o escribí otro"
+            opciones={catalogos?.motivos_no_cotiza ?? []}
+          />
+        </div>
+      )}
 
       {/*
         Lo que pidió el cliente, ARRIBA de lo que se le ofrece: "pidió esto,
@@ -2872,11 +2931,11 @@ function LineaFila({
           se leen en paralelo —material sobre material, cantidad sobre cantidad—
           en vez de ser una cajita corrida hacia adentro.
         */
-        <div className="-mx-2.5 mb-2 border-y border-[#f3d9a6] bg-[#fff8ee] px-2.5 py-2">
-          <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-warning-ink">
+        <div className="-mx-2.5 mb-1.5 border-y border-[#f3d9a6] bg-[#fff8ee] px-2.5 py-1.5">
+          <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-warning-ink">
             Lo que pidió el cliente
           </p>
-          <div className="grid gap-2 lg:grid-cols-2">
+          <div className="grid gap-1.5 lg:grid-cols-2">
             <Combo
               id={`pedido-material-${linea.clave}`}
               etiqueta="Material"
@@ -2901,20 +2960,20 @@ function LineaFila({
             cae sobre Diametro, Largo sobre Largo. Con una forma que no está en
             el catálogo queda la caja de texto, como las líneas viejas.
           */}
-          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-6">
           {formaPedida?.usa_cano ? (
             <>
               {/* El caño que pidió el cliente se elige por su medida y su
                   schedule, igual que en lo que se ofrece: no con diámetro
                   exterior y pared sueltos. */}
-              <div className="grid gap-2 sm:grid-cols-2 lg:col-span-3">
+              <div className="grid gap-1.5 sm:grid-cols-2 lg:col-span-3">
                 <div>
                   <Etiqueta>Medida del caño</Etiqueta>
                   <select
                     aria-label="Medida del caño pedido"
                     value={canoPedido?.nombre ?? ''}
                     onChange={(e) => elegirMedidaDeCanoPedido(e.target.value)}
-                    className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
+                    className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
                   >
                     <option value="">Medida especial — la cargo yo</option>
                     {medidasDeCanoPedido.map((m) => (
@@ -2933,7 +2992,7 @@ function LineaFila({
                     }
                     disabled={!canoPedido}
                     onChange={(e) => elegirCanoPedido(e.target.value ? Number(e.target.value) : null)}
-                    className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
+                    className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
                   >
                     <option value="">{canoPedido ? 'Elegí el schedule' : '—'}</option>
                     {schedulesDelPedido.map((g) => (
@@ -2954,13 +3013,13 @@ function LineaFila({
                     aria-label="Largo pedido"
                     value={linea.pedido_medidas?.length?.valor ?? ''}
                     onChange={(e) => cambiarMedidaPedida('length', { valor: e.target.value })}
-                    className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                    className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
                   />
                   <select
                     aria-label="Unidad del largo pedido"
                     value={linea.pedido_medidas?.length?.unidad ?? 'mm'}
                     onChange={(e) => cambiarMedidaPedida('length', { unidad: e.target.value })}
-                    className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                    className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
                   >
                     {UNIDADES_MEDIDA.map((u) => (
                       <option key={u} value={u}>
@@ -2986,13 +3045,13 @@ function LineaFila({
                       aria-label={`${campo.label} pedido`}
                       value={cargada.valor}
                       onChange={(e) => cambiarMedidaPedida(campo.clave, { valor: e.target.value })}
-                      className="h-[36px] min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                      className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
                     />
                     <select
                       aria-label={`Unidad de ${campo.label.toLowerCase()} pedido`}
                       value={cargada.unidad}
                       onChange={(e) => cambiarMedidaPedida(campo.clave, { unidad: e.target.value })}
-                      className="h-[36px] rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                      className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
                     >
                       {UNIDADES_MEDIDA.map((u) => (
                         <option key={u} value={u}>
@@ -3013,53 +3072,37 @@ function LineaFila({
               placeholder="DIA 65 X 145 MM"
             />
           )}
-          {/* Piezas, como en lo que se ofrece: lo pedido se lee igual. */}
-          {formaPedida && (
-            <div>
-              <Etiqueta>Piezas</Etiqueta>
-              <input
-                type="number"
-                step="any"
-                min="0"
-                aria-label="Piezas pedidas"
-                value={linea.cantidad_pedida ?? ''}
-                onChange={(e) =>
-                  onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
-                }
-                className="h-[36px] w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
-              />
-            </div>
-          )}
-          </div>
-
-          {/* Cantidad y Unidad en las mismas columnas (col 1 y 2) que lo de abajo. */}
-          <div className="mt-2 grid gap-2 lg:grid-cols-6">
-            <Texto
-              etiqueta="Cantidad"
-              type="number"
-              step="0.01"
-              value={linea.cantidad_pedida ?? ''}
-              onChange={(e) =>
-                onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
-              }
-            />
-            <Lista
-              etiqueta="Unidad"
-              value={linea.unidad_pedida_id ?? ''}
-              onChange={(e) =>
-                onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
-              }
-              opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
-            />
-            <Combo
-              id={`pedido-caracteristicas-${linea.clave}`}
-              etiqueta="Caracteristicas que pidio"
-              className="lg:col-span-4"
-              value={linea.pedido_caracteristicas ?? ''}
-              onChange={(e) => onCambio({ pedido_caracteristicas: e.target.value || null })}
-              placeholder="con/sin costura, laminada, norma"
-              opciones={catalogos?.caracteristicas ?? []}
-            />
+          {/*
+            En lo que pidió el cliente NO va "Piezas": en su lugar van Cantidad
+            y Unidad, y las Características suben acá, en el mismo renglón que las
+            medidas. Así no hay que bajar el ojo (Roberto, 11-10).
+          */}
+          <Texto
+            etiqueta="Cantidad"
+            type="number"
+            step="0.01"
+            value={linea.cantidad_pedida ?? ''}
+            onChange={(e) =>
+              onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
+            }
+          />
+          <Lista
+            etiqueta="Unidad"
+            value={linea.unidad_pedida_id ?? ''}
+            onChange={(e) =>
+              onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
+            }
+            opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
+          />
+          <Combo
+            id={`pedido-caracteristicas-${linea.clave}`}
+            etiqueta="Caracteristicas que pidio"
+            className="lg:col-span-2"
+            value={linea.pedido_caracteristicas ?? ''}
+            onChange={(e) => onCambio({ pedido_caracteristicas: e.target.value || null })}
+            placeholder="con/sin costura, laminada, norma"
+            opciones={catalogos?.caracteristicas ?? []}
+          />
           </div>
           {/*
             El motivo se elige o se escribe, y lo escrito queda en la lista.
@@ -3069,7 +3112,7 @@ function LineaFila({
             agregar una octava era tocar el codigo. Igual que la condicion de
             pago, la primera vez se escribe y de ahi en mas esta en la lista.
           */}
-          <div className="mt-2">
+          <div className="mt-1.5">
             <Combo
               id={`motivo-${linea.clave}`}
               etiqueta="Motivo del cambio"
@@ -3088,7 +3131,7 @@ function LineaFila({
         </p>
       )}
 
-      <div className="grid items-end gap-2 lg:grid-cols-2">
+      <div className="grid items-end gap-1.5 lg:grid-cols-[1.4fr_1.4fr_1.4fr_130px_96px]">
         <ElegirMaterial linea={linea} catalogos={catalogos} onCambio={onCambio} />
         <Lista
           etiqueta="FORMA"
@@ -3112,29 +3155,14 @@ function LineaFila({
           }
           opciones={(catalogos?.formas ?? []).map((f) => ({ valor: f.id, texto: f.nombre }))}
         />
-      </div>
-
-      {/*
-        Las medidas las pone la forma, no esta pantalla: una barra redonda pide
-        diametro y largo, una chapa ancho, espesor y largo. Antes estaban los
-        tres campos fijos —diametro, espesor, ancho— para todas las formas, y
-        habia que adivinar cual llenar.
-      */}
-      <MedidasDeLaForma
-        linea={linea}
-        catalogos={catalogos}
-        onCambio={onCambio}
-      />
-
-      {/*
-        Con o sin costura, laminada, la norma. Es lo ofrecido: entra en la
-        descripción impresa. La lista de sugerencias crece con lo que se escribe.
-      */}
-      <div className="mt-2 grid items-end gap-2 lg:grid-cols-[1fr_170px_120px]">
+        {/*
+          Características, transporte y entrega entran en el mismo renglón que
+          material y forma: aprovecha el ancho y se ahorra un renglón aparte.
+        */}
         <Combo
           id={`caracteristicas-${linea.clave}`}
           etiqueta="Caracteristicas"
-          ayuda="con/sin costura, laminada, norma"
+          ayuda="s/c, norma"
           value={linea.caracteristicas ?? ''}
           onChange={(e) => onCambio({ caracteristicas: e.target.value || null })}
           placeholder="SIN COSTURA · ASTM B348"
@@ -3142,7 +3170,6 @@ function LineaFila({
         />
         <Lista
           etiqueta="Transporte"
-          ayuda="para una alternativa"
           value={linea.transporte ?? ''}
           onChange={(e) => onCambio({ transporte: e.target.value || null })}
           opciones={[
@@ -3151,14 +3178,25 @@ function LineaFila({
           ]}
         />
         <Texto
-          etiqueta="Entrega (dias)"
+          etiqueta="Entrega"
+          ayuda="dias"
           value={linea.plazo_dias != null ? String(linea.plazo_dias) : ''}
           onChange={(e) => onCambio({ plazo_dias: e.target.value ? Number(e.target.value) : null })}
           placeholder="40"
         />
       </div>
 
-      <div className="mt-2 grid items-end gap-2 lg:grid-cols-6">
+      {/*
+        Las medidas las pone la forma: una barra pide diametro y largo, una
+        chapa ancho, espesor y largo.
+      */}
+      <MedidasDeLaForma
+        linea={linea}
+        catalogos={catalogos}
+        onCambio={onCambio}
+      />
+
+      <div className="mt-1.5 grid items-end gap-1.5 lg:grid-cols-6">
         <Texto
           etiqueta="Cantidad"
           type="number"
@@ -3248,7 +3286,7 @@ function LineaFila({
         <div className="flex min-w-0 flex-col">
           <Etiqueta>Importe</Etiqueta>
           <div
-            className={`flex h-[36px] items-center justify-end rounded-[7px] border px-[11px] text-[12.5px] font-semibold ${
+            className={`flex h-7 items-center justify-end rounded-[7px] border px-[11px] text-[12.5px] font-semibold ${
               sinFactor || importe === null
                 ? 'border-[#f3d9a6] bg-[#fff8ee] text-warning-ink'
                 : 'border-line-strong bg-app text-ink'
@@ -3260,7 +3298,7 @@ function LineaFila({
       </div>
 
       {sinFactor && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] px-3 py-2">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] px-3 py-2">
           <span className="text-[9.5px] font-bold text-warning-ink">Sin factor</span>
           <span className="min-w-0 flex-1 text-[11.5px] text-[#7a5a1e]">
             {automatico.motivo}. Se puede cargar el factor a mano, o cobrar por{' '}
@@ -3286,7 +3324,7 @@ function LineaFila({
         cierra, hay que poder preguntarle a esa persona de dónde lo sacó.
       */}
       {factorAMano && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-app px-3 py-1.5">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-lg border border-line bg-app px-3 py-1.5">
           <span className="text-[9.5px] font-bold uppercase tracking-wide text-muted">
             Factor cargado a mano
           </span>
@@ -3299,7 +3337,7 @@ function LineaFila({
       )}
 
       {cambiaUnidad && !sinFactor && (
-        <p className="mt-2 text-[11px] text-brand-600">
+        <p className="mt-1.5 text-[11px] text-brand-600">
           {fmtCantidad(linea.cantidad)} {codigo(linea.unidad_venta_id)} ×{' '}
           {fmtCantidad(linea.factor_conversion)} = {fmtCantidad(kilos)}{' '}
           {codigo(linea.unidad_factura_id)} × {plata(linea.precio_por_kilo)} por{' '}
@@ -3307,7 +3345,7 @@ function LineaFila({
         </p>
       )}
 
-      <div className="mt-2">
+      <div className="mt-1.5">
         <Texto
           etiqueta="Descripcion — es lo que sale impreso"
           ayuda={
@@ -3343,7 +3381,7 @@ function LineaFila({
         impreso: es lo que le permite comparar la oferta renglón por renglón
         contra lo que pidió, y después contra lo que recibe.
       */}
-      <div className="mt-2 grid items-end gap-2 lg:grid-cols-[130px_1fr]">
+      <div className="mt-1.5 grid items-end gap-1.5 lg:grid-cols-[130px_1fr]">
         <Texto
           etiqueta="Item del cliente"
           value={linea.item_cliente ?? ''}
@@ -3358,7 +3396,7 @@ function LineaFila({
         />
       </div>
 
-      <div className="mt-2">
+      <div className="mt-1.5">
         <AreaTexto
           etiqueta="Nota del articulo — sale impresa"
           ayuda="plano, posicion, tratamiento: lo que haya que aclarar de este item"
@@ -3374,7 +3412,7 @@ function LineaFila({
         habia donde verlas ni corregirlas al editar: la unica forma de poner
         una colada era el sistema anterior.
       */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-app px-3 py-2">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-app px-3 py-2">
         <Casilla marcada={Boolean(linea.aprox)} onChange={(v) => onCambio({ aprox: v })}>
           Medida y peso aproximados
         </Casilla>
