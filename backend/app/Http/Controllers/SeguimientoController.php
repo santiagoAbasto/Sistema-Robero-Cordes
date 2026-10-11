@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Consulta;
+use App\Models\ConsultaLinea;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -76,6 +77,28 @@ class SeguimientoController extends Controller
 
         $cerradas = $enElPeriodo()->cerradas()->withCount(['observaciones', 'impresiones'])->get();
 
+        /*
+          Lo que no cotizamos. No es lo mismo que una cotizacion cerrada: aca
+          fuimos nosotros los que dijimos que no, renglon por renglon, con el
+          motivo. Contarlo por motivo y por material es lo que deja ver si
+          perdemos pedidos siempre por lo mismo —un material que no trabajamos,
+          un plazo que no llegamos— y decidir sobre eso.
+        */
+        $declinadas = ConsultaLinea::whereIn('consulta_id', $enElPeriodo()->pluck('id'))
+            ->where('no_cotizada', true)
+            ->where('quitada', false)
+            ->whereNull('alternativa_de_id')
+            ->with('material:id,nombre')
+            ->get();
+
+        $materialDe = fn (ConsultaLinea $l) => $l->material?->nombre
+            ?: ($l->pedido_material ?: '(sin material)');
+
+        $ranking = fn ($grupos, string $clave) => $grupos
+            ->map(fn ($lineas, $nombre) => [$clave => (string) $nombre, 'cuantas' => $lineas->count()])
+            ->sortByDesc('cuantas')
+            ->values();
+
         return [
             // Quien lee el reporte tiene que saber de cuando es.
             'generado_el' => now()->toIso8601String(),
@@ -101,6 +124,21 @@ class SeguimientoController extends Controller
 
             'vendidas' => [
                 'total' => $enElPeriodo()->where('estado', 'Vendida')->count(),
+            ],
+
+            'declinados' => [
+                // Renglones que no se cotizaron en el periodo.
+                'total_lineas' => $declinadas->count(),
+                // En cuantas cotizaciones aparecio al menos un renglon sin cotizar.
+                'cotizaciones_con_declinadas' => $declinadas->pluck('consulta_id')->unique()->count(),
+                // Cuantas quedaron declinadas enteras (ningun renglon se cotiza).
+                'cotizaciones_declinadas' => $enElPeriodo()->where('estado', Consulta::DECLINADA)->count(),
+                'por_motivo' => $ranking(
+                    $declinadas->groupBy(fn (ConsultaLinea $l) => $l->motivo_no_cotiza ?: 'Sin motivo'),
+                    'motivo',
+                ),
+                // Top materiales: lo largo se corta, la cola no ayuda a decidir.
+                'por_material' => $ranking($declinadas->groupBy($materialDe), 'material')->take(8)->values(),
             ],
 
             /*

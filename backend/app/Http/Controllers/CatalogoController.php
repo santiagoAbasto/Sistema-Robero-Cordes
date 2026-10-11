@@ -37,6 +37,8 @@ class CatalogoController extends Controller
             'caracteristicas' => Caracteristica::where('activo', true)
                 ->orderBy('orden')->pluck('nombre'),
             'transportes' => \App\Models\ConsultaLinea::TRANSPORTES,
+            // Los motivos por los que no se cotiza un item.
+            'motivos_no_cotiza' => \App\Models\ConsultaLinea::MOTIVOS_DECLINACION,
             'tipos_consulta' => ['Cotizacion', 'Pedido', 'Observacion'],
             'estados' => \App\Models\Consulta::ESTADOS,
             'estados_de_cierre' => \App\Models\Consulta::ESTADOS_DE_CIERRE,

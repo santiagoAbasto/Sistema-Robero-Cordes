@@ -10,16 +10,29 @@ import type { EnlaceLeido } from '../../lib/indice'
 
 /** Alta de una empresa nueva. Antes era una pantalla aparte del índice. */
 /** El primer contacto de la empresa, tal como se lo carga en esta pantalla. */
+interface Telefono {
+  valor: string
+  /** Telefono, Celular o WhatsApp: se discan distinto. */
+  tipo: string
+}
+
 interface PrimerContacto {
   nombre: string
   cargo: string
-  telefono: string
-  /** Telefono, Celular o WhatsApp: se discan distinto. */
-  tipoTelefono: string
+  /** El fijo y el celular: una firma suele traer los dos. */
+  telefonos: Telefono[]
   mail: string
 }
 
-const CONTACTO_VACIO: PrimerContacto = { nombre: '', cargo: '', telefono: '', tipoTelefono: 'Telefono', mail: '' }
+const CONTACTO_VACIO: PrimerContacto = {
+  nombre: '',
+  cargo: '',
+  telefonos: [{ valor: '', tipo: 'Telefono' }],
+  mail: '',
+}
+
+/** Si ya se cargó algún teléfono a mano (para no pisarlo al leer la firma). */
+const tieneTelefono = (lista: Telefono[]) => lista.some((t) => t.valor.trim() !== '')
 
 export default function NuevaEmpresa() {
   const navigate = useNavigate()
@@ -78,8 +91,15 @@ export default function NuevaEmpresa() {
       setContacto((c) => ({
         nombre: c.nombre || (datos.contacto ?? ''),
         cargo: c.cargo || (datos.cargo ?? ''),
-        telefono: c.telefono || (datos.telefono ?? ''),
-        tipoTelefono: c.telefono ? c.tipoTelefono : (datos.tipo_telefono ?? 'Telefono'),
+        // Todos los teléfonos que leyó (fijo y celular). Si ya se cargó alguno
+        // a mano, no se pisa; si vino solo el viejo `telefono`, se usa ese.
+        telefonos: tieneTelefono(c.telefonos)
+          ? c.telefonos
+          : datos.telefonos?.length
+            ? datos.telefonos.map((t) => ({ valor: t.valor, tipo: t.tipo }))
+            : datos.telefono
+              ? [{ valor: datos.telefono, tipo: datos.tipo_telefono ?? 'Telefono' }]
+              : c.telefonos,
         mail: c.mail || (datos.mail ?? ''),
       }))
 
@@ -118,11 +138,14 @@ export default function NuevaEmpresa() {
 
     try {
       const medios = [
-        contacto.telefono.trim() && {
-          tipo_medio_id: idDelTipo(contacto.tipoTelefono) ?? idDelTipo('Telefono'),
-          valor: contacto.telefono.trim(),
-          principal: true,
-        },
+        // Cada teléfono cargado; el primero es el principal.
+        ...contacto.telefonos
+          .filter((t) => t.valor.trim())
+          .map((t, i) => ({
+            tipo_medio_id: idDelTipo(t.tipo) ?? idDelTipo('Telefono'),
+            valor: t.valor.trim(),
+            principal: i === 0,
+          })),
         contacto.mail.trim() && { tipo_medio_id: idDelTipo('Mail'), valor: contacto.mail.trim(), principal: true },
       ].filter((m): m is { tipo_medio_id: number; valor: string; principal: boolean } =>
         Boolean(m && m.tipo_medio_id),
@@ -144,6 +167,16 @@ export default function NuevaEmpresa() {
       setGuardando(false)
     }
   }
+
+  const cambiarTel = (i: number, campo: keyof Telefono, valor: string) =>
+    setContacto((c) => ({
+      ...c,
+      telefonos: c.telefonos.map((t, j) => (j === i ? { ...t, [campo]: valor } : t)),
+    }))
+  const agregarTel = () =>
+    setContacto((c) => ({ ...c, telefonos: [...c.telefonos, { valor: '', tipo: 'Telefono' }] }))
+  const quitarTel = (i: number) =>
+    setContacto((c) => ({ ...c, telefonos: c.telefonos.filter((_, j) => j !== i) }))
 
   return (
     <div className="flex flex-col gap-[18px]">
@@ -251,7 +284,7 @@ export default function NuevaEmpresa() {
             quien firma el mail o la consulta; se guarda con la empresa como el principal
           </span>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Texto
             etiqueta="Nombre"
             value={contacto.nombre}
@@ -264,28 +297,52 @@ export default function NuevaEmpresa() {
             onChange={(e) => setContacto({ ...contacto, cargo: e.target.value })}
             placeholder="Supervisor de Mantenimiento"
           />
-          <div className="flex min-w-0 gap-2">
-            <Lista
-              etiqueta="Tipo"
-              className="w-[118px] shrink-0"
-              value={contacto.tipoTelefono}
-              onChange={(e) => setContacto({ ...contacto, tipoTelefono: e.target.value })}
-              opciones={['Telefono', 'Celular', 'WhatsApp'].map((t) => ({ valor: t, texto: t }))}
-            />
-            <Texto
-              etiqueta="Numero"
-              className="min-w-0 flex-1"
-              value={contacto.telefono}
-              onChange={(e) => setContacto({ ...contacto, telefono: e.target.value })}
-              placeholder="(2954) 15-412233"
-            />
-          </div>
           <Texto
             etiqueta="Mail"
             value={contacto.mail}
             onChange={(e) => setContacto({ ...contacto, mail: e.target.value })}
             placeholder="pferreyra@apex.com.ar"
           />
+        </div>
+
+        {/* Los teléfonos: el fijo y el celular salen los dos del pie del mail. */}
+        <div className="flex flex-col gap-2">
+          <span className="text-[10.5px] font-medium uppercase tracking-wide text-slate-500">
+            Teléfonos
+          </span>
+          {contacto.telefonos.map((t, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Lista
+                className="w-[120px] shrink-0"
+                value={t.tipo}
+                onChange={(e) => cambiarTel(i, 'tipo', e.target.value)}
+                opciones={['Telefono', 'Celular', 'WhatsApp'].map((x) => ({ valor: x, texto: x }))}
+              />
+              <Texto
+                className="min-w-0 flex-1"
+                value={t.valor}
+                onChange={(e) => cambiarTel(i, 'valor', e.target.value)}
+                placeholder="+54 11 4699-7003"
+              />
+              {contacto.telefonos.length > 1 && (
+                <button
+                  type="button"
+                  aria-label="Sacar este teléfono"
+                  onClick={() => quitarTel(i)}
+                  className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-lg text-faint transition-colors hover:bg-app hover:text-danger"
+                >
+                  <X size={15} strokeWidth={2.2} />
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={agregarTel}
+            className="self-start text-[12px] font-semibold text-brand-600 hover:text-brand-700"
+          >
+            + Agregar otro teléfono
+          </button>
         </div>
       </Card>
 

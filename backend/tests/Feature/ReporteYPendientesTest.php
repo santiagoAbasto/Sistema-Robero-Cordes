@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Consulta;
+use App\Models\ConsultaLinea;
 use App\Models\Empresa;
 use App\Models\Observacion;
 use App\Models\User;
@@ -159,5 +160,58 @@ class ReporteYPendientesTest extends TestCase
         $this->getJson('/api/reportes/seguimiento?desde=2026-09-30&hasta=2026-01-01')
             ->assertStatus(422)
             ->assertJsonValidationErrors('hasta');
+    }
+
+    // --------------------------------------------------- lo que no cotizamos
+
+    /** Lo declinado se cuenta por motivo y por material, no por cotización. */
+    public function test_el_reporte_agrupa_lo_que_no_se_cotiza(): void
+    {
+        // Una con dos renglones declinados: no la trabajamos y tampoco llegamos.
+        $c1 = $this->cotizacion(['estado' => Consulta::DECLINADA]);
+        $this->lineaDeclinada($c1, 'HASTELLOY C276', 'No trabajamos ese material');
+        $this->lineaDeclinada($c1, 'HASTELLOY C276', 'Por el plazo de entrega');
+
+        // Otra con un renglón declinado y uno que sí se cotiza.
+        $c2 = $this->cotizacion();
+        $this->lineaDeclinada($c2, 'TITANIO GR2', 'No trabajamos ese material');
+        ConsultaLinea::create([
+            'consulta_id' => $c2->id, 'descripcion' => 'Acero 1020', 'cantidad' => 1,
+        ]);
+
+        // Ruido: fuera del período y un renglón quitado no entran.
+        $viejo = $this->cotizacion(['fecha' => '2025-01-10']);
+        $this->lineaDeclinada($viejo, 'INCONEL', 'Por las dimensiones');
+
+        $r = $this->getJson('/api/reportes/seguimiento?desde=2026-01-01&hasta=2026-12-31')
+            ->assertOk()->json();
+
+        $d = $r['declinados'];
+        $this->assertSame(3, $d['total_lineas']);
+        $this->assertSame(2, $d['cotizaciones_con_declinadas']);
+        $this->assertSame(1, $d['cotizaciones_declinadas']);
+
+        $porMotivo = collect($d['por_motivo'])->keyBy('motivo');
+        $this->assertSame(2, $porMotivo['No trabajamos ese material']['cuantas']);
+        $this->assertSame(1, $porMotivo['Por el plazo de entrega']['cuantas']);
+
+        // El primero del ranking es el motivo más repetido.
+        $this->assertSame('No trabajamos ese material', $d['por_motivo'][0]['motivo']);
+
+        $porMaterial = collect($d['por_material'])->keyBy('material');
+        $this->assertSame(2, $porMaterial['HASTELLOY C276']['cuantas']);
+        $this->assertSame(1, $porMaterial['TITANIO GR2']['cuantas']);
+    }
+
+    private function lineaDeclinada(Consulta $c, string $material, string $motivo): ConsultaLinea
+    {
+        return ConsultaLinea::create([
+            'consulta_id' => $c->id,
+            'descripcion' => $material,
+            'pedido_material' => $material,
+            'cantidad' => 1,
+            'no_cotizada' => true,
+            'motivo_no_cotiza' => $motivo,
+        ]);
     }
 }

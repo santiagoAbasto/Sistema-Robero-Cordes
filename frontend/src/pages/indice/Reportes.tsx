@@ -139,7 +139,95 @@ export default function Reportes() {
           .
         </NotaPie>
       </Card>
+
+      {/*
+        Apartado independiente: lo que no cotizamos. No es una cotización que
+        el cliente cerró —acá fuimos nosotros los que dijimos que no, renglón
+        por renglón, con el motivo. Contarlo por motivo y por material deja ver
+        si perdemos pedidos siempre por lo mismo, y decidir sobre eso.
+      */}
+      {datos && (
+        <Card>
+          <CardHeader
+            titulo="Lo que no cotizamos"
+            ayuda="Renglones que decidimos no cotizar en el período, con su motivo. Deja ver si perdemos pedidos siempre por lo mismo."
+          />
+          {datos.declinados.total_lineas === 0 ? (
+            <div className="px-[22px] pb-5 text-[13px] text-muted">
+              No hubo renglones sin cotizar en este período.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5 px-[22px] pb-5">
+              <Bloque titulo="En números">
+                <Dato n={datos.declinados.total_lineas} etiqueta="renglones sin cotizar" />
+                <Dato
+                  n={datos.declinados.cotizaciones_con_declinadas}
+                  etiqueta="cotizaciones con algún renglón sin cotizar"
+                />
+                <Dato
+                  n={datos.declinados.cotizaciones_declinadas}
+                  etiqueta="cotizaciones declinadas enteras"
+                  tono={datos.declinados.cotizaciones_declinadas > 0 ? 'ambar' : undefined}
+                />
+              </Bloque>
+
+              <Barras
+                titulo="Por motivo"
+                datos={datos.declinados.por_motivo.map((m) => ({ label: m.motivo, n: m.cuantas }))}
+              />
+              <Barras
+                titulo="Por material"
+                datos={datos.declinados.por_material.map((m) => ({ label: m.material, n: m.cuantas }))}
+              />
+            </div>
+          )}
+
+          <NotaPie>
+            Un renglón se marca “No se cotiza”, con su motivo, al armar la cotización.
+          </NotaPie>
+        </Card>
+      )}
     </div>
+  )
+}
+
+/*
+  Barras horizontales, sin librería: una barra por fila, proporcional a la más
+  alta. Para un puñado de motivos o materiales no hace falta más que un div con
+  el ancho en porcentaje.
+*/
+function Barras({
+  titulo,
+  datos,
+}: {
+  titulo: string
+  datos: { label: string; n: number }[]
+}) {
+  if (datos.length === 0) return null
+  const max = Math.max(...datos.map((d) => d.n), 1)
+
+  return (
+    <section className="flex flex-col gap-2.5">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-faint">{titulo}</h3>
+      <div className="flex flex-col gap-2.5">
+        {datos.map((d) => (
+          <div key={d.label} className="flex flex-col gap-1">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="truncate text-[12.5px] text-ink" title={d.label}>
+                {d.label}
+              </span>
+              <span className="text-[12px] font-semibold tabular-nums text-muted">{d.n}</span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100">
+              <div
+                className="h-2 rounded-full bg-[#e0a458]"
+                style={{ width: `${(d.n / max) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 

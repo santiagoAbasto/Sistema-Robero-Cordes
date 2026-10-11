@@ -45,6 +45,10 @@
             {{ $linea->caracteristicas }}
         @endif
         @if ($linea->aprox)<span class="aprox">(aprox.)</span>@endif
+        {{-- Un item que no se cotiza queda en la hoja, con su motivo, sin precio. --}}
+        @if ($linea->no_cotizada)
+            <div class="no-cotiza">No se cotiza{{ $linea->motivo_no_cotiza ? '  ·  '.$linea->motivo_no_cotiza : '' }}</div>
+        @endif
         @if (! $esAlternativa && ! $linea->transporte && $linea->plazo_dias)
             <div class="nota-linea">Entrega aprox. {{ $linea->plazo_dias }} dias</div>
         @endif
@@ -91,7 +95,11 @@
         @endif
     </td>
     @if ($incluyeImportes)
-        <td>@include('pdf.plata', ['monto' => $linea->precio_unitario])</td>
-        <td>@include('pdf.plata', ['monto' => $linea->importe])</td>
+        @if ($linea->no_cotizada)
+            <td colspan="2" class="no-cotiza-importe">no se cotiza</td>
+        @else
+            <td>@include('pdf.plata', ['monto' => $linea->precio_unitario])</td>
+            <td>@include('pdf.plata', ['monto' => $linea->importe])</td>
+        @endif
     @endif
 </tr>

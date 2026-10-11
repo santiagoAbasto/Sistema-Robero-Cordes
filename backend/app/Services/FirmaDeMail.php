@@ -83,8 +83,11 @@ class FirmaDeMail
             'cargo' => $cargo === null || $empresa === null ? $cargo
                 : preg_replace('/\s*[,|]\s*'.preg_quote($empresa, '/').'$/u', '', $cargo),
             'mail' => $mail,
-            'telefono' => $this->telefono($texto)[0],
-            'tipo_telefono' => $this->telefono($texto)[1],
+            // Todos los telefonos, no solo el primero: una firma suele traer el
+            // fijo y el celular. El primero queda como el principal.
+            'telefono' => ($tels = $this->telefonos($texto))[0]['valor'] ?? null,
+            'tipo_telefono' => $tels[0]['tipo'] ?? null,
+            'telefonos' => $tels,
             'web' => $this->web($texto, $mail),
             'enlaces' => $this->enlaces($texto),
             'direccion' => $calle = $this->direccion($renglones),
@@ -118,7 +121,9 @@ class FirmaDeMail
             'contacto' => $ficha['contacto'] ?? null,
             'cargo' => $ficha['cargo'] ?? null,
             'mail' => $mail,
-            ...$this->telefonoDeLaFicha($ficha, $texto),
+            'telefono' => ($tels = $this->telefonosDeLaFicha($ficha, $texto))[0]['valor'] ?? null,
+            'tipo_telefono' => $tels[0]['tipo'] ?? null,
+            'telefonos' => $tels,
             'web' => $this->web($texto, $mail),
             'enlaces' => $this->enlaces($texto),
             'direccion' => $this->soloLaCalle($ficha['direccion'] ?? null),
@@ -140,24 +145,33 @@ class FirmaDeMail
     }
 
     /**
-     * El telefono de la ficha y su tipo: el rotulo lo dice.
+     * Los telefonos de la ficha: cada campo rotulado (celular, whatsapp, tel) y
+     * lo que haya suelto en el texto, sin repetir.
      *
      * @param  array<string, string>  $ficha
-     * @return array{telefono: ?string, tipo_telefono: ?string}
+     * @return list<array{valor: string, tipo: string}>
      */
-    private function telefonoDeLaFicha(array $ficha, string $texto): array
+    private function telefonosDeLaFicha(array $ficha, string $texto): array
     {
-        [$valor, $tipo] = match (true) {
-            isset($ficha['celular']) => [$ficha['celular'], 'Celular'],
-            isset($ficha['whatsapp']) => [$ficha['whatsapp'], 'WhatsApp'],
-            isset($ficha['telefono']) => [
-                $ficha['telefono'],
-                $this->pareceCelular($ficha['telefono']) ? 'Celular' : 'Telefono',
-            ],
-            default => $this->telefono($texto),
-        };
+        $lista = [];
 
-        return ['telefono' => $valor === null ? null : $this->limpiar($valor), 'tipo_telefono' => $tipo];
+        if (isset($ficha['celular'])) {
+            $this->sumarTelefono($lista, $ficha['celular'], 'Celular');
+        }
+        if (isset($ficha['whatsapp'])) {
+            $this->sumarTelefono($lista, $ficha['whatsapp'], 'WhatsApp');
+        }
+        if (isset($ficha['telefono'])) {
+            $this->sumarTelefono($lista, $ficha['telefono'],
+                $this->pareceCelular($ficha['telefono']) ? 'Celular' : 'Telefono');
+        }
+
+        foreach ($this->telefonos($texto) as $t) {
+            $clave = preg_replace('/\D+/', '', $t['valor']) ?? '';
+            $lista[$clave] ??= $t;
+        }
+
+        return array_values($lista);
     }
 
     private function mail(string $texto): ?string
@@ -283,32 +297,124 @@ class FirmaDeMail
      * son numeros.
      */
     /**
-     * @return array{0: ?string, 1: ?string} el numero y su tipo de medio:
-     *                                        Celular, WhatsApp o Telefono
+     * Todos los telefonos del texto, cada uno con su tipo y ya normalizado.
+     *
+     * Antes se devolvia solo el primero y "Tel: X / Cel: Y" perdia el celular.
+     * Se le exige una etiqueta —Cel, Tel, Movil, Fax— o el formato con
+     * parentesis: en una firma hay codigos postales, numeros de calle y anios,
+     * y todos son numeros.
+     *
+     * @return list<array{valor: string, tipo: string}>
      */
-    private function telefono(string $texto): array
+    public function telefonos(string $texto): array
     {
-        $conEtiqueta = '/(cel|tel|telefono|teléfono|movil|móvil|whatsapp|wpp)\.?\s*:?\s*'
-            .'((?:\+?\d{1,3}[\s.-]*)?(?:\(\d{2,5}\)[\s.-]*)?[\d\s.-]{6,18})/iu';
+        $lista = [];
 
-        if (preg_match($conEtiqueta, $texto, $m)) {
-            $rotulo = mb_strtolower($m[1]);
+        // Las etiquetas enteras antes que las abreviaturas —"celular" antes que
+        // "cel"— para que "Celular:" se reconozca entero y no como "Cel" + "ular".
+        // "Tel / Fax:" tambien: la barra y el "Fax" quedan en el medio.
+        $conEtiqueta = '/(whatsapp|wpp|celular|cel|tel[eé]fono|tel|m[oó]vil|fax)[\s\/.]*(?:fax)?[\s.:]*'
+            .'((?:\+?\d{1,3}[\s.-]*)?(?:\(\d{2,5}\)[\s.-]*)?\d[\d\s.()+-]{5,18}(?:\s*(?:int|interno)\.?\s*\d{1,6})?)/iu';
 
-            $tipo = match (true) {
-                in_array($rotulo, ['cel', 'movil', 'móvil'], true) => 'Celular',
-                in_array($rotulo, ['whatsapp', 'wpp'], true) => 'WhatsApp',
-                default => $this->pareceCelular($m[2]) ? 'Celular' : 'Telefono',
-            };
+        if (preg_match_all($conEtiqueta, $texto, $ms, PREG_SET_ORDER)) {
+            foreach ($ms as $m) {
+                $rotulo = mb_strtolower($m[1]);
 
-            return [$this->limpiar($m[2]), $tipo];
+                $tipo = match (true) {
+                    str_starts_with($rotulo, 'cel'), in_array($rotulo, ['movil', 'móvil'], true) => 'Celular',
+                    str_starts_with($rotulo, 'what'), $rotulo === 'wpp' => 'WhatsApp',
+                    default => $this->pareceCelular($m[2]) ? 'Celular' : 'Telefono',
+                };
+
+                $this->sumarTelefono($lista, $m[2], $tipo);
+            }
         }
 
         // "(2954) 15-412233" se reconoce solo por la forma.
-        if (preg_match('/\(\d{2,5}\)\s*[\d\s.-]{6,15}/', $texto, $m)) {
-            return [$this->limpiar($m[0]), $this->pareceCelular($m[0]) ? 'Celular' : 'Telefono'];
+        if (preg_match_all('/\(\d{2,5}\)\s*[\d\s.-]{6,15}/', $texto, $ms)) {
+            foreach ($ms[0] as $num) {
+                $this->sumarTelefono($lista, $num, $this->pareceCelular($num) ? 'Celular' : 'Telefono');
+            }
         }
 
-        return [null, null];
+        return array_values($lista);
+    }
+
+    /**
+     * Suma un telefono a la lista, normalizado, sin repetir el mismo numero.
+     *
+     * @param  array<string, array{valor: string, tipo: string}>  $lista
+     */
+    private function sumarTelefono(array &$lista, string $raw, string $tipo): void
+    {
+        $valor = $this->normalizarTelefono($raw, $tipo);
+
+        if ($valor === null) {
+            return;
+        }
+
+        // Se compara por las cifras: "+54 9 11 ..." y "11 15 ..." son el mismo.
+        $clave = preg_replace('/\D+/', '', $valor) ?? '';
+
+        if ($clave !== '' && ! isset($lista[$clave])) {
+            $lista[$clave] = ['valor' => $valor, 'tipo' => $tipo];
+        }
+    }
+
+    /**
+     * Un telefono argentino, siempre en el mismo formato: "+54 11 4699-7003" o
+     * "+54 9 11 5009-3040" el celular. Unifica lo que llega mezclado —con 0054,
+     * con 0 de larga distancia, con el 15, con +54 9— que es lo que pidio
+     * Roberto: que no queden unos "+54 911" y otros "119342".
+     *
+     * Lo que no termina en un numero nacional de 10 cifras no se reformatea: se
+     * deja como vino, limpio, porque inventar cifras es peor que un formato
+     * disparejo. La persona revisa antes de guardar.
+     */
+    public function normalizarTelefono(?string $raw, ?string $tipo = null): ?string
+    {
+        if ($raw === null) {
+            return null;
+        }
+
+        // La extension interna va aparte, al final: "int 109", "interno 5".
+        $ext = null;
+        if (preg_match('/\b(?:int|interno)\.?\s*(\d{1,6})\b/i', $raw, $m)) {
+            $ext = $m[1];
+            $raw = preg_replace('/\b(?:int|interno)\.?\s*\d{1,6}\b/i', '', $raw) ?? $raw;
+        }
+
+        $esMovil = in_array($tipo, ['Celular', 'WhatsApp'], true) || $this->pareceCelular($raw);
+
+        $d = preg_replace('/\D+/', '', $raw) ?? '';
+        $d = preg_replace('/^(?:00)?54/', '', $d) ?? $d;   // 0054, +54, 54
+        $d = preg_replace('/^0/', '', $d) ?? $d;           // 0 de larga distancia (011)
+
+        if ($esMovil && strlen($d) >= 11 && $d[0] === '9') {
+            $d = substr($d, 1);                        // el 9 del celular internacional
+        }
+        if ($esMovil && strlen($d) === 12) {           // el 15, tras la caracteristica (2 a 4 cifras)
+            foreach ([2, 3, 4] as $area) {
+                if (substr($d, $area, 2) === '15') {
+                    $d = substr($d, 0, $area).substr($d, $area + 2);
+                    break;
+                }
+            }
+        }
+
+        if (strlen($d) !== 10) {
+            $limpio = $this->limpiar($raw);
+
+            return $limpio === null ? null : $limpio.($ext ? " int {$ext}" : '');
+        }
+
+        // "11" (CABA/GBA) son dos cifras de caracteristica; el resto se agrupa
+        // parejo. El numero local lleva un guion antes de las ultimas cuatro.
+        $nacional = str_starts_with($d, '11')
+            ? '11 '.substr($d, 2, 4).'-'.substr($d, 6)
+            : substr($d, 0, -4).'-'.substr($d, -4);
+
+        return '+54 '.($esMovil ? '9 ' : '').$nacional.($ext ? " int {$ext}" : '');
     }
 
     /**

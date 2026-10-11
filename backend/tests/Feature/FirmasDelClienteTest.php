@@ -51,7 +51,7 @@ class FirmasDelClienteTest extends TestCase
         $this->assertSame('ACME', $d['empresa']);
         $this->assertSame('Pablo Ferreyra', $d['contacto']);
         $this->assertSame('Compras', $d['cargo']);
-        $this->assertSame('(+54-9) 11-4567-2389', $d['telefono']);
+        $this->assertSame('+54 9 11 4567-2389', $d['telefono']);
         $this->assertSame('Celular', $d['tipo_telefono']);
         $this->assertSame('www.acme.com.ar', $d['web']);
         $this->assertSame('Calle Falsa 1234', $d['direccion']);

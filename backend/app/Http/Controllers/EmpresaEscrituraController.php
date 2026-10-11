@@ -170,6 +170,15 @@ class EmpresaEscrituraController extends Controller
             $leido['tipo_telefono'] = $firma->pareceCelular($porIa['telefono']) ? 'Celular' : 'Telefono';
         }
 
+        // Si las reglas no encontraron ningun telefono y lo completo la IA, ese
+        // es el telefono: se normaliza igual que los demas y queda en la lista.
+        if (empty($leido['telefonos']) && filled($leido['telefono'])) {
+            $tipo = $leido['tipo_telefono'] ?? ($firma->pareceCelular($leido['telefono']) ? 'Celular' : 'Telefono');
+            $leido['telefono'] = $firma->normalizarTelefono($leido['telefono'], $tipo);
+            $leido['tipo_telefono'] = $tipo;
+            $leido['telefonos'] = $leido['telefono'] === null ? [] : [['valor' => $leido['telefono'], 'tipo' => $tipo]];
+        }
+
         /*
           Las dos lecturas de la imagen, comparadas en lo que no se puede
           adivinar mirandolo: el mail y el telefono. Si no coinciden, se avisa
@@ -206,15 +215,21 @@ class EmpresaEscrituraController extends Controller
           direccion entera, como hace el buscador: "Av. ... 2576, San Justo".
           Solo si no contradice la provincia que ya se encontro.
         */
-        if ($leido['localidad_id'] === null && filled($leido['direccion_completa'])
-            && $leido['direccion_completa'] !== $leido['direccion']) {
+        if (filled($leido['direccion_completa']) && $leido['direccion_completa'] !== $leido['direccion']
+            && ($leido['localidad_id'] === null || blank($leido['codigo_postal']))) {
             $lugar = $direcciones->ubicar($leido['direccion_completa']);
 
-            if ($lugar && $lugar['localidad_id']
-                && in_array($leido['provincia_id'], [null, $lugar['provincia_id']], true)) {
-                $leido['localidad_id'] = $lugar['localidad_id'];
-                $leido['provincia_id'] = $lugar['provincia_id'];
+            if ($lugar) {
+                // La localidad, solo si no la teniamos y no contradice la provincia.
+                if ($leido['localidad_id'] === null && $lugar['localidad_id']
+                    && in_array($leido['provincia_id'], [null, $lugar['provincia_id']], true)) {
+                    $leido['localidad_id'] = $lugar['localidad_id'];
+                    $leido['provincia_id'] = $lugar['provincia_id'];
+                }
+
                 $leido['pais_id'] ??= $lugar['pais_id'];
+                // El codigo postal, siempre que falte, aunque la localidad ya
+                // estuviera: "cuando traje la empresa no me completo el CP".
                 $leido['codigo_postal'] ??= $lugar['codigo_postal'];
             }
         }
@@ -230,7 +245,7 @@ class EmpresaEscrituraController extends Controller
         // El tipo de telefono dice que es el telefono, y los enlaces repiten
         // la web: no son un dato mas.
         $cuantos = count(array_filter(
-            array_diff_key($leido, ['tipo_telefono' => true, 'enlaces' => true, 'localidad_nombre' => true]),
+            array_diff_key($leido, ['tipo_telefono' => true, 'telefonos' => true, 'enlaces' => true, 'localidad_nombre' => true]),
             fn ($v) => filled($v),
         ));
 

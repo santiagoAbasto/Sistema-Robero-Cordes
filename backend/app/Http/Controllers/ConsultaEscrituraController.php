@@ -459,12 +459,33 @@ class ConsultaEscrituraController extends Controller
     public function interpretar(Request $request, InterpreteIA $interprete)
     {
         $datos = $request->validate([
-            'texto' => ['required', 'string', 'min:5'],
+            // La imagen primero: si PHP la corto por grande, ese es el error.
+            'imagen' => ['nullable', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+            'texto' => ['required_without:imagen', 'nullable', 'string', 'min:5', 'max:8000'],
         ], [
-            'texto.required' => 'Pega el texto del mail o del WhatsApp y lo separamos en lineas.',
+            'texto.required_without' => 'Pega el texto del mail o del WhatsApp, o subí una captura.',
+            'imagen.mimes' => 'Solo se leen imagenes PNG, JPG o WEBP.',
+            'imagen.max' => 'La imagen pesa mas de 2 MB: recortala o pega el texto.',
+            'imagen.uploaded' => 'La imagen pesa mas de 2 MB: recortala o pega el texto.',
         ]);
 
-        $resultado = $interprete->interpretar($datos['texto']);
+        $texto = $datos['texto'] ?? null;
+
+        // Una captura de pantalla: la IA la transcribe letra por letra —no
+        // decide que es cada cosa, eso lo hacen las reglas— y despues se lee
+        // igual que el texto pegado.
+        if ($request->hasFile('imagen')) {
+            abort_unless($interprete->estaConfigurada(), 422, 'Para leer una imagen hace falta la IA, y no esta configurada. Pega el texto o cargalas a mano.');
+
+            try {
+                [$texto] = $interprete->transcribir($request->file('imagen'));
+            } catch (\Throwable $e) {
+                $motivo = $e instanceof \RuntimeException ? $e->getMessage() : 'El servicio de IA no esta respondiendo';
+                abort(422, $motivo.'. Pega el texto o cargalas a mano.');
+            }
+        }
+
+        $resultado = $interprete->interpretar($texto);
         $cuantas = count($resultado['lineas']);
 
         return response()->json([
@@ -473,6 +494,8 @@ class ConsultaEscrituraController extends Controller
             'con_ia' => $resultado['con_ia'],
             'aviso' => $resultado['aviso'],
             'repetidas' => $this->descripcionesRepetidas($resultado['lineas']),
+            // La transcripcion de la captura queda a la vista para revisarla.
+            'texto' => $texto,
             'mensaje' => $cuantas === 0
                 ? 'No pudimos reconocer ninguna linea. Cargalas a mano.'
                 : $cuantas.' lineas reconocidas. Revisalas antes de guardar.',
@@ -698,6 +721,9 @@ class ConsultaEscrituraController extends Controller
             'lineas.*.aprox' => ['boolean'],
             'lineas.*.idem' => ['boolean'],
             'lineas.*.quitada' => ['boolean'],
+            // No se cotiza este item, con su motivo: queda en la hoja y no suma.
+            'lineas.*.no_cotizada' => ['boolean'],
+            'lineas.*.motivo_no_cotiza' => ['nullable', 'string', 'max:120'],
             'lineas.*.desde_stock' => ['boolean'],
 
             // La calculadora de peso. Llegan las medidas como las cargaron —con
@@ -898,6 +924,11 @@ class ConsultaEscrituraController extends Controller
 
             $this->recordarEnLaLista(Caracteristica::class, $linea->caracteristicas);
 
+            // Si vuelve a cotizarse, el motivo de "no se cotiza" se limpia.
+            if (! $linea->no_cotizada) {
+                $linea->motivo_no_cotiza = null;
+            }
+
             $this->resolverElFactor($linea, (bool) ($datos['aplicar_calculo_al_factor'] ?? false));
 
             $linea->recalcular();
@@ -909,6 +940,11 @@ class ConsultaEscrituraController extends Controller
 
         // Las que dejaron de venir se sacaron de la cotizacion.
         $consulta->lineas()->whereNotIn('id', $sobreviven ?: [0])->delete();
+
+        // Si no se cotiza ninguna, la cotización queda declinada; si vuelve a
+        // cotizarse alguna, se reabre a borrador.
+        $consulta->load('lineas');
+        $consulta->recalcularDeclinacion();
     }
 
     /**

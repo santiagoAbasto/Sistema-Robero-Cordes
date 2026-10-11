@@ -79,8 +79,14 @@ class LectorDeSolicitud
         $lineas = [];
         $sinReconocer = [];
 
-        // Una ficha de la web trae cada dato rotulado: se lee por campo.
+        // Una ficha de la web trae cada dato rotulado: se lee por campo. Si no
+        // es una ficha de la web, puede ser una captura vertical —la forma en
+        // un renglon, y abajo "Seccion:", "Longitud:", "Material:"—.
         $fichas = $this->fichasDeLaWeb($texto);
+
+        if ($fichas === []) {
+            $fichas = $this->fichasDeCaptura($texto, $formas);
+        }
 
         if ($fichas !== []) {
             foreach ($fichas as $ficha) {
@@ -92,17 +98,30 @@ class LectorDeSolicitud
             return ['lineas' => $lineas, 'sin_reconocer' => $sinReconocer];
         }
 
-        // El material dicho en un renglon que no pide nada vale para los que
-        // siguen y no nombran el suyo: "...por material Monel K-500" y abajo
-        // "diametro exterior 76 mm largo 970 mm".
-        $materialDeArriba = null;
+        // El material dicho en un renglon que no pide nada vale para los items
+        // de alrededor que no nombran el suyo: el header "En ALLOY 20..." para
+        // los que siguen, y el "aisi 420" suelto para el item de arriba.
+        $pendienteMaterial = null;
+        // "Cantidad: 6" en su renglon, antes del item que lo lleva.
+        $pendienteCantidad = null;
 
         foreach ($this->separarRenglones($texto) as $renglon) {
             $linea = $this->leerRenglon($renglon, $materiales, $formas, $unidades);
 
             if ($linea === null) {
                 $sinReconocer[] = $renglon;
-                $materialDeArriba = $this->buscarMaterial($renglon, $materiales) ?? $materialDeArriba;
+
+                if (($mat = $this->materialDicho($renglon, $materiales)) !== null) {
+                    $pendienteMaterial = $mat;
+
+                    // Y para el item de arriba, si quedo sin material: una barra
+                    // y abajo "aisi 420" es el material de esa barra.
+                    $arriba = array_key_last($lineas);
+                    if ($arriba !== null && $lineas[$arriba]['material_id'] === null
+                        && empty($lineas[$arriba]['pedido_material'])) {
+                        $this->ponerMaterial($lineas[$arriba], $mat);
+                    }
+                }
 
                 continue;
             }
@@ -123,10 +142,27 @@ class LectorDeSolicitud
                 continue;
             }
 
-            if ($linea['material_id'] === null && $materialDeArriba !== null) {
-                $linea['material_id'] = $materialDeArriba->id;
-                $linea['material'] = $materialDeArriba->nombre;
+            // "Cantidad: 6" en su renglon, antes del item: se guarda para el
+            // proximo item que no traiga la suya.
+            if ($linea['cantidad'] !== null && $linea['material_id'] === null
+                && $linea['dimensiones'] === null && $linea['forma_id'] === null) {
+                $pendienteCantidad = [
+                    'cantidad' => $linea['cantidad'],
+                    'unidad_venta_id' => $linea['unidad_venta_id'],
+                    'unidad' => $linea['unidad'],
+                ];
+
+                continue;
             }
+
+            if ($linea['material_id'] === null && empty($linea['pedido_material']) && $pendienteMaterial !== null) {
+                $this->ponerMaterial($linea, $pendienteMaterial);
+            }
+
+            if ($linea['cantidad'] === null && $pendienteCantidad !== null) {
+                $linea = [...$linea, ...$pendienteCantidad];
+            }
+            $pendienteCantidad = null;
 
             $lineas[] = $linea;
         }
@@ -172,6 +208,78 @@ class LectorDeSolicitud
             $fichas,
             fn ($f) => count(array_intersect_key($f, array_flip(['material', 'forma', 'dimensiones', 'cantidad']))) >= 2,
         ));
+    }
+
+    /**
+     * Las capturas de pantalla, que llegan en vertical.
+     *
+     * Una foto de un pedido se transcribe asi: la forma en un renglon, y abajo
+     * cada medida y el material con su rotulo —
+     *
+     *     BARRA CUADRADA
+     *     Seccion: 12 mm
+     *     Longitud: 1000 mm
+     *     Material: Acero ASTM A276 420
+     *
+     * Leido renglon por renglon salian tres lineas sueltas y el material se
+     * perdia. Es UN item: la forma (el renglon que es SOLO una forma), las
+     * medidas (cada rotulo en su campo, que se juntan en el orden que las lee
+     * la forma) y el material. Se arma como una ficha y se lee como las demas.
+     *
+     * @return list<array<string, string>>
+     */
+    private function fichasDeCaptura(string $texto, $formas): array
+    {
+        // Un renglon que es SOLO una forma se marca "FORMA: ...", para que entre
+        // en el bloque de la captura. Con numero o dos puntos no es una forma
+        // suelta: "barra 12 x 1000" es una linea normal.
+        $renglones = array_map(function ($linea) use ($formas) {
+            $l = trim($linea);
+
+            if ($l === '' || str_contains($l, ':') || preg_match('/\d/u', $l) || mb_strlen($l) > 30) {
+                return $linea;
+            }
+
+            return $this->buscarForma($this->normalizar($l), $l, $formas) !== null ? 'FORMA: '.$l : $linea;
+        }, preg_split('/\R/u', $texto) ?: []);
+
+        $fichas = CamposDeFormulario::leer(implode("\n", $renglones), [
+            'forma' => ['FORMA'],
+            'material' => ['MATERIAL'],
+            'cantidad' => ['CANTIDAD', 'CANT'],
+            // Cada medida en su rotulo: se juntan despues.
+            'm_diam' => ['DIAMETRO', 'DIÁMETRO', 'DIAM'],
+            'm_lado' => ['LADO', 'SECCION', 'SECCIÓN', 'SECC'],
+            'm_ancho' => ['ANCHO'],
+            'm_esp' => ['ESPESOR', 'ESP'],
+            'm_med' => ['MEDIDAS', 'MEDIDA', 'DIMENSIONES'],
+            'm_largo' => ['LONGITUD', 'LARGO', 'LONG'],
+        ]);
+
+        $items = [];
+
+        foreach ($fichas as $f) {
+            // En el orden en que las leen las formas: lo que mide la seccion
+            // primero, el largo al final.
+            $medidas = array_filter([
+                $f['m_diam'] ?? null, $f['m_lado'] ?? null, $f['m_ancho'] ?? null,
+                $f['m_esp'] ?? null, $f['m_med'] ?? null, $f['m_largo'] ?? null,
+            ]);
+
+            $ficha = array_filter([
+                'material' => $f['material'] ?? null,
+                'forma' => $f['forma'] ?? null,
+                'dimensiones' => $medidas === [] ? null : implode(' X ', $medidas),
+                'cantidad' => $f['cantidad'] ?? null,
+            ], fn ($v) => $v !== null && $v !== '');
+
+            // Como las del web: dos datos como minimo para que sea un item.
+            if (count($ficha) >= 2) {
+                $items[] = $ficha;
+            }
+        }
+
+        return $items;
     }
 
     /**
@@ -417,6 +525,69 @@ class LectorDeSolicitud
     }
 
     /**
+     * El material que nombra un renglon que no pide nada: el que el cliente
+     * escribe una vez para todo el pedido ("En ALLOY 20 - UNS N08020:") o en su
+     * propio renglon ("aisi 420", "Material: Acero ASTM A276 420").
+     *
+     * Devuelve el id del catalogo si lo encuentra; si no, el texto del cliente,
+     * para dejarlo como "lo que pidio" y que alguien elija el grado —"AISI 420"
+     * no es ninguno de los 420 cargados, elegir uno seria adivinar el acero.
+     *
+     * @return array{id: ?int, nombre: string}|null
+     */
+    private function materialDicho(string $renglon, $materiales): ?array
+    {
+        $rotulado = (bool) preg_match('/^\s*(?:en\s+|por\s+material\s+|material\s*:)/iu', $renglon);
+
+        // Sin el rotulo ni el "En ...", y sin la puntuacion de los bordes.
+        $limpio = trim(preg_replace('/^\s*(?:en\s+|por\s+material\s+|material\s*:?\s*)/iu', '', trim($renglon)) ?? $renglon);
+        $limpio = trim($limpio, " \t.:;-");
+
+        // Primero el catalogo: el renglon, el texto limpio, y la primera parte
+        // antes de un guion o barra ("ALLOY 20 - UNS N08020" -> "ALLOY 20").
+        foreach ([$renglon, $limpio, preg_split('~\s[-\/]\s~', $limpio)[0] ?? $limpio] as $cand) {
+            if (($m = $this->buscarMaterial($cand, $materiales)) !== null) {
+                return ['id' => $m->id, 'nombre' => $m->nombre];
+            }
+        }
+
+        // No esta en el catalogo, pero se ve que es un material. Una oracion
+        // larga sin rotulo no cuenta: "trabajamos acero de primera" no es un item.
+        if (($rotulado || mb_strlen($limpio) <= 40) && $this->pareceMaterial($limpio)) {
+            return ['id' => null, 'nombre' => mb_substr(mb_strtoupper($limpio, 'UTF-8'), 0, 120)];
+        }
+
+        return null;
+    }
+
+    /** Si un texto nombra un material: una familia, o una norma con su numero. */
+    private function pareceMaterial(string $texto): bool
+    {
+        $t = $this->sinAcentos($texto);
+
+        return (bool) preg_match(
+            '/\b(ACERO|ACEROS|INOX|INOXIDABLE|TITANIO|MONEL|INCONEL|INCOLOY|HASTELLOY|ALLOY|ALUMINIO|'
+            .'BRONCE|COBRE|NIQUEL|NICKEL|LATON|ZINC|PLOMO|MAGNESIO|MOLIBDENO|TUNGSTENO|COBALTO|TANTALIO|'
+            .'ZIRCONIO|GRAFITO|NITINOL|KANTHAL|DUPLEX|CARBONO)\b/u', $t
+        ) || (bool) preg_match('/\b(AISI|ASTM|ASME|AMS|SAE|UNS|API|DIN)\s*[A-Z]?\s*\d/u', $t);
+    }
+
+    /** Pone el material en una linea: del catalogo, o como "lo que pidio". */
+    private function ponerMaterial(array &$linea, array $mat): void
+    {
+        if ($mat['id'] !== null) {
+            $linea['material_id'] = $mat['id'];
+            $linea['material'] = $mat['nombre'];
+
+            return;
+        }
+
+        $linea['igual_a_lo_pedido'] = false;
+        $linea['pedido_material'] = $mat['nombre'];
+        $linea['pedido_forma'] ??= $linea['forma'] ?? null;
+    }
+
+    /**
      * El renglon como vino, y como habria quedado sin el tipeo.
      *
      * Los mails vienen con errores de tipeo: "Titaniu Grado 7" por Titanio.
@@ -592,6 +763,12 @@ class LectorDeSolicitud
      */
     private function buscarCantidad(string $renglon, $unidades): array
     {
+        // "Cantidad: 6", "Cant.: 2", "Cant: 1": lo dice con todas las letras,
+        // sea en su renglon suelto o al final del item ("... - Cant.: 1.").
+        if (preg_match('/\bcant(?:idad)?\.?\s*:?\s*(\d+(?:[.,]\d+)?)\b/iu', $renglon, $mc)) {
+            return [(float) str_replace(',', '.', $mc[1]), $unidades->firstWhere('codigo', 'UN')];
+        }
+
         if (! preg_match('/^\s*(\d+(?:[.,]\d+)*)(.*)$/su', $renglon, $m)
             && ! $this->cantidadAlFinal($renglon, $m)) {
             return [null, null];
@@ -665,10 +842,27 @@ class LectorDeSolicitud
           cliente y asi la busca el proveedor; pasarla a milimetros es otra
           cosa.
         */
-        $pulgadas = '/\d+(?:[.,]\d+)?\s*"\s*(?:SCH\s*\d+\w*)?(?:\s*[xX]\s*\d+(?:[.,]\d+)?\s*(?:MM)?)?/iu';
+        $numero = '\d+(?:[.,]\d+)?';
+        $unidad = '(?:\s*(?:MM|CM|MTS?|METROS?|M)(?![A-Z]))?';
+
+        /*
+          Los caños vienen en pulgadas y con schedule, con o sin fraccion:
+          «1 1/2" SCH 40», «3/4"», «1 1/2" x 1 1/4"». La medida se guarda como
+          la escribe el cliente —asi la pide y asi la busca el proveedor—, y si
+          el largo viene aparte en mm, se toma. Antes «1 1/2"» se leia «2"»: la
+          fraccion se perdia, y la reduccion «1 1/2" x 1 1/4"» quedaba en «2"».
+        */
+        $valPulg = '(?:\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|'.$numero.')';
+        $pulgadas = '/(?:[Ø⌀]\s*|DIA\s*)?'.$valPulg.'\s*"\s*(?:SCH\.?\s*\d+\w*)?'
+            .'(?:\s*[xX]\s*'.$valPulg.'\s*"?\s*(?:SCH\.?\s*\d+\w*)?)?/iu';
 
         if (preg_match($pulgadas, $renglon, $m)) {
             $medidas['texto'] = trim($m[0]);
+
+            // El largo escrito aparte en mm: «... x 1500 mm», «Largo: 1500 mm».
+            if (preg_match('/(?:x|largo)[\s:]*('.$numero.')\s*(MM|CM|MTS?|METROS?|M)\b/iu', $renglon, $l)) {
+                $medidas['largo_mm'] = $this->aMilimetros($l[1], $l[2]);
+            }
 
             return $medidas;
         }
@@ -684,8 +878,6 @@ class LectorDeSolicitud
           peso salia mil veces mas chico. Sin unidad escrita, milimetros, que
           es como escribe casi todo el mundo.
         */
-        $unidad = '(?:\s*(?:MM|CM|MTS?|METROS?|M)(?![A-Z]))?';
-        $numero = '\d+(?:[.,]\d+)?';
 
         // "38.1 X 145 MM" · "2 X 1000 X 2000" · "DIA 65 X 145MM" · "Ø127mm x 25.4mm" · "Ø10mm x 3 metros"
         // "76 mm largo 970 mm": LARGO separa como la x.

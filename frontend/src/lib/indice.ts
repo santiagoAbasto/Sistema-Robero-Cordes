@@ -116,6 +116,13 @@ export interface ReporteSeguimiento {
     por_motivo: { motivo: string; cuantas: number; importe: number }[]
   }
   vendidas: { total: number }
+  declinados: {
+    total_lineas: number
+    cotizaciones_con_declinadas: number
+    cotizaciones_declinadas: number
+    por_motivo: { motivo: string; cuantas: number }[]
+    por_material: { material: string; cuantas: number }[]
+  }
   seguimiento: { sin_ningun_seguimiento: number; promedio_por_cerrada: number }
 }
 
@@ -234,6 +241,8 @@ export interface DatosDeLaFirma {
   localidad_nombre?: string | null
   /** Que es el telefono: Celular, WhatsApp o Telefono. Lo dice su rotulo. */
   tipo_telefono?: string | null
+  /** Todos los telefonos (fijo y celular), cada uno con su tipo, ya normalizados. */
+  telefonos?: { valor: string; tipo: string }[]
   /** La web y las redes que trae: se guardan como enlaces de la ficha. */
   enlaces?: EnlaceLeido[]
 }
@@ -433,6 +442,8 @@ export function estadoDeConsulta(c: {
     return c.emitida ? { texto: 'Emitida', tono: 'brand' } : { texto: 'Falta emisión', tono: 'ambar' }
   }
   if (c.estado === 'Borrador') return { texto: 'Borrador', tono: 'neutro' }
+  // No la cotizamos nosotros: ningún ítem se cotizó.
+  if (c.estado === 'Declinada') return { texto: 'Declinada', tono: 'ambar' }
 
   return { texto: c.estado, tono: 'neutro' }
 }
@@ -623,6 +634,9 @@ export interface DatosLinea {
   deposito?: string | null
   colada?: string | null
   quitada?: boolean
+  /** No se cotiza este item, con su motivo. Queda en la hoja y no suma. */
+  no_cotizada?: boolean
+  motivo_no_cotiza?: string | null
 
   /**
    * La calculadora de peso: van las medidas como se cargaron, no el resultado.
@@ -903,16 +917,26 @@ export async function traerRelacionadas(consultaId: number | string) {
   return data
 }
 
-/** Pega el texto del cliente y devuelve las líneas propuestas. */
-export async function interpretarTexto(texto: string) {
-  const { data } = await api.post<{
+/**
+ * El texto del cliente, o una captura de pantalla, y devuelve las líneas
+ * propuestas. La imagen la transcribe la IA y se lee con las mismas reglas.
+ */
+export async function interpretarTexto(entrada: string | File) {
+  type Respuesta = {
     lineas: import('../types/indice').LineaInterpretada[]
     sin_reconocer: string[]
     con_ia: boolean
     aviso: string | null
     repetidas: string[]
+    // Lo que se leyó de la imagen, para revisarlo; el texto pegado vuelve igual.
+    texto: string
     mensaje: string
-  }>('/consultas/interpretar', { texto })
+  }
+
+  const { data } =
+    typeof entrada === 'string'
+      ? await api.post<Respuesta>('/consultas/interpretar', { texto: entrada })
+      : await api.postForm<Respuesta>('/consultas/interpretar', { imagen: entrada })
 
   return data
 }
