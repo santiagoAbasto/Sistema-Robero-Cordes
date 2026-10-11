@@ -2878,13 +2878,6 @@ function LineaFila({
         {linea.no_cotizada && <Chip tono="ambar">No se cotiza</Chip>}
 
         <div className="ml-auto flex items-center gap-3">
-          {/* No se cotiza: el item queda en la hoja, con su motivo, sin importe.
-              Las alternativas no se declinan: son otra respuesta al mismo pedido. */}
-          {!esAlternativa && !linea.quitada && (
-            <Accion onClick={() => onCambio({ no_cotizada: !linea.no_cotizada })} apagado={!linea.no_cotizada}>
-              {linea.no_cotizada ? 'Volver a cotizar' : 'No se cotiza'}
-            </Accion>
-          )}
           <Accion onClick={() => onCambio({ quitada: !linea.quitada })} apagado={!linea.quitada}>
             {linea.quitada ? 'Volver a poner' : 'Quitar de la cotizacion'}
           </Accion>
@@ -2898,21 +2891,6 @@ function LineaFila({
           </button>
         </div>
       </div>
-
-      {/* Por qué no se cotiza este ítem: sale impreso al lado, y no suma. */}
-      {linea.no_cotizada && (
-        <div className="mb-2 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] p-2.5">
-          <Combo
-            id={`motivo-no-cotiza-${linea.clave}`}
-            etiqueta="Por qué no se cotiza"
-            ayuda="sale impreso al lado del ítem"
-            value={linea.motivo_no_cotiza ?? ''}
-            onChange={(e) => onCambio({ motivo_no_cotiza: e.target.value || null })}
-            placeholder="Elegí el motivo o escribí otro"
-            opciones={catalogos?.motivos_no_cotiza ?? []}
-          />
-        </div>
-      )}
 
       {/*
         Lo que pidió el cliente, ARRIBA de lo que se le ofrece: "pidió esto,
@@ -3425,6 +3403,32 @@ function LineaFila({
         >
           Sale de stock
         </Casilla>
+
+        {/* No se cotiza: al lado de las otras marcas, no arriba. El motivo
+            aparece acá mismo, como lista para elegir (sale impreso al lado del
+            ítem). Las alternativas no se declinan. */}
+        {!esAlternativa && (
+          <Casilla
+            marcada={Boolean(linea.no_cotizada)}
+            onChange={(v) => onCambio({ no_cotizada: v, ...(v ? {} : { motivo_no_cotiza: null }) })}
+          >
+            No se cotiza
+          </Casilla>
+        )}
+
+        {!esAlternativa && linea.no_cotizada && (
+          <div className="basis-full">
+            <Lista
+              etiqueta="Por qué no se cotiza"
+              ayuda="sale impreso al lado del ítem"
+              vacio="Elegí el motivo"
+              className="max-w-md"
+              value={linea.motivo_no_cotiza ?? ''}
+              onChange={(e) => onCambio({ motivo_no_cotiza: e.target.value || null })}
+              opciones={(catalogos?.motivos_no_cotiza ?? []).map((m) => ({ valor: m, texto: m }))}
+            />
+          </div>
+        )}
 
         {/* Deposito y colada solo tienen sentido si sale de stock. */}
         {linea.desde_stock && (
