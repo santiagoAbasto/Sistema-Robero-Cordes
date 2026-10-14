@@ -33,6 +33,10 @@ class FormaController extends Controller
         'length' => 'Largo',
         'side' => 'Lado',
         'across' => 'Distancia entre caras',
+        // La otra punta de una reduccion: entra un caño y sale otro (lista del
+        // cliente, 14-10-2026).
+        'outer2' => 'Diametro exterior de salida',
+        'wall2' => 'Espesor de pared de salida',
     ];
 
     public function __construct(private EvaluadorDeFormulas $evaluador) {}

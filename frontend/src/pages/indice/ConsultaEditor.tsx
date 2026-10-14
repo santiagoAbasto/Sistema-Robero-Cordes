@@ -247,10 +247,13 @@ function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
 
     // Se deduce si el texto guardado lo escribió una persona: si coincide con
     // lo que armaría el sistema, nadie lo tocó.
-    const dimArmada = armarDimensiones(forma, calc.medidas, cano, {
-      min: l.largo_min_mm,
-      max: l.largo_max_mm,
-    })
+    const dimArmada = armarDimensiones(
+      forma,
+      calc.medidas,
+      cano,
+      { min: l.largo_min_mm, max: l.largo_max_mm },
+      canoDeLasMedidas(calc.medidas, catalogos, true),
+    )
     const descArmada = armarDescripcion(l.material, forma, dimArmada, l.caracteristicas)
 
     return {
@@ -1909,21 +1912,108 @@ function formaDeLoPedido(
   )
 }
 
-/** El caño que pidió el cliente: se reconoce por su diámetro exterior y su pared. */
-function canoDeLoPedido(
+/**
+ * El caño de unas medidas: se reconoce por su diámetro exterior y su pared.
+ *
+ * El de lo pedido, y el de la salida de una reducción (outer2 y wall2). Entre
+ * los schedules de la misma pared —STD, 40 y 40S en 2"— devuelve el del grupo,
+ * el mismo que se guarda al elegirlo de la lista, así la medida se escribe igual.
+ */
+function canoDeLasMedidas(
   medidas: LineaForm['pedido_medidas'],
   catalogos: Catalogos | null,
+  salida = false,
 ): CanoEstandar | null {
-  const o = medidas?.outer?.valor
-  const w = medidas?.wall?.valor
+  const o = medidas?.[salida ? 'outer2' : 'outer']?.valor
+  const w = medidas?.[salida ? 'wall2' : 'wall']?.valor
 
   if (!o || !w) return null
 
-  return (
-    (catalogos?.canos ?? []).find(
-      (c) => Number(c.diametro_mm) === Number(o) && Number(c.pared_mm) === Number(w),
-    ) ?? null
+  const canos = catalogos?.canos ?? []
+  const coincide = canos.find((c) => Number(c.diametro_mm) === Number(o) && Number(c.pared_mm) === Number(w))
+
+  if (!coincide) return null
+
+  const grupo = schedulesAgrupados(canos.filter((c) => c.nombre === coincide.nombre)).find(
+    (g) => Number(g.pared) === Number(coincide.pared_mm),
   )
+
+  return canos.find((c) => c.id === grupo?.id) ?? coincide
+}
+
+/**
+ * Elegir un caño de la tabla: primero la medida, después el schedule.
+ *
+ * Lo usan lo pedido y la salida de una reducción. Elegir "medida especial"
+ * vacía el diámetro y la pared, para que se puedan escribir a mano: si
+ * quedaban, el caño se seguía reconociendo y los casilleros, bloqueados.
+ */
+function SelectorDeCano({
+  cano,
+  catalogos,
+  onElegir,
+  aria,
+}: {
+  cano: CanoEstandar | null
+  catalogos: Catalogos | null
+  onElegir: (elegido: CanoEstandar | null) => void
+  aria: string
+}) {
+  const canos = catalogos?.canos ?? []
+  const medidas = [...new Map(canos.map((c) => [c.nombre, c])).values()]
+  const schedules = schedulesAgrupados(canos.filter((c) => c.nombre === cano?.nombre))
+  const porId = (id: number | null | undefined) => canos.find((c) => c.id === id) ?? null
+
+  return (
+    <div className="grid grid-cols-2 gap-1.5">
+      <select
+        aria-label={`Medida del caño ${aria}`}
+        value={cano?.nombre ?? ''}
+        onChange={(e) =>
+          onElegir(
+            e.target.value
+              ? porId(schedulesAgrupados(canos.filter((c) => c.nombre === e.target.value))[0]?.id)
+              : null,
+          )
+        }
+        className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
+      >
+        <option value="">Caño de medida especial — cargo las medidas yo</option>
+        {medidas.map((m) => (
+          <option key={m.nombre} value={m.nombre}>
+            {m.nombre} · Ø{m.diametro_mm} mm
+          </option>
+        ))}
+      </select>
+      <select
+        aria-label={`Schedule del caño ${aria}`}
+        value={schedules.find((g) => Number(g.pared) === Number(cano?.pared_mm))?.id ?? ''}
+        disabled={!cano}
+        onChange={(e) => onElegir(porId(e.target.value ? Number(e.target.value) : null))}
+        className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
+      >
+        <option value="">{cano ? 'Elegí el schedule' : '—'}</option>
+        {schedules.map((g) => (
+          <option key={g.id} value={g.id}>
+            SCH {g.etiqueta} · pared {g.pared} mm
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+/** El diámetro y la pared de un caño elegido, o vacíos para cargarlos a mano. */
+function medidasDelCano(
+  medidas: Record<string, { valor: string; unidad: string }>,
+  cano: CanoEstandar | null,
+  salida = false,
+) {
+  return {
+    ...medidas,
+    [salida ? 'outer2' : 'outer']: { valor: cano ? String(cano.diametro_mm) : '', unidad: 'mm' },
+    [salida ? 'wall2' : 'wall']: { valor: cano ? String(cano.pared_mm) : '', unidad: 'mm' },
+  }
 }
 
 /**
@@ -1945,7 +2035,17 @@ function dimensionesDeLoPedido(
     return l.pedido_dimensiones ?? null
   }
 
-  return armarDimensiones(forma, medidas, canoDeLoPedido(medidas, catalogos)) || l.pedido_dimensiones || null
+  return (
+    armarDimensiones(
+      forma,
+      medidas,
+      canoDeLasMedidas(medidas, catalogos),
+      undefined,
+      canoDeLasMedidas(medidas, catalogos, true),
+    ) ||
+    l.pedido_dimensiones ||
+    null
+  )
 }
 
 /** Donde guarda la linea, en milimetros, cada medida de la forma. */
@@ -2436,6 +2536,14 @@ function MedidasDeLaForma({
     [catalogos, cano],
   )
 
+  // Una reducción: entra un caño y sale otro, cada uno de la tabla.
+  const conSalida = Boolean(forma?.usa_cano) && campos.some((c) => c.clave === 'outer2')
+  const cano2 = canoDeLasMedidas(linea.calc.medidas, catalogos, true)
+
+  function elegirCanoSalida(elegido: CanoEstandar | null) {
+    onCambio({ calc: { ...linea.calc, medidas: medidasDelCano(linea.calc.medidas, elegido, true) } })
+  }
+
   function cambiarMedida(clave: string, cambios: Partial<{ valor: string; unidad: string }>) {
     const actual = linea.calc.medidas[clave] ?? { valor: '', unidad: 'mm' }
     const medidas = { ...linea.calc.medidas, [clave]: { ...actual, ...cambios } }
@@ -2567,45 +2675,57 @@ function MedidasDeLaForma({
         medida pasa de diez renglones a seis.
       */}
       {forma.usa_cano && (
-        <div className="mb-2 grid gap-1.5 sm:grid-cols-2 lg:w-2/3">
-          <select
-            aria-label="Medida del caño"
-            value={cano?.nombre ?? ''}
-            onChange={(e) => elegirMedidaDeCano(e.target.value)}
-            className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
-          >
-            <option value="">Caño de medida especial — cargo las medidas yo</option>
-            {medidasDeCano.map((m) => (
-              <option key={m.nombre} value={m.nombre}>
-                {m.nombre} · Ø{m.diametro_mm} mm
-              </option>
-            ))}
-          </select>
+        <div className={`mb-2 grid gap-1.5 ${conSalida ? 'lg:grid-cols-2' : 'lg:w-2/3'}`}>
+          <div>
+            {conSalida && <Etiqueta>Entrada</Etiqueta>}
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              <select
+                aria-label="Medida del caño"
+                value={cano?.nombre ?? ''}
+                onChange={(e) => elegirMedidaDeCano(e.target.value)}
+                className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
+              >
+                <option value="">Caño de medida especial — cargo las medidas yo</option>
+                {medidasDeCano.map((m) => (
+                  <option key={m.nombre} value={m.nombre}>
+                    {m.nombre} · Ø{m.diametro_mm} mm
+                  </option>
+                ))}
+              </select>
 
-          <select
-            aria-label="Schedule del caño"
-            value={linea.calc.canoId ?? ''}
-            disabled={!cano}
-            onChange={(e) => elegirCano(e.target.value ? Number(e.target.value) : null)}
-            className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
-          >
-            <option value="">{cano ? 'Elegí el schedule' : '—'}</option>
-            {schedulesDeLaMedida.map((g) => (
-              <option key={g.id} value={g.id}>
-                SCH {g.etiqueta} · pared {g.pared} mm
-              </option>
-            ))}
-          </select>
+              <select
+                aria-label="Schedule del caño"
+                value={linea.calc.canoId ?? ''}
+                disabled={!cano}
+                onChange={(e) => elegirCano(e.target.value ? Number(e.target.value) : null)}
+                className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
+              >
+                <option value="">{cano ? 'Elegí el schedule' : '—'}</option>
+                {schedulesDeLaMedida.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    SCH {g.etiqueta} · pared {g.pared} mm
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {conSalida && (
+            <div>
+              <Etiqueta>Salida</Etiqueta>
+              <SelectorDeCano cano={cano2} catalogos={catalogos} aria="de salida" onElegir={elegirCanoSalida} />
+            </div>
+          )}
         </div>
       )}
-
       {/* Las mismas columnas que lo que pidió el cliente: Diámetro cae sobre
           Diámetro y Cantidad sobre Cantidad. Seis en pantalla ancha, cuatro en
           una mediana: con seis, en 1024 px "114" no entraba en el casillero. */}
       <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
         {campos.map((campo) => {
           const cargada = linea.calc.medidas[campo.clave] ?? { valor: '', unidad: 'mm' }
-          const puestoPorCano = Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')
+          const puestoPorCano =
+            (Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')) ||
+            (Boolean(cano2) && (campo.clave === 'outer2' || campo.clave === 'wall2'))
 
           // Con largo variable, en lugar del largo van los dos extremos.
           if (campo.clave === 'length' && largoVariable) {
@@ -2770,10 +2890,13 @@ function LineaFila({
   // El nombre manda, este o no en el catalogo: es lo que sale impreso.
   const nombreMaterial = material?.nombre ?? linea.material_nuevo ?? null
 
-  const dimArmada = armarDimensiones(formaElegida, linea.calc.medidas, canoElegido, {
-    min: linea.largo_min_mm,
-    max: linea.largo_max_mm,
-  })
+  const dimArmada = armarDimensiones(
+    formaElegida,
+    linea.calc.medidas,
+    canoElegido,
+    { min: linea.largo_min_mm, max: linea.largo_max_mm },
+    canoDeLasMedidas(linea.calc.medidas, catalogos, true),
+  )
   // La característica ofrecida —"s/c", "ASTM B348"— entra en la descripción
   // impresa, salvo que ya esté escrita a mano.
   const descArmada = armarDescripcion(nombreMaterial, formaElegida, dimArmada, linea.caracteristicas)
@@ -2856,24 +2979,15 @@ function LineaFila({
 
   // El caño que pidió el cliente, para que el selector arranque donde quedó.
   const canoPedido = useMemo(
-    () => canoDeLoPedido(linea.pedido_medidas, catalogos),
+    () => canoDeLasMedidas(linea.pedido_medidas, catalogos),
     [linea.pedido_medidas, catalogos],
   )
-
-  const medidasDeCanoPedido = useMemo(() => {
-    const vistas = new Map<string, CanoEstandar>()
-
-    for (const c of catalogos?.canos ?? []) {
-      if (!vistas.has(c.nombre)) vistas.set(c.nombre, c)
-    }
-
-    return [...vistas.values()]
-  }, [catalogos])
-
-  const schedulesDelPedido = useMemo(
-    () => schedulesAgrupados((catalogos?.canos ?? []).filter((c) => c.nombre === canoPedido?.nombre)),
-    [catalogos, canoPedido],
+  // La salida, si lo pedido es una reducción.
+  const canoPedido2 = useMemo(
+    () => canoDeLasMedidas(linea.pedido_medidas, catalogos, true),
+    [linea.pedido_medidas, catalogos],
   )
+  const pedidoConSalida = Boolean(formaPedida?.usa_cano) && camposDeLoPedido.some((c) => c.clave === 'outer2')
 
   /**
    * Cambia una medida de lo pedido y rearma el texto que sale impreso.
@@ -2888,34 +3002,25 @@ function LineaFila({
 
     onCambio({
       pedido_medidas: medidas,
-      pedido_dimensiones: armarDimensiones(formaPedida, medidas, canoPedido) || null,
+      pedido_dimensiones: armarDimensiones(formaPedida, medidas, canoPedido, undefined, canoPedido2) || null,
     })
   }
 
-  /** Elegir un caño pedido completa su diámetro exterior y su pared. */
-  function elegirCanoPedido(id: number | null) {
-    const elegido = catalogos?.canos?.find((c) => c.id === id) ?? null
-    const base = linea.pedido_medidas ?? {}
-    const medidas = elegido
-      ? {
-          ...base,
-          outer: { valor: String(elegido.diametro_mm), unidad: 'mm' },
-          wall: { valor: String(elegido.pared_mm), unidad: 'mm' },
-        }
-      : base
+  /** Elegir un caño pedido —la entrada o la salida— completa su diámetro y su pared. */
+  function elegirCanoPedido(elegido: CanoEstandar | null, salida = false) {
+    const medidas = medidasDelCano(linea.pedido_medidas ?? {}, elegido, salida)
 
     onCambio({
       pedido_medidas: medidas,
-      pedido_dimensiones: armarDimensiones(formaPedida, medidas, elegido) || null,
+      pedido_dimensiones:
+        armarDimensiones(
+          formaPedida,
+          medidas,
+          salida ? canoPedido : elegido,
+          undefined,
+          salida ? elegido : canoPedido2,
+        ) || null,
     })
-  }
-
-  function elegirMedidaDeCanoPedido(nombre: string) {
-    if (!nombre) return elegirCanoPedido(null)
-
-    const primero = schedulesAgrupados((catalogos?.canos ?? []).filter((c) => c.nombre === nombre))[0]
-
-    elegirCanoPedido(primero?.id ?? null)
   }
 
   function alternarIgualALoPedido() {
@@ -3075,36 +3180,30 @@ function LineaFila({
           </div>
 
           {/* El caño que pidió el cliente se elige por su medida y su
-              schedule, como en lo que se ofrece y en el mismo lugar. */}
+              schedule, como en lo que se ofrece y en el mismo lugar. Una
+              reducción tiene dos: la entrada y la salida, lado a lado. */}
           {formaPedida?.usa_cano && (
-            <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:w-2/3">
-              <select
-                aria-label="Medida del caño pedido"
-                value={canoPedido?.nombre ?? ''}
-                onChange={(e) => elegirMedidaDeCanoPedido(e.target.value)}
-                className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
-              >
-                <option value="">Caño de medida especial — cargo las medidas yo</option>
-                {medidasDeCanoPedido.map((m) => (
-                  <option key={m.nombre} value={m.nombre}>
-                    {m.nombre} · Ø{m.diametro_mm} mm
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Schedule del caño pedido"
-                value={schedulesDelPedido.find((g) => Number(g.pared) === Number(canoPedido?.pared_mm))?.id ?? ''}
-                disabled={!canoPedido}
-                onChange={(e) => elegirCanoPedido(e.target.value ? Number(e.target.value) : null)}
-                className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
-              >
-                <option value="">{canoPedido ? 'Elegí el schedule' : '—'}</option>
-                {schedulesDelPedido.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    SCH {g.etiqueta} · pared {g.pared} mm
-                  </option>
-                ))}
-              </select>
+            <div className={`mt-1.5 grid gap-1.5 ${pedidoConSalida ? 'lg:grid-cols-2' : 'lg:w-2/3'}`}>
+              <div>
+                {pedidoConSalida && <Etiqueta>Entrada</Etiqueta>}
+                <SelectorDeCano
+                  cano={canoPedido}
+                  catalogos={catalogos}
+                  aria="pedido"
+                  onElegir={(c) => elegirCanoPedido(c)}
+                />
+              </div>
+              {pedidoConSalida && (
+                <div>
+                  <Etiqueta>Salida</Etiqueta>
+                  <SelectorDeCano
+                    cano={canoPedido2}
+                    catalogos={catalogos}
+                    aria="pedido de salida"
+                    onElegir={(c) => elegirCanoPedido(c, true)}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -3119,7 +3218,9 @@ function LineaFila({
             {camposDeLoPedido.length > 0 ? (
               camposDeLoPedido.map((campo) => {
                 const cargada = linea.pedido_medidas?.[campo.clave] ?? { valor: '', unidad: 'mm' }
-                const puestoPorCano = Boolean(canoPedido) && (campo.clave === 'outer' || campo.clave === 'wall')
+                const puestoPorCano =
+                  (Boolean(canoPedido) && (campo.clave === 'outer' || campo.clave === 'wall')) ||
+                  (Boolean(canoPedido2) && (campo.clave === 'outer2' || campo.clave === 'wall2'))
 
                 return (
                   <div key={campo.clave}>
