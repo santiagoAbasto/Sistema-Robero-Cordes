@@ -168,3 +168,7 @@ temp/
 *.bak
 *.orig
 *.rej
+
+# Mapa del codigo (graphify): es nuestro, no del cliente.
+graphify-out/
+.graphifyignore

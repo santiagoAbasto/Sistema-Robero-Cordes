@@ -942,7 +942,7 @@ class ConsultaEscrituraController extends Controller
         $consulta->lineas()->whereNotIn('id', $sobreviven ?: [0])->delete();
 
         // Si no se cotiza ninguna, la cotización queda declinada; si vuelve a
-        // cotizarse alguna, se reabre a borrador.
+        // cotizarse alguna, se reabre a Confirmada ("Falta emisión" sin emitir).
         $consulta->load('lineas');
         $consulta->recalcularDeclinacion();
     }
