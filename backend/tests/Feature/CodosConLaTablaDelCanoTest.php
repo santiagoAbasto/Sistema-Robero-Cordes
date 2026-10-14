@@ -120,4 +120,34 @@ class CodosConLaTablaDelCanoTest extends TestCase
         $this->assertEquals(6, $foto['medidas']['length']['valor']);
         $this->assertSame('m', $foto['medidas']['length']['unidad']);
     }
+
+    /**
+     * Las reducciones, con entrada y salida (lista del cliente, 14-10-2026):
+     * "diametro exterior dos veces y espesor de pared dos veces".
+     */
+    public function test_las_reducciones_tienen_entrada_y_salida(): void
+    {
+        $concentrica = $this->forma('REDUCCIÓN CONCENTRICA');
+        $excentrica = $this->forma('REDUCCIÓN EXCÉNTRICA', ['campos' => [['clave' => 'diameter', 'label' => 'Diametro']]]);
+
+        (require database_path('migrations/2026_10_14_000400_reducciones_con_dos_medidas.php'))->up();
+
+        $this->assertTrue($concentrica->fresh()->usa_cano);
+        $this->assertSame(['outer', 'wall', 'outer2', 'wall2'], array_column($concentrica->fresh()->camposDelCalculo(), 'clave'));
+        // La que ya estaba configurada a mano no se toca.
+        $this->assertSame(['diameter'], array_column($excentrica->fresh()->camposDelCalculo(), 'clave'));
+
+        // 6" SCH 40S a 4" SCH 40S: la foto guarda las dos puntas, sin peso.
+        $foto = app(CalculadoraDePeso::class)->calcular(
+            Material::where('nombre', 'AISI 304')->firstOrFail(),
+            $concentrica->fresh(),
+            ['outer2' => ['valor' => '114.3', 'unidad' => 'mm'], 'wall2' => ['valor' => '6.02', 'unidad' => 'mm']],
+            cano: CanoEstandar::where('nombre', '6"')->where('schedule', '40S')->firstOrFail(),
+        );
+
+        $this->assertNull($foto['peso_total_kg']);
+        $this->assertEquals(168.3, $foto['medidas']['outer']['valor_mm']);
+        $this->assertEquals(114.3, $foto['medidas']['outer2']['valor_mm']);
+        $this->assertSame('Diametro exterior de salida', $foto['medidas']['outer2']['label']);
+    }
 }

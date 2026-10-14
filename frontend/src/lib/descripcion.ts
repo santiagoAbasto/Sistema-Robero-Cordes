@@ -38,6 +38,8 @@ export function armarDimensiones(
   medidas: Record<string, MedidaCargada>,
   cano: CanoEstandar | null,
   rango?: { min?: number | string | null; max?: number | string | null },
+  /** La otra punta de una reducción: "6" SCH 40 X 4" SCH 40". */
+  cano2?: CanoEstandar | null,
 ): string {
   if (!forma) return ''
 
@@ -62,6 +64,7 @@ export function armarDimensiones(
 
     return [
       `${cano.nombre} SCH ${cano.schedule}`,
+      cano2 ? `X ${cano2.nombre} SCH ${cano2.schedule}` : '',
       largo?.valor ? `X ${texto('length', largo)} ${largo.unidad.toUpperCase()}` : '',
     ]
       .filter(Boolean)
