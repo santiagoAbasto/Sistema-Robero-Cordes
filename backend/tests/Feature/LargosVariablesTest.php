@@ -91,6 +91,46 @@ class LargosVariablesTest extends TestCase
         return $this->consulta->fresh('lineas')->lineas->first();
     }
 
+    /** El renglón de la hoja del cliente, como sale impreso. */
+    private function enLaHoja(array $datos): string
+    {
+        $linea = ConsultaLinea::create(array_merge([
+            'consulta_id' => $this->consulta->id,
+            'descripcion' => 'Inconel 601 BARRA REDONDA 8 X 3108-3116 MM',
+            'cantidad' => 10,
+            'largo_min_mm' => 3108,
+            'largo_max_mm' => 3116,
+        ], $datos));
+
+        return view('pdf.linea', [
+            'linea' => $linea->fresh(['unidadVenta', 'unidadFactura']),
+            'numero' => 1,
+            'esAlternativa' => false,
+            'incluyeImportes' => true,
+            'simbolo' => 'US$',
+        ])->render();
+    }
+
+    /**
+     * Gunitado (Roberto, 14-10): por metro el peso no entra en la cuenta, así
+     * que la hoja dice el rango y no "peso calculado sobre el promedio".
+     */
+    public function test_por_metro_la_hoja_no_habla_del_peso(): void
+    {
+        $hoja = $this->enLaHoja(['unidad_venta_id' => $this->unidad('MT'), 'unidad_factura_id' => $this->unidad('MT')]);
+
+        $this->assertStringContainsString('Largos de 3,11 a 3,12 m', $hoja);
+        $this->assertStringNotContainsString('peso calculado', $hoja);
+    }
+
+    /** Facturando en kilos sí: el peso, y con él el precio, sale del promedio. */
+    public function test_facturando_en_kilos_la_hoja_dice_con_que_largo_se_peso(): void
+    {
+        $hoja = $this->enLaHoja(['unidad_venta_id' => $this->unidad('UN'), 'unidad_factura_id' => $this->unidad('KG')]);
+
+        $this->assertStringContainsString('peso calculado sobre el promedio, 3,11 m', $hoja);
+    }
+
     /** El largo con el que se calcula es el del medio, no el que vino escrito. */
     public function test_el_largo_que_queda_es_el_promedio_del_rango(): void
     {

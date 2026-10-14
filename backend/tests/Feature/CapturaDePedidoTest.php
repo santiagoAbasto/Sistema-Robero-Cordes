@@ -58,6 +58,73 @@ class CapturaDePedidoTest extends TestCase
         $this->assertSame('Acero ASTM A276 420', $lineas[0]['pedido_material']);
     }
 
+    /**
+     * La tabla de TOSAMA (14-10), copiada por la IA de a una celda por
+     * renglon. Leida renglon por renglon cada "114 mm" era un item con
+     * cantidad 114; son cuatro items, uno por fila.
+     */
+    public function test_una_tabla_copiada_en_vertical_es_un_item_por_fila(): void
+    {
+        $vertical = "Item\nDiámetro externo\nLargo\nMaterial\ncant\n"
+            ."1\n114 mm\n105 mm\nINCONEL\n1\n"
+            ."2\n140 mm\n150 mm\nINCONEL\n3\n"
+            ."3\n94 mm\n81 mm\nINCONEL\n2\n"
+            ."4\n195 mm\n62 mm\nINCONEL\n2";
+
+        config(['services.openai.key' => 'clave-de-prueba']);
+        Http::fake(['*/chat/completions' => Http::response([
+            'choices' => [['message' => ['content' => $vertical]]],
+        ])]);
+
+        $lineas = $this->post('/api/consultas/interpretar',
+            ['imagen' => UploadedFile::fake()->image('tabla.png', 500, 200)],
+            ['Accept' => 'application/json'],
+        )->assertOk()->json('lineas');
+
+        $this->assertCount(4, $lineas);
+        $this->assertSame([1, 3, 2, 2], array_map(fn ($l) => (int) $l['cantidad'], $lineas));
+        $this->assertEqualsWithDelta(114.0, $lineas[0]['diametro_mm'], 0.001);
+        $this->assertEqualsWithDelta(105.0, $lineas[0]['largo_mm'], 0.001);
+        $this->assertEqualsWithDelta(62.0, $lineas[3]['largo_mm'], 0.001);
+
+        // "INCONEL" a secas no es ninguno de los Inconel del catalogo: queda
+        // como lo escribio el cliente, para que alguien elija.
+        $this->assertSame('INCONEL', $lineas[0]['pedido_material']);
+        $this->assertNull($lineas[0]['material_id']);
+
+        // Y el pedido a la IA dice que las tablas van fila por fila.
+        Http::assertSent(fn ($r) => str_contains(json_encode($r->data(), JSON_UNESCAPED_UNICODE), 'separadas por \" | \"'));
+    }
+
+    /** Cada medida va a su columna por el titulo, no por el orden en que viene. */
+    public function test_una_tabla_por_filas_se_lee_por_titulo(): void
+    {
+        $lineas = $this->postJson('/api/consultas/interpretar', [
+            'texto' => "Material | Largo (m) | Diámetro | Cantidad\nINCONEL | 3 | 25 | 4",
+        ])->assertOk()->json('lineas');
+
+        $this->assertCount(1, $lineas);
+        $this->assertEqualsWithDelta(25.0, $lineas[0]['diametro_mm'], 0.001);
+        // Sin unidad en la celda vale la del titulo: 3 metros, no 3 mm.
+        $this->assertEqualsWithDelta(3000.0, $lineas[0]['largo_mm'], 0.001);
+        $this->assertSame(4, (int) $lineas[0]['cantidad']);
+    }
+
+    /** A una fila le falta una celda: la tabla termina ahi, sin armar items corridos. */
+    public function test_una_tabla_corrida_no_inventa_items(): void
+    {
+        $lineas = $this->postJson('/api/consultas/interpretar', [
+            'texto' => "Item\nDiámetro externo\nLargo\nMaterial\ncant\n"
+                ."1\n114 mm\n105 mm\nINCONEL\n1\n"
+                // A esta fila le falta el largo.
+                ."2\n140 mm\nINCONEL\n3\n"
+                ."3\n94 mm\n81 mm\nINCONEL\n2",
+        ])->assertOk()->json('lineas');
+
+        $this->assertCount(1, $lineas);
+        $this->assertSame(1, (int) $lineas[0]['cantidad']);
+    }
+
     public function test_sin_credencial_no_lee_la_imagen_y_lo_dice(): void
     {
         config(['services.openai.key' => null]);

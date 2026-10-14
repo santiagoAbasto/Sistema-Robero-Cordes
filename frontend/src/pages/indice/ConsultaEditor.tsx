@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Calculator, Check, Copy, Eye, EyeOff, FilePlus2, Layers, Lock, Plus, Trash2, Wand2, Scale } from 'lucide-react'
 import {
@@ -128,7 +128,29 @@ interface LineaForm extends DatosLinea {
    */
   dimensionesAMano?: boolean
   descripcionAMano?: boolean
+  /**
+   * Las medidas que leyó el lector, tal cual las dijo el cliente. No viajan
+   * al servidor: sirven para ponerlas en los casilleros de la forma que se
+   * elija, mientras nadie las haya escrito a mano.
+   */
+  leidas?: Pick<DatosLinea, 'diametro_mm' | 'espesor_mm' | 'ancho_mm' | 'largo_mm'> | null
 }
+
+/** Dos juegos de medidas con los mismos valores, casillero por casillero. */
+function mismasMedidas(
+  a: Record<string, { valor: string; unidad: string }> | null | undefined,
+  b: Record<string, { valor: string; unidad: string }>,
+): boolean {
+  const claves = new Set([...Object.keys(a ?? {}), ...Object.keys(b)])
+
+  return [...claves].every(
+    (k) => (a?.[k]?.valor ?? '') === (b[k]?.valor ?? '') && (!a?.[k]?.valor || a[k].unidad === b[k]?.unidad),
+  )
+}
+
+/** Si un juego de medidas no tiene ningún valor escrito. */
+const sinMedidas = (m: Record<string, { valor: string }> | null | undefined) =>
+  !Object.values(m ?? {}).some((x) => x?.valor)
 
 /**
  * El número de ítem de cada línea: 1, 2, 3, y las alternativas 1.1, 1.2.
@@ -699,6 +721,7 @@ export default function ConsultaEditor() {
         factorEscrito: _fe,
         dimensionesAMano: _dam,
         descripcionAMano: _desam,
+        leidas: _leidas,
         ...l
       }) => ({
         ...l,
@@ -709,8 +732,15 @@ export default function ConsultaEditor() {
         // es lo que el servidor espera. Como las alternativas van agrupadas
         // debajo de su madre, su posición siempre es anterior.
         alternativa_de: _madre ? conDatos.findIndex((x) => x.clave === _madre) : null,
+        // Lo impreso en "Se había pedido" sale de los casilleros de lo pedido.
+        pedido_dimensiones: _madre ? l.pedido_dimensiones : dimensionesDeLoPedido(l, catalogos),
         calc_medidas: Object.keys(calc.medidas).length > 0 ? calc.medidas : null,
-        calc_piezas: Number(calc.piezas) || null,
+        // Vendiendo por unidad, las piezas del peso son la cantidad: el campo
+        // Piezas ni se muestra, así que no puede quedar otro número guardado.
+        calc_piezas:
+          catalogos?.unidades.find((u) => u.id === l.unidad_venta_id)?.codigo === 'UN'
+            ? Number(l.cantidad) || null
+            : Number(calc.piezas) || null,
         calc_cano_id: calc.canoId,
       })),
       juego_condiciones: cabecera.juego_condiciones || null,
@@ -927,6 +957,15 @@ export default function ConsultaEditor() {
           !esAlternativa && l.igual_a_lo_pedido === false && Object.keys(medidas).length > 0
             ? { ...medidas }
             : null,
+        // Y lo mismo la cantidad y la unidad: "INCONEL, cant 3" abría lo que
+        // pidió con la cantidad vacía.
+        cantidad_pedida: !esAlternativa && l.igual_a_lo_pedido === false ? (l.cantidad ?? null) : null,
+        unidad_pedida_id: !esAlternativa && l.igual_a_lo_pedido === false ? (l.unidad_venta_id ?? null) : null,
+        // Lo que dijo el cliente, aparte: va a los casilleros de la forma que se
+        // elija después.
+        leidas: esAlternativa
+          ? null
+          : { diametro_mm: l.diametro_mm, espesor_mm: l.espesor_mm, ancho_mm: l.ancho_mm, largo_mm: l.largo_mm },
         precio_unitario: null,
         // Las medidas que se entendieron ya quedan puestas en la calculadora.
         calc: {
@@ -1847,6 +1886,61 @@ function medidasDeLaLinea(
   return medidas
 }
 
+/**
+ * La forma de lo que pidió el cliente: la que nombró, y si no está en el
+ * catálogo o no la nombró, la que se ofrece — casi siempre es la misma, y así
+ * lo pedido se carga en los mismos casilleros.
+ */
+function formaDeLoPedido(
+  l: Pick<LineaForm, 'pedido_forma' | 'forma_id'>,
+  catalogos: Catalogos | null,
+): Forma | null {
+  return (
+    catalogos?.formas.find((f) => f.nombre === l.pedido_forma) ??
+    catalogos?.formas.find((f) => f.id === l.forma_id) ??
+    null
+  )
+}
+
+/** El caño que pidió el cliente: se reconoce por su diámetro exterior y su pared. */
+function canoDeLoPedido(
+  medidas: LineaForm['pedido_medidas'],
+  catalogos: Catalogos | null,
+): CanoEstandar | null {
+  const o = medidas?.outer?.valor
+  const w = medidas?.wall?.valor
+
+  if (!o || !w) return null
+
+  return (
+    (catalogos?.canos ?? []).find(
+      (c) => Number(c.diametro_mm) === Number(o) && Number(c.pared_mm) === Number(w),
+    ) ?? null
+  )
+}
+
+/**
+ * Lo que sale impreso en "Se había pedido".
+ *
+ * Con la forma y sus casilleros cargados se arma de ellos, siempre. Era un
+ * texto guardado aparte que solo se rearmaba al tocar una medida: en TOSAMA
+ * (14-10) la pantalla decía 114 x 105 y la hoja "114 mm", lo que había dejado
+ * el lector. Sin casilleros —una forma fuera del catálogo— queda el texto.
+ */
+function dimensionesDeLoPedido(
+  l: Pick<LineaForm, 'pedido_forma' | 'forma_id' | 'pedido_medidas' | 'pedido_dimensiones'>,
+  catalogos: Catalogos | null,
+): string | null {
+  const forma = formaDeLoPedido(l, catalogos)
+  const medidas = l.pedido_medidas ?? {}
+
+  if (!forma?.campos?.length || !Object.values(medidas).some((m) => m?.valor)) {
+    return l.pedido_dimensiones ?? null
+  }
+
+  return armarDimensiones(forma, medidas, canoDeLoPedido(medidas, catalogos)) || l.pedido_dimensiones || null
+}
+
 /** Donde guarda la linea, en milimetros, cada medida de la forma. */
 const COLUMNA_DE_MEDIDA: Record<string, 'diametro_mm' | 'espesor_mm' | 'ancho_mm' | 'largo_mm'> = {
   diameter: 'diametro_mm',
@@ -2291,10 +2385,16 @@ function MedidasDeLaForma({
   linea,
   catalogos,
   onCambio,
+  alLado,
+  piezasAparte,
 }: {
   linea: LineaForm
   catalogos: Catalogos | null
   onCambio: (c: Partial<LineaForm>) => void
+  /** Cantidad y unidad, en el mismo renglón que las medidas. */
+  alLado: ReactNode
+  /** Vendiendo al peso o por metro las piezas no son la cantidad: van aparte. */
+  piezasAparte: boolean
 }) {
   const forma = catalogos?.formas.find((f) => f.id === linea.forma_id) ?? null
   const campos = forma?.campos ?? []
@@ -2422,19 +2522,19 @@ function MedidasDeLaForma({
     })
   }
 
-  if (!forma) {
+  // Sin medidas que mostrar, la cantidad y la unidad siguen a la vista.
+  if (!forma || campos.length === 0) {
     return (
-      <p className="mt-2.5 text-[11.5px] text-faint">
-        Elegí la forma y aparecen las medidas que le corresponden.
-      </p>
-    )
-  }
-
-  if (campos.length === 0) {
-    return (
-      <p className="mt-2.5 text-[11.5px] text-warning-ink">
-        {forma.nombre} no tiene medidas configuradas: la medida va en DIMENSIONES, como texto.
-      </p>
+      <div className="mt-1.5">
+        {!forma ? (
+          <p className="text-[11.5px] text-faint">Elegí la forma y aparecen las medidas que le corresponden.</p>
+        ) : (
+          <p className="text-[11.5px] text-warning-ink">
+            {forma.nombre} no tiene medidas configuradas: la medida va en DIMENSIONES, como texto.
+          </p>
+        )}
+        <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">{alLado}</div>
+      </div>
     )
   }
 
@@ -2479,7 +2579,10 @@ function MedidasDeLaForma({
         </div>
       )}
 
-      <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Las mismas columnas que lo que pidió el cliente: Diámetro cae sobre
+          Diámetro y Cantidad sobre Cantidad. Seis en pantalla ancha, cuatro en
+          una mediana: con seis, en 1024 px "114" no entraba en el casillero. */}
+      <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
         {campos.map((campo) => {
           const cargada = linea.calc.medidas[campo.clave] ?? { valor: '', unidad: 'mm' }
           const puestoPorCano = Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')
@@ -2570,17 +2673,26 @@ function MedidasDeLaForma({
           )
         })}
 
-        <div>
-          <Etiqueta>Piezas</Etiqueta>
-          <input
-            type="number"
-            step="any"
-            min="0"
-            value={linea.calc.piezas}
-            onChange={(e) => onCambio({ calc: { ...linea.calc, piezas: e.target.value } })}
-            className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
-          />
-        </div>
+        {/*
+          En lugar de "Piezas", la cantidad y su unidad (Roberto, 11-10 y
+          14-10): "Piezas" parecía la cantidad pero solo la usaba el cálculo
+          del peso, y lo escrito ahí no llegaba a la cotización — en TOSAMA se
+          corrigió a 1 y la línea siguió pidiendo 114.
+        */}
+        {alLado}
+        {piezasAparte && (
+          <div>
+            <Etiqueta ayuda="para el peso">Piezas</Etiqueta>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              value={linea.calc.piezas}
+              onChange={(e) => onCambio({ calc: { ...linea.calc, piezas: e.target.value } })}
+              className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+            />
+          </div>
+        )}
       </div>
 
       {/* Sólo donde tiene sentido: un disco o una esfera no llevan largo. */}
@@ -2664,6 +2776,10 @@ function LineaFila({
   // Se vende al peso: los kilos calculados SON la cantidad.
   const seVendeAlPeso = ['KG', 'TN'].includes(codigo(linea.unidad_venta_id))
 
+  // Por unidad, las piezas del peso son la cantidad. En cualquier otra —kilos,
+  // metros, un lote— son otra cosa y se cargan aparte.
+  const piezasAparte = Boolean(linea.unidad_venta_id) && codigo(linea.unidad_venta_id) !== 'UN'
+
   // El factor lo propone el sistema segun la forma; se puede corregir a mano.
   const automatico = cambiaUnidad ? factorAutomatico(linea, catalogos) : { factor: null, motivo: null }
   // Solo se anuncia si el servidor ya lo guardó como cargado a mano.
@@ -2715,24 +2831,14 @@ function LineaFila({
   // Si la forma pedida no está cargada aparte, se usa la de lo ofrecido: casi
   // siempre es la misma, y así las medidas de lo pedido salen con sus campos
   // (Diametro, Largo, Piezas) y no como una caja de texto suelta.
-  const formaPedida =
-    catalogos?.formas.find((f) => f.nombre === linea.pedido_forma) ?? formaElegida
+  const formaPedida = formaDeLoPedido(linea, catalogos)
   const camposDeLoPedido = formaPedida?.campos ?? []
 
-  // El caño que pidió el cliente: se reconoce por su diámetro exterior y su
-  // pared, para que el selector arranque donde quedó.
-  const canoPedido = useMemo(() => {
-    const o = linea.pedido_medidas?.outer?.valor
-    const w = linea.pedido_medidas?.wall?.valor
-
-    if (!o || !w) return null
-
-    return (
-      (catalogos?.canos ?? []).find(
-        (c) => Number(c.diametro_mm) === Number(o) && Number(c.pared_mm) === Number(w),
-      ) ?? null
-    )
-  }, [linea.pedido_medidas, catalogos])
+  // El caño que pidió el cliente, para que el selector arranque donde quedó.
+  const canoPedido = useMemo(
+    () => canoDeLoPedido(linea.pedido_medidas, catalogos),
+    [linea.pedido_medidas, catalogos],
+  )
 
   const medidasDeCanoPedido = useMemo(() => {
     const vistas = new Map<string, CanoEstandar>()
@@ -2938,7 +3044,7 @@ function LineaFila({
             cae sobre Diametro, Largo sobre Largo. Con una forma que no está en
             el catálogo queda la caja de texto, como las líneas viejas.
           */}
-          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
           {formaPedida?.usa_cano ? (
             <>
               {/* El caño que pidió el cliente se elige por su medida y su
@@ -3114,23 +3220,63 @@ function LineaFila({
         <Lista
           etiqueta="FORMA"
           value={linea.forma_id ?? ''}
-          onChange={(e) =>
+          onChange={(e) => {
+            const id = e.target.value ? Number(e.target.value) : null
+            const nueva = catalogos?.formas.find((f) => f.id === id) ?? null
+
+            /*
+              Lo que leyó el lector va a los casilleros de la forma que se
+              elija, mientras nadie haya escrito una medida a mano: el cliente
+              escribió "Diámetro 114, Largo 105" y eso no cambia de significado
+              al elegir BARRA REDONDA. Antes se borraba y había que volver a
+              tipearlo (TOSAMA, 14-10). Y en cada cambio, no solo el primero:
+              tipeando en el desplegable se pasa por BARRA CUADRADA y BARRA
+              RECTANGULAR antes de llegar a REDONDA.
+            */
+            const leidas = linea.leidas ?? null
+            const intactas =
+              leidas !== null &&
+              (sinMedidas(linea.calc.medidas) ||
+                mismasMedidas(linea.calc.medidas, medidasDeLaLinea(leidas, formaElegida)))
+            const nuevas = intactas ? medidasDeLaLinea(leidas, nueva) : {}
+            const hayNuevas = !sinMedidas(nuevas)
+
+            // Lo que pidió el cliente, lo mismo: si sigue como lo dejó el lector,
+            // pasa a los casilleros de su forma (que es esta, si no nombró otra).
+            const pedidoIntacto =
+              leidas !== null &&
+              !linea.igual_a_lo_pedido &&
+              (sinMedidas(linea.pedido_medidas) ||
+                mismasMedidas(linea.pedido_medidas, medidasDeLaLinea(leidas, formaPedida)))
+            const pedidas = pedidoIntacto
+              ? medidasDeLaLinea(leidas, formaDeLoPedido({ ...linea, forma_id: id }, catalogos))
+              : {}
+
             onCambio({
-              forma_id: e.target.value ? Number(e.target.value) : null,
-              // Otra forma pide otras medidas: las anteriores se van con ella,
-              // el caño elegido tambien, y la previsualizacion arranca de cero.
+              forma_id: id,
+              // Las medidas escritas a mano, en cambio, se van con la forma
+              // anterior, el caño elegido también, y la previsualización
+              // arranca de cero.
               //
               // No se conserva nada aunque el nombre coincida: el "diametro" de
               // una barra redonda y el "lado" de una cuadrada son el mismo
               // numero con otro significado, y arrastrarlo en silencio saca un
               // peso equivocado que nadie revisa.
-              calc: calculadoraVacia(),
-              diametro_mm: null,
-              espesor_mm: null,
-              ancho_mm: null,
+              //
+              // Las piezas siguen a la cantidad mientras se vende por unidad:
+              // ahí no se ven, y volver a 1 pesaba una barra en vez de tres.
+              calc: {
+                ...calculadoraVacia(),
+                medidas: hayNuevas ? nuevas : {},
+                piezas: piezasAparte ? linea.calc.piezas : String(linea.cantidad ?? 1),
+              },
+              ...(hayNuevas
+                ? planasDeLasMedidas(nuevas)
+                : { diametro_mm: null, espesor_mm: null, ancho_mm: null }),
+              ...(!sinMedidas(pedidas) ? { pedido_medidas: pedidas } : {}),
               factor_conversion: null,
             })
-          }
+          }}
           opciones={(catalogos?.formas ?? []).map((f) => ({ valor: f.id, texto: f.nombre }))}
         />
         {/*
@@ -3172,43 +3318,52 @@ function LineaFila({
         linea={linea}
         catalogos={catalogos}
         onCambio={onCambio}
+        piezasAparte={piezasAparte}
+        alLado={
+          <>
+            <Texto
+              etiqueta="Cantidad"
+              type="number"
+              value={linea.cantidad ?? ''}
+              onChange={(e) => {
+                const cantidad = e.target.value ? Number(e.target.value) : null
+
+                // Vendiendo por unidad, las piezas del peso son la cantidad: si
+                // se cotizan 3 barras, el peso es el de 3. Al peso o por metro
+                // son otra cosa —150 kg son 3 barras— y se escriben aparte.
+                onCambio(
+                  piezasAparte
+                    ? { cantidad }
+                    : { cantidad, calc: { ...linea.calc, piezas: String(cantidad ?? 1) } },
+                )
+              }}
+            />
+            <Lista
+              etiqueta="Unidad"
+              value={linea.unidad_venta_id ?? ''}
+              onChange={(e) => {
+                const venta = e.target.value ? Number(e.target.value) : null
+                const porUnidad = codigo(venta) === 'UN'
+
+                // Se factura en lo mismo que se vende, que es el caso normal. Si
+                // hace falta otra —cotizar por metro y facturar por kilo— se
+                // cambia abajo. Y al volver a vender por unidad, las piezas
+                // vuelven a ser la cantidad: escondidas, no pueden quedar otras.
+                onCambio({
+                  unidad_venta_id: venta,
+                  unidad_factura_id: linea.unidad_factura_id ?? venta,
+                  ...(porUnidad ? { calc: { ...linea.calc, piezas: String(linea.cantidad ?? 1) } } : {}),
+                })
+              }}
+              opciones={unidades
+                .filter((u) => u.sirve_para_vender)
+                .map((u) => ({ valor: u.id, texto: u.codigo }))}
+            />
+          </>
+        }
       />
 
-      <div className="mt-1.5 grid items-end gap-1.5 lg:grid-cols-6">
-        <Texto
-          etiqueta="Cantidad"
-          type="number"
-          value={linea.cantidad ?? ''}
-          onChange={(e) => {
-            const cantidad = e.target.value ? Number(e.target.value) : null
-
-            // Las piezas de la calculadora siguen a la cantidad: si se cotizan
-            // 3 barras, el peso de la linea es el de 3. Quedan editables por si
-            // alguna vez no coinciden.
-            onCambio({
-              cantidad,
-              calc: { ...linea.calc, piezas: String(cantidad ?? 1) },
-            })
-          }}
-        />
-        <Lista
-          etiqueta="Unidad de venta"
-          value={linea.unidad_venta_id ?? ''}
-          onChange={(e) => {
-            const venta = e.target.value ? Number(e.target.value) : null
-
-            // Se factura en lo mismo que se vende, que es el caso normal. Si
-            // hace falta otra —cotizar por metro y facturar por kilo— se
-            // cambia al lado.
-            onCambio({
-              unidad_venta_id: venta,
-              unidad_factura_id: linea.unidad_factura_id ?? venta,
-            })
-          }}
-          opciones={unidades
-            .filter((u) => u.sirve_para_vender)
-            .map((u) => ({ valor: u.id, texto: u.codigo }))}
-        />
+      <div className="mt-1.5 grid items-end gap-1.5 lg:grid-cols-4">
         <Lista
           etiqueta="Se factura en"
           ayuda="si es distinta"

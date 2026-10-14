@@ -214,6 +214,22 @@ class ConsultaLinea extends Model
     }
 
     /**
+     * Si el precio sale del peso: se vende o se factura en kilos, toneladas,
+     * gramos o libras. Solo ahi importa con que largo se calculo el peso.
+     *
+     * Vendiendo por metro el peso no entra en ninguna cuenta, y "peso
+     * calculado sobre el promedio" en la hoja no le dice nada al cliente
+     * (Roberto, 14-10: una barra de Gunitado por metro lo traia y otra no).
+     */
+    public function precioSaleDelPeso(): bool
+    {
+        $peso = ['KG', 'TN', 'G', 'LB'];
+
+        return in_array($this->unidadVenta?->codigo, $peso, true)
+            || ($this->cambiaDeUnidad() && in_array($this->unidadFactura?->codigo, $peso, true));
+    }
+
+    /**
      * Rehace las cantidades y el importe.
      *
      * Cuando se cotiza por metro y se factura por kilo, el importe sale de los

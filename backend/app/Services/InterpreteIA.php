@@ -161,7 +161,12 @@ class InterpreteIA
             'model' => $modelo,
             'temperature' => 0,
             'messages' => [
+                // "Un dato por renglon" es para las firmas. Una tabla copiada asi
+                // sale de a una celda por renglon y se pierde que fila es cada
+                // dato (la de TOSAMA, 14-10): las filas van enteras.
                 ['role' => 'system', 'content' => 'Copia el texto de la imagen tal cual esta escrito, un dato por renglon. '
+                    .'Si hay una tabla, copia cada fila en un solo renglon, con las celdas separadas por " | ", '
+                    .'empezando por la fila de los titulos. '
                     .'No corrijas, no completes ni agregues nada que no se lea. Si un telefono tiene un icono en vez '
                     .'de palabra, escribi delante "Tel:", "Cel:" o "WhatsApp:" segun el icono. Devolve solo el texto.'],
                 ['role' => 'user', 'content' => [[
