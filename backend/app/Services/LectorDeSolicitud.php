@@ -77,7 +77,11 @@ class LectorDeSolicitud
         '/^(?:LARGO|LONGITUD|LONG)$/' => 'length',
         '/^(?:MEDIDAS?|DIMENSIONES)$/' => 'medidas',
         '/^(?:MATERIAL|CALIDAD|ALEACION)$/' => 'material',
-        '/^(?:FORMA|PRODUCTO)$/' => 'forma',
+        '/^FORMA$/' => 'forma',
+        // La columna que describe el item entero: forma, norma, material y
+        // medida en un texto ("CODO 90° ... AISI 310 6" SCH40S"). No es la forma.
+        '/^(?:PRODUCTO|DESCRIPCION|DETALLE|ARTICULO)$/' => 'descripcion',
+        '/^(?:UNID|UNIDAD|UM)$/' => 'unidad',
         '/^(?:CANT|CANTIDAD|QTY|PIEZAS|PZAS)$/' => 'cantidad',
         '/^(?:ITEM|POS|POSICION|NRO|N)$/' => 'item',
     ];
@@ -398,6 +402,13 @@ class LectorDeSolicitud
 
                 $celdas = $this->celdas($siguiente);
 
+                // Las celdas vacias del final se pierden al copiar: "| 9138 | |
+                // |" llega sin las ultimas. Se completan, siempre que el renglon
+                // tenga celdas —un "Saludos" suelto no es una fila—.
+                if (count($celdas) >= 2 && count($celdas) < count($titulos)) {
+                    $celdas = array_pad($celdas, count($titulos), '');
+                }
+
                 if (count($celdas) !== count($titulos) || ! $this->esFila($titulos, $celdas)) {
                     break;
                 }
@@ -489,7 +500,7 @@ class LectorDeSolicitud
         $claves = array_column(array_filter($titulos), 0);
 
         return count($claves) >= 3
-            && array_intersect($claves, ['material', 'forma', ...self::MEDIDAS_DE_TABLA]) !== [];
+            && array_intersect($claves, ['material', 'forma', 'descripcion', ...self::MEDIDAS_DE_TABLA]) !== [];
     }
 
     /**
@@ -590,8 +601,10 @@ class LectorDeSolicitud
     {
         $renglon = implode(' ', array_filter([
             $ficha['cantidad'] ?? null,
+            $ficha['unidad'] ?? null,
             $ficha['forma'] ?? null,
             $ficha['material'] ?? null,
+            $ficha['descripcion'] ?? null,
             $ficha['dimensiones'] ?? null,
         ]));
 
@@ -695,6 +708,12 @@ class LectorDeSolicitud
 
         $material = $this->buscarMaterial($renglon, $materiales);
 
+        // Si el catalogo no lo encontro, la designacion que nombro el cliente
+        // queda como lo que pidio: en "CODO 90° ... ASTM A403 AISI 310 ..."
+        // (Roberto, 14-10) el material se perdia. No se elige ningun grado:
+        // "AISI 310" puede ser el 310, el 310S o el 310H, lo decide quien cotiza.
+        $pedido = $material === null ? $this->designacionAisi($renglon) : null;
+
         return [
             'descripcion' => trim($renglon),
             'material_id' => $material?->id,
@@ -712,8 +731,10 @@ class LectorDeSolicitud
             // Con o sin costura, laminada, la norma: lo que el cliente ya
             // escribio en el renglon no hace falta volver a tipearlo.
             'caracteristicas' => $this->caracteristicasDe($renglon),
-            // Lo que pidió el cliente arranca igual a lo que se va a cotizar.
-            'igual_a_lo_pedido' => true,
+            // Lo que pidió el cliente arranca igual a lo que se va a cotizar,
+            // salvo que haya nombrado un material que no esta en el catalogo.
+            'igual_a_lo_pedido' => $pedido === null,
+            ...($pedido === null ? [] : ['pedido_material' => $pedido, 'pedido_forma' => $forma?->nombre]),
             // Las variantes —aerea y maritima, tramos de cantidad— se agregan
             // con un clic en la linea. La misma clave que devuelve la IA, para
             // que la pantalla no tenga que preguntar de donde vino la lectura.
@@ -851,6 +872,14 @@ class LectorDeSolicitud
         }
 
         return null;
+    }
+
+    /** La designacion AISI que nombra el texto: "AISI 310", "AISI 316L". */
+    private function designacionAisi(string $texto): ?string
+    {
+        return preg_match('/\bAISI\s*(\d{3}[A-Z]{0,3})\b/iu', $texto, $m)
+            ? 'AISI '.mb_strtoupper($m[1], 'UTF-8')
+            : null;
     }
 
     /** Si un texto nombra un material: una familia, o una norma con su numero. */
@@ -1146,7 +1175,9 @@ class LectorDeSolicitud
           fraccion se perdia, y la reduccion «1 1/2" x 1 1/4"» quedaba en «2"».
         */
         $valPulg = '(?:\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|'.$numero.')';
-        $pulgadas = '/(?:[Ø⌀]\s*|DIA\s*)?'.$valPulg.'\s*"\s*(?:SCH\.?\s*\d+\w*)?'
+        // El diametro en mm entre parentesis no corta el schedule: «6" (168,3MM)
+        // SCH40S» es un caño de 6" SCH40S, no uno de 6" sin schedule.
+        $pulgadas = '/(?:[Ø⌀]\s*|DIA\s*)?'.$valPulg.'\s*"\s*(?:\(\s*'.$numero.'\s*MM\s*\)\s*)?(?:SCH\.?\s*\d+\w*)?'
             .'(?:\s*[xX]\s*'.$valPulg.'\s*"?\s*(?:SCH\.?\s*\d+\w*)?)?/iu';
 
         if (preg_match($pulgadas, $renglon, $m)) {
