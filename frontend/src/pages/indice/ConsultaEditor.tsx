@@ -936,6 +936,10 @@ export default function ConsultaEditor() {
         forma_id: l.forma_id,
         dimensiones: l.dimensiones,
         diametro_mm: l.diametro_mm,
+        // "En largos de 3 a 6 m": el rango queda puesto y la linea calcula
+        // con el promedio.
+        largo_min_mm: l.largo_min_mm ?? null,
+        largo_max_mm: l.largo_max_mm ?? null,
         cantidad: l.cantidad,
         unidad_venta_id: l.unidad_venta_id,
         // Lo que dijo el lector: si no reconoció el material la línea queda sin

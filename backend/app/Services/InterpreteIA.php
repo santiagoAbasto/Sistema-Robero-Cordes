@@ -189,8 +189,12 @@ class InterpreteIA
      * inventar un mail o un telefono. Si la IA falla, no pasa nada: quedan
      * los datos de las reglas.
      *
+     * Los telefonos vuelven todos, en "telefonos", y el primero tambien en
+     * "telefono": una firma trae el fijo y el celular, y pedir "un telefono"
+     * hacia que llegara solo el primero (FAGISA, 14-10-2026).
+     *
      * @param  list<string>  $campos  los que faltan
-     * @return array<string, string>
+     * @return array<string, string|list<string>>
      */
     public function completarFirma(string $texto, array $campos): array
     {
@@ -205,7 +209,8 @@ class InterpreteIA
                         ['role' => 'system', 'content' => 'Te paso el pie de un mail o la ficha de contacto de un cliente. '
                             .'Devolve un JSON con estas claves: '.implode(', ', $campos).'. '
                             .'empresa: el nombre de la empresa. contacto: la persona que firma. cargo: su puesto. '
-                            .'mail: su correo. telefono: un telefono. direccion: solo la calle y el numero. '
+                            .'mail: su correo. telefono: una lista con TODOS los telefonos, cada uno como esta escrito. '
+                            .'direccion: solo la calle y el numero. '
                             .'Copia cada valor exactamente como esta escrito, sin corregirlo. '
                             .'Si un dato no esta escrito, null. No inventes ni completes nada.'],
                         ['role' => 'user', 'content' => $texto],
@@ -232,17 +237,28 @@ class InterpreteIA
         foreach ($campos as $campo) {
             $valor = is_array($datos) ? ($datos[$campo] ?? null) : null;
 
+            if ($campo === 'telefono') {
+                // Cada telefono se compara por sus cifras, renglon por renglon.
+                $telefonos = collect(is_array($valor) ? $valor : [$valor])
+                    ->filter(fn ($t) => is_string($t) && strlen($digitos($t)) >= 6)
+                    ->filter(fn ($t) => collect(preg_split('/\R/u', $texto))
+                        ->contains(fn ($r) => str_contains($digitos($r), $digitos($t))))
+                    ->map(fn ($t) => trim($t))
+                    ->values()->all();
+
+                if ($telefonos !== []) {
+                    $aceptados['telefono'] = $telefonos[0];
+                    $aceptados['telefonos'] = $telefonos;
+                }
+
+                continue;
+            }
+
             if (! is_string($valor) || trim($valor) === '') {
                 continue;
             }
 
-            // El telefono se compara por sus cifras, renglon por renglon.
-            $estaEscrito = $campo === 'telefono'
-                ? strlen($digitos($valor)) >= 6 && collect(preg_split('/\R/u', $texto))
-                    ->contains(fn ($r) => str_contains($digitos($r), $digitos($valor)))
-                : str_contains($plano($texto), $plano($valor));
-
-            if ($estaEscrito) {
+            if (str_contains($plano($texto), $plano($valor))) {
                 $aceptados[$campo] = trim($valor);
             }
         }
