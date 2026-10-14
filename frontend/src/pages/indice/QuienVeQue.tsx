@@ -92,7 +92,7 @@ export default function QuienVeQue() {
   return (
     <div className="flex flex-col gap-[18px]">
       <PageHeader
-        breadcrumb="Configuracion  ›  Usuarios"
+        breadcrumb="Configuración  ›  Usuarios y permisos"
         titulo="Usuarios y permisos"
         bajada="Se marca con casillas, por persona. Los dueños ven todo siempre, para que nunca quede una ficha que nadie pueda abrir."
       />

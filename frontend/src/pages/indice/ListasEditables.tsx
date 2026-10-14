@@ -46,8 +46,8 @@ export default function ListasEditables() {
   return (
     <div className="flex flex-col gap-[18px]">
       <PageHeader
-        breadcrumb="Configuracion  ›  Listas"
-        titulo="Listas"
+        breadcrumb="Configuración  ›  Características y motivos"
+        titulo="Características y motivos"
         bajada="Lo que se propone al cotizar. Corregir, apagar o borrar un ítem no cambia ninguna cotización hecha: cada línea guarda su propio texto."
       />
 
