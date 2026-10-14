@@ -108,9 +108,12 @@ export const NAVIGATION: NavNode[] = [
     key: 'config',
     label: 'Configuración',
     icon: SlidersHorizontal,
+    nuevaPestana: true,
     children: [
       { key: 'empresa', label: 'Datos de empresa', to: '/config/empresa' },
       { key: 'formas', label: 'Formas y formulas', to: '/config/formas' },
+      { key: 'listas', label: 'Listas', to: '/config/listas' },
+      { key: 'condiciones', label: 'Condiciones', to: '/config/condiciones' },
       { key: 'config_ia', label: 'Configuración IA', to: '/config/ia' },
       { key: 'usuarios', label: 'Usuarios', to: '/config/usuarios' },
       { key: 'migracion', label: 'Datos del sistema anterior', to: '/config/migracion' },
@@ -121,10 +124,10 @@ export const NAVIGATION: NavNode[] = [
 ]
 
 /** Flattened list of every routable leaf, used to register routes. */
-export const NAV_ROUTES: { to: string; label: string; parent?: string }[] = NAVIGATION.flatMap(
+export const NAV_ROUTES: { to: string; label: string; parent?: string; nuevaPestana?: boolean }[] = NAVIGATION.flatMap(
   (node) => {
     if (node.children) {
-      return node.children.map((c) => ({ to: c.to, label: c.label, parent: node.label }))
+      return node.children.map((c) => ({ to: c.to, label: c.label, parent: node.label, nuevaPestana: node.nuevaPestana }))
     }
     return node.to ? [{ to: node.to, label: node.label }] : []
   },

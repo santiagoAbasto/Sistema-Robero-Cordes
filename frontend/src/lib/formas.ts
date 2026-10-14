@@ -120,6 +120,39 @@ export async function ordenarFormas(ids: number[]) {
   await api.post('/formas/orden', { ids })
 }
 
+/** Todas las formas en una planilla de Excel, para revisarlas juntas. */
+export async function bajarPlanillaDeFormas() {
+  const { data } = await api.get<Blob>('/formas/planilla', { responseType: 'blob' })
+  const url = URL.createObjectURL(data)
+  const enlace = document.createElement('a')
+  enlace.href = url
+  enlace.download = 'formas-y-formulas.xlsx'
+  enlace.click()
+  URL.revokeObjectURL(url)
+}
+
+export interface ResultadoDePlanilla {
+  creadas: number
+  actualizadas: number
+  sin_cambios: number
+}
+
+/** La planilla de vuelta. Todo o nada: si una fila falla, no se guarda ninguna. */
+export async function subirPlanillaDeFormas(archivo: File) {
+  const cuerpo = new FormData()
+  cuerpo.append('archivo', archivo)
+  const { data } = await api.post<ResultadoDePlanilla>('/formas/planilla', cuerpo)
+
+  return data
+}
+
+/** Los errores de una planilla rechazada: uno por fila, todos, no solo el primero. */
+export function erroresDePlanilla(err: unknown): string[] {
+  const e = err as { response?: { data?: { errors?: { archivo?: string[] } } } }
+
+  return e?.response?.data?.errors?.archivo ?? []
+}
+
 /* ------------------------------------------- lo que se propone al cotizar */
 
 export interface SugerenciaDeTransporte {

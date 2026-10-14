@@ -146,10 +146,11 @@ class ConsultaLinea extends Model
     }
 
     /**
-     * Los motivos predeterminados por los que no se cotiza un item.
+     * Los motivos con los que arranco la lista de "no se cotiza".
      *
-     * Son los de siempre; con el campo libre se puede escribir otro. La lista
-     * fija mantiene limpios los graficos del apartado de declinadas.
+     * Desde el 14-10-2026 la lista vive en la tabla motivos_no_cotiza y se edita
+     * en Configuracion > Listas; esto solo la sembro (migracion
+     * 2026_10_14_000300_motivos_de_no_cotizar), igual que MOTIVOS con los de cambio.
      */
     public const MOTIVOS_DECLINACION = [
         'No trabajamos ese material',

@@ -8,6 +8,9 @@ class CondicionHabitual extends Model
 {
     protected $table = 'condiciones_habituales';
 
+    /** Los juegos de condiciones: se elige uno al cotizar y trae sus parrafos. */
+    public const JUEGOS = ['Importacion', 'Stock', 'Reventa'];
+
     protected $guarded = [];
 
     protected $casts = [
