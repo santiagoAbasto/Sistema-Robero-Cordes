@@ -110,6 +110,36 @@ class CapturaDePedidoTest extends TestCase
         $this->assertSame(4, (int) $lineas[0]['cantidad']);
     }
 
+    /**
+     * La orden de compra del codo (Roberto, 14-10): la IA copia las celdas
+     * vacias del final como "| | |", que se pierden, y la columna "Producto"
+     * trae el item entero. Salia un renglon con barras, el numero de OT y la
+     * fecha adentro, sin material.
+     */
+    public function test_una_orden_de_compra_con_producto_y_celdas_vacias(): void
+    {
+        // La forma esta entre las del sistema anterior; prendida, se reconoce
+        // aunque el cliente escriba 90º con el ordinal.
+        \App\Models\Forma::create(['nombre' => 'CODO 90°', 'clave' => 'codo_90', 'activo' => true]);
+
+        $lineas = $this->postJson('/api/consultas/interpretar', [
+            'texto' => "Nro | Producto | Unid | Cant. | Pto-OT | F. Necesidad del Producto | Precio U. | Precio Tot. (S/IVA) | Plazo Entrega\n"
+                .'1 | (28862) CODO 90º RL S/COSTURA P/SOLDAR ASME B16.9 ASTM A403 AISI 310 ØN6" (168,3MM) SCH40S (ESP 7,11MM) | Un. | 1 | 9138 | 29/10/2026 | | |',
+        ])->assertOk()->json('lineas');
+
+        $this->assertCount(1, $lineas);
+        $this->assertSame(1, (int) $lineas[0]['cantidad']);
+        $this->assertSame('UN', $lineas[0]['unidad']);
+        $this->assertSame('CODO 90°', $lineas[0]['forma']);
+        $this->assertSame('6" (168,3MM) SCH40S', $lineas[0]['dimensiones']);
+        // El material que nombro queda como lo que pidio, sin elegir un grado.
+        $this->assertSame('AISI 310', $lineas[0]['pedido_material']);
+        $this->assertFalse($lineas[0]['igual_a_lo_pedido']);
+        // Ni las barras, ni la OT, ni la fecha en la descripcion.
+        $this->assertStringNotContainsString('|', $lineas[0]['descripcion']);
+        $this->assertStringNotContainsString('9138', $lineas[0]['descripcion']);
+    }
+
     /** A una fila le falta una celda: la tabla termina ahi, sin armar items corridos. */
     public function test_una_tabla_corrida_no_inventa_items(): void
     {

@@ -2329,9 +2329,14 @@ function ElegirMaterial({
       Puede ser uno de la lista escrito a mano. Se compara ignorando mayusculas
       y acentos —igual que la base— para no dar de alta "titanio gr2" al lado
       del "TITANIO GR2" que ya existe.
+
+      Se compara lo escrito TAL CUAL, sin recortar. Recortado, "acero " daba
+      "Acero" —que está en el catálogo—, el campo mostraba el nombre de la lista
+      y el espacio desaparecía: no había forma de escribir "acero aisi 310s"
+      (Roberto, 14-10). Lo que quede a medias se engancha al salir del campo.
     */
     const enLista = materiales.find(
-      (m) => m.nombre.localeCompare(valor.trim(), 'es', { sensitivity: 'base' }) === 0,
+      (m) => m.nombre.localeCompare(valor, 'es', { sensitivity: 'base' }) === 0,
     )
 
     onCambio(
@@ -2353,10 +2358,18 @@ function ElegirMaterial({
   function alSalir() {
     if (elegido || escrito === '') return
 
+    // Primero el nombre exacto: "acero " con el espacio del final es "Acero".
+    const exacto = materiales.find(
+      (m) => m.nombre.localeCompare(escrito, 'es', { sensitivity: 'base' }) === 0,
+    )
     const parecidos = materiales.filter((m) => sinAcentos(m.nombre).includes(sinAcentos(escrito)))
+    const unico = exacto ?? (parecidos.length === 1 ? parecidos[0] : null)
 
-    if (parecidos.length === 1) {
-      onCambio({ material_id: parecidos[0].id, material_nuevo: null })
+    if (unico) {
+      onCambio({ material_id: unico.id, material_nuevo: null })
+    } else if (escrito !== linea.material_nuevo) {
+      // Material nuevo: se guarda sin los espacios de las puntas.
+      onCambio({ material_nuevo: escrito })
     }
   }
 
