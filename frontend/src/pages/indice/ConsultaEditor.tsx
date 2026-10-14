@@ -200,11 +200,15 @@ function lineaVacia(): LineaForm {
  * no tienen foto del calculo— se arma con las medidas sueltas de la linea. Sin
  * esto, una cotizacion vieja se abria con el material y la forma puestos y las
  * medidas en blanco, y habia que volver a tipearlas mirando la descripcion.
+ *
+ * Una foto sin medidas cuenta igual: hasta el 14-10 el servidor no las
+ * guardaba cuando no salia el peso —material sin densidad, forma sin formula—,
+ * y `[]` es verdadero en JavaScript.
  */
 function calcGuardada(l: ConsultaLinea, forma: Forma | null): EstadoCalculadora {
   const guardado = l.calculo
 
-  if (!guardado?.medidas) {
+  if (!guardado?.medidas || Object.keys(guardado.medidas).length === 0) {
     const sueltas = medidasDeLaLinea(
       {
         diametro_mm: l.diametro_mm ? Number(l.diametro_mm) : null,
@@ -216,10 +220,9 @@ function calcGuardada(l: ConsultaLinea, forma: Forma | null): EstadoCalculadora 
     )
 
     const hayAlguna = Object.values(sueltas).some((m) => m.valor !== '')
+    const vacia = { ...calculadoraVacia(), canoId: guardado?.cano_id ?? null }
 
-    return hayAlguna
-      ? { ...calculadoraVacia(), medidas: sueltas, piezas: String(l.cantidad ?? 1) }
-      : calculadoraVacia()
+    return hayAlguna ? { ...vacia, medidas: sueltas, piezas: String(l.cantidad ?? 1) } : vacia
   }
 
   const medidas: EstadoCalculadora['medidas'] = {}
