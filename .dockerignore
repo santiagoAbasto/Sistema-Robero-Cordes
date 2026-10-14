@@ -19,3 +19,6 @@ flujo-capturas
 *.pdf
 *.xlsx
 *.docx
+
+# Mapa del codigo (graphify): no viaja al servidor.
+graphify-out/
