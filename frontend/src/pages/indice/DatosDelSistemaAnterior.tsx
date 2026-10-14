@@ -79,7 +79,7 @@ export default function DatosDelSistemaAnterior() {
   return (
     <div className="flex flex-col gap-[18px]">
       <PageHeader
-        titulo="Datos del sistema anterior"
+        titulo="Importar sistema anterior"
         bajada="Trae las empresas, las cotizaciones y los materiales del Access. Reemplaza todo lo que haya cargado."
       />
 

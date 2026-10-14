@@ -13,6 +13,8 @@ export interface NavLeaf {
   label: string
   to: string
   badge?: string
+  /** Qué hay adentro, en una línea: sale al pasar el mouse y sirve para buscar. */
+  ayuda?: string
 }
 
 export interface NavNode {
@@ -22,10 +24,4 @@ export interface NavNode {
   to?: string
   badge?: string
   children?: NavLeaf[]
-  /**
-   * Sus pantallas se abren en otra pestaña. Configuracion (lista del cliente,
-   * 14-10-2026): se entra a corregir una lista en medio de una cotizacion, y
-   * en la misma pestaña se perdia lo que se estaba cargando.
-   */
-  nuevaPestana?: boolean
 }

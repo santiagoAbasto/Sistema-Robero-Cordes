@@ -45,7 +45,9 @@ export default function PaletaRapida({
 
     if (!q) return NAV_ROUTES.slice(0, 8)
 
-    return NAV_ROUTES.filter((d) => plano(`${d.parent ?? ''} ${d.label}`).includes(q)).slice(0, 8)
+    // También en la ayuda: con los nombres nuevos, "formula" o "listas"
+    // tienen que seguir encontrando su pantalla.
+    return NAV_ROUTES.filter((d) => plano(`${d.parent ?? ''} ${d.label} ${d.ayuda ?? ''} ${d.to}`).includes(q)).slice(0, 8)
   }, [texto])
 
   /*
@@ -90,22 +92,19 @@ export default function PaletaRapida({
     [texto, encontradas, ultimas],
   )
 
-  // Configuracion se abre en otra pestaña, como desde el menu.
-  function ir(item: { to: string; nuevaPestana: boolean }) {
-    if (item.nuevaPestana) window.open(item.to, '_blank')
-    else navigate(item.to)
+  function ir(item: { to: string }) {
+    navigate(item.to)
     onCerrar()
   }
 
   const todo = useMemo(
     () => [
-      ...empresas.map((e) => ({ tipo: 'empresa' as const, label: e.nombre, to: `/empresas/${e.id}`, nuevaPestana: false })),
+      ...empresas.map((e) => ({ tipo: 'empresa' as const, label: e.nombre, to: `/empresas/${e.id}` })),
       ...resultados.map((d) => ({
         tipo: 'menu' as const,
         label: d.label,
         seccion: d.parent ?? '',
         to: d.to,
-        nuevaPestana: Boolean(d.nuevaPestana),
       })),
     ],
     [empresas, resultados],

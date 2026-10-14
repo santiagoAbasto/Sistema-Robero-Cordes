@@ -55,8 +55,8 @@ export default function CondicionesHabituales() {
   return (
     <div className="flex flex-col gap-[18px]">
       <PageHeader
-        breadcrumb="Configuracion  ›  Condiciones"
-        titulo="Condiciones"
+        breadcrumb="Configuración  ›  Condiciones de cotización"
+        titulo="Condiciones de cotización"
         bajada="Los párrafos de cada juego. Al cotizar se elige el juego y trae los que vienen puestos. Lo que se cambie acá vale para las cotizaciones que se armen de ahora en adelante: las ya hechas guardaron su propio texto."
       />
 

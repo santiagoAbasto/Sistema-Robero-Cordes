@@ -105,7 +105,7 @@ function Group({ node, onNavigate }: { node: NavNode; onNavigate?: () => void })
                   key={child.key}
                   to={child.to}
                   end
-                  target={node.nuevaPestana ? '_blank' : undefined}
+                  title={child.ayuda}
                   onClick={onNavigate}
                   className={({ isActive }) =>
                     `rounded-md py-[6px] pl-2.5 pr-2.5 text-[12.5px] leading-[1.35] transition-colors ${

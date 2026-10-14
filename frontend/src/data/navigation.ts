@@ -108,26 +108,70 @@ export const NAVIGATION: NavNode[] = [
     key: 'config',
     label: 'Configuración',
     icon: SlidersHorizontal,
-    nuevaPestana: true,
+    /*
+      Los nombres dicen qué hay adentro (14-10-2026): "Listas" o "Formas y
+      formulas" no le decían nada al equipo. Primero lo que se toca al
+      cotizar, después la gente y la empresa, al final la importación.
+    */
     children: [
-      { key: 'empresa', label: 'Datos de empresa', to: '/config/empresa' },
-      { key: 'formas', label: 'Formas y formulas', to: '/config/formas' },
-      { key: 'listas', label: 'Listas', to: '/config/listas' },
-      { key: 'condiciones', label: 'Condiciones', to: '/config/condiciones' },
-      { key: 'config_ia', label: 'Configuración IA', to: '/config/ia' },
-      { key: 'usuarios', label: 'Usuarios', to: '/config/usuarios' },
-      { key: 'migracion', label: 'Datos del sistema anterior', to: '/config/migracion' },
+      {
+        key: 'condiciones',
+        label: 'Condiciones de cotización',
+        to: '/config/condiciones',
+        ayuda: 'Los párrafos de Importación, Stock y Reventa que salen al pie de la cotización',
+      },
+      {
+        key: 'listas',
+        label: 'Características y motivos',
+        to: '/config/listas',
+        ayuda: 'Lo que se elige al cotizar: características, motivos de cambio y de "no se cotiza"',
+      },
+      {
+        key: 'formas',
+        label: 'Formas y cálculo de peso',
+        to: '/config/formas',
+        ayuda: 'Qué medidas pide cada forma y con qué fórmula se calcula el peso. Se baja y se sube en Excel',
+      },
+      {
+        key: 'usuarios',
+        label: 'Usuarios y permisos',
+        to: '/config/usuarios',
+        ayuda: 'Quién entra al sistema y qué puede ver cada uno',
+      },
+      {
+        key: 'empresa',
+        label: 'Datos de nuestra empresa',
+        to: '/config/empresa',
+        ayuda: 'Los datos de Roberto Cordes S.A. que salen en las cotizaciones',
+      },
+      {
+        key: 'config_ia',
+        label: 'Lectura con IA',
+        to: '/config/ia',
+        ayuda: 'La inteligencia artificial que lee pedidos e imágenes',
+      },
+      {
+        key: 'migracion',
+        label: 'Importar sistema anterior',
+        to: '/config/migracion',
+        ayuda: 'Trae las empresas, las cotizaciones y los materiales del Access',
+      },
       // TEMPORAL: para revisar la carga. Se saca cuando CORDES dé el visto bueno.
-      { key: 'antes_y_ahora', label: 'Antes y ahora', to: '/config/antes-y-ahora' },
+      {
+        key: 'antes_y_ahora',
+        label: 'Revisar lo importado',
+        to: '/config/antes-y-ahora',
+        ayuda: 'Cada ficha del sistema anterior al lado de cómo quedó en este',
+      },
     ],
   },
 ]
 
 /** Flattened list of every routable leaf, used to register routes. */
-export const NAV_ROUTES: { to: string; label: string; parent?: string; nuevaPestana?: boolean }[] = NAVIGATION.flatMap(
+export const NAV_ROUTES: { to: string; label: string; parent?: string; ayuda?: string }[] = NAVIGATION.flatMap(
   (node) => {
     if (node.children) {
-      return node.children.map((c) => ({ to: c.to, label: c.label, parent: node.label, nuevaPestana: node.nuevaPestana }))
+      return node.children.map((c) => ({ to: c.to, label: c.label, parent: node.label, ayuda: c.ayuda }))
     }
     return node.to ? [{ to: node.to, label: node.label }] : []
   },

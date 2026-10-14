@@ -197,8 +197,8 @@ export default function FormasYFormulas() {
   return (
     <div className="flex flex-col gap-[18px]">
       <PageHeader
-        breadcrumb="Configuracion  ›  Formas y formulas"
-        titulo="Formas y formulas"
+        breadcrumb="Configuración  ›  Formas y cálculo de peso"
+        titulo="Formas y cálculo de peso"
         bajada="Cada forma define qué medidas hay que cargar y con qué cuenta se saca su volumen. La pantalla de cotización arma sus campos con esto."
         acciones={
           <>
