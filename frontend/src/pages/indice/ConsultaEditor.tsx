@@ -254,7 +254,12 @@ function desdeConsulta(c: Consulta, catalogos: Catalogos | null): LineaForm[] {
       { min: l.largo_min_mm, max: l.largo_max_mm },
       canoDeLasMedidas(calc.medidas, catalogos, true),
     )
-    const descArmada = armarDescripcion(l.material, forma, dimArmada, l.caracteristicas)
+    const descArmada = armarDescripcion(
+      l.material,
+      forma,
+      forma?.campos?.length ? dimArmada : (l.dimensiones ?? ''),
+      l.caracteristicas,
+    )
 
     return {
     clave: String(l.id),
@@ -1944,16 +1949,21 @@ function canoDeLasMedidas(
 /**
  * Elegir un caño de la tabla: primero la medida, después el schedule.
  *
- * Lo usan lo pedido y la salida de una reducción. Elegir "medida especial"
- * vacía el diámetro y la pared, para que se puedan escribir a mano: si
- * quedaban, el caño se seguía reconociendo y los casilleros, bloqueados.
+ * Son dos celdas sueltas, no una caja: en el renglón de medidas la medida cae
+ * encima del diámetro exterior y el schedule encima de la pared, que es lo que
+ * completan. Lo usan lo pedido y lo ofrecido, la entrada y la salida.
+ *
+ * Elegir "medida especial" se avisa con null: quien lo usa decide si vacía el
+ * diámetro y la pared para escribirlos a mano.
  */
 function SelectorDeCano({
+  etiqueta,
   cano,
   catalogos,
   onElegir,
   aria,
 }: {
+  etiqueta: string
   cano: CanoEstandar | null
   catalogos: Catalogos | null
   onElegir: (elegido: CanoEstandar | null) => void
@@ -1963,42 +1973,72 @@ function SelectorDeCano({
   const medidas = [...new Map(canos.map((c) => [c.nombre, c])).values()]
   const schedules = schedulesAgrupados(canos.filter((c) => c.nombre === cano?.nombre))
   const porId = (id: number | null | undefined) => canos.find((c) => c.id === id) ?? null
+  const clase =
+    'h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint'
 
   return (
-    <div className="grid grid-cols-2 gap-1.5">
-      <select
-        aria-label={`Medida del caño ${aria}`}
-        value={cano?.nombre ?? ''}
-        onChange={(e) =>
-          onElegir(
-            e.target.value
-              ? porId(schedulesAgrupados(canos.filter((c) => c.nombre === e.target.value))[0]?.id)
-              : null,
-          )
-        }
-        className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
-      >
-        <option value="">Caño de medida especial — cargo las medidas yo</option>
-        {medidas.map((m) => (
-          <option key={m.nombre} value={m.nombre}>
-            {m.nombre} · Ø{m.diametro_mm} mm
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={`Schedule del caño ${aria}`}
-        value={schedules.find((g) => Number(g.pared) === Number(cano?.pared_mm))?.id ?? ''}
-        disabled={!cano}
-        onChange={(e) => onElegir(porId(e.target.value ? Number(e.target.value) : null))}
-        className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
-      >
-        <option value="">{cano ? 'Elegí el schedule' : '—'}</option>
-        {schedules.map((g) => (
-          <option key={g.id} value={g.id}>
-            SCH {g.etiqueta} · pared {g.pared} mm
-          </option>
-        ))}
-      </select>
+    <>
+      <div className="min-w-0">
+        <Etiqueta>{etiqueta}</Etiqueta>
+        <select
+          aria-label={['Medida del caño', aria].filter(Boolean).join(' ')}
+          value={cano?.nombre ?? ''}
+          onChange={(e) =>
+            onElegir(
+              e.target.value
+                ? porId(schedulesAgrupados(canos.filter((c) => c.nombre === e.target.value))[0]?.id)
+                : null,
+            )
+          }
+          className={clase}
+        >
+          <option value="">Medida especial (a mano)</option>
+          {medidas.map((m) => (
+            <option key={m.nombre} value={m.nombre}>
+              {m.nombre} · Ø{m.diametro_mm} mm
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="min-w-0">
+        <Etiqueta>Schedule</Etiqueta>
+        <select
+          aria-label={['Schedule del caño', aria].filter(Boolean).join(' ')}
+          value={schedules.find((g) => Number(g.pared) === Number(cano?.pared_mm))?.id ?? ''}
+          disabled={!cano}
+          onChange={(e) => onElegir(porId(e.target.value ? Number(e.target.value) : null))}
+          className={clase}
+        >
+          <option value="">{cano ? 'Elegí el schedule' : '—'}</option>
+          {schedules.map((g) => (
+            <option key={g.id} value={g.id}>
+              SCH {g.etiqueta} · pared {g.pared} mm
+            </option>
+          ))}
+        </select>
+      </div>
+    </>
+  )
+}
+
+/**
+ * Un renglón de medidas: el mismo en lo pedido y en lo ofrecido.
+ *
+ * "Todo siempre alineado, seleccione lo que seleccione" (14-10-2026). Las
+ * medidas van en las cuatro primeras columnas y lo que sigue —cantidad y
+ * unidad— siempre en la quinta y la sexta, sea la forma que sea: una barra
+ * con dos medidas, una reducción con cuatro, una brida sin ninguna o un largo
+ * variable que ocupa dos. Antes cada bloque ponía la cantidad donde terminaban
+ * sus medidas, y con formas distintas arriba y abajo quedaba corrida.
+ *
+ * Ninguna forma pide más de cuatro medidas; si alguna pidiera más, bajan a
+ * otro renglón dentro de las cuatro columnas y la cantidad no se mueve.
+ */
+function RenglonDeMedidas({ medidas, despues, className }: { medidas: ReactNode; despues?: ReactNode; className?: string }) {
+  return (
+    <div className={`grid items-end gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 ${className ?? ''}`}>
+      <div className="grid items-end gap-1.5 sm:col-span-2 sm:grid-cols-2 lg:col-span-4 lg:grid-cols-4">{medidas}</div>
+      {despues}
     </div>
   )
 }
@@ -2520,22 +2560,6 @@ function MedidasDeLaForma({
   const campos = forma?.campos ?? []
   const cano = catalogos?.canos?.find((c) => c.id === linea.calc.canoId) ?? null
 
-  // Una entrada por medida nominal, con su diametro exterior.
-  const medidasDeCano = useMemo(() => {
-    const vistas = new Map<string, CanoEstandar>()
-
-    for (const c of catalogos?.canos ?? []) {
-      if (!vistas.has(c.nombre)) vistas.set(c.nombre, c)
-    }
-
-    return [...vistas.values()]
-  }, [catalogos])
-
-  const schedulesDeLaMedida = useMemo(
-    () => schedulesAgrupados((catalogos?.canos ?? []).filter((c) => c.nombre === cano?.nombre)),
-    [catalogos, cano],
-  )
-
   // Una reducción: entra un caño y sale otro, cada uno de la tabla.
   const conSalida = Boolean(forma?.usa_cano) && campos.some((c) => c.clave === 'outer2')
   const cano2 = canoDeLasMedidas(linea.calc.medidas, catalogos, true)
@@ -2622,17 +2646,6 @@ function MedidasDeLaForma({
   }
 
   /** Elegir un caño completa el diámetro exterior y la pared. */
-  /** Cambiar de medida elige el primer schedule de esa medida. */
-  function elegirMedidaDeCano(nombre: string) {
-    if (!nombre) return elegirCano(null)
-
-    const primero = schedulesAgrupados(
-      (catalogos?.canos ?? []).filter((c) => c.nombre === nombre),
-    )[0]
-
-    elegirCano(primero?.id ?? null)
-  }
-
   function elegirCano(id: number | null) {
     const elegido = catalogos?.canos?.find((c) => c.id === id) ?? null
 
@@ -2650,19 +2663,35 @@ function MedidasDeLaForma({
     })
   }
 
-  // Sin medidas que mostrar, la cantidad y la unidad siguen a la vista.
+  // Sin forma, o con una forma sin medidas configuradas, el renglón es el
+  // mismo: la cantidad y la unidad quedan en su columna.
   if (!forma || campos.length === 0) {
     return (
-      <div className="mt-1.5">
-        {!forma ? (
-          <p className="text-[11.5px] text-faint">Elegí la forma y aparecen las medidas que le corresponden.</p>
-        ) : (
-          <p className="text-[11.5px] text-warning-ink">
-            {forma.nombre} no tiene medidas configuradas: la medida va en DIMENSIONES, como texto.
-          </p>
-        )}
-        <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">{alLado}</div>
-      </div>
+      <RenglonDeMedidas
+        className="mt-1.5"
+        medidas={
+          !forma ? (
+            <p className="col-span-full pb-1.5 text-[11.5px] text-faint">
+              Elegí la forma y aparecen las medidas que le corresponden.
+            </p>
+          ) : (
+            /*
+              La medida va como texto, en el mismo lugar que en lo que pidió el
+              cliente. El aviso decía "va en DIMENSIONES" y ese casillero no
+              estaba en la pantalla: la medida de una brida no tenía dónde ir.
+            */
+            <Texto
+              etiqueta="Medida"
+              ayuda={`${forma.nombre} no tiene medidas configuradas: va como texto`}
+              className="sm:col-span-2"
+              value={linea.dimensiones ?? ''}
+              onChange={(e) => onCambio({ dimensiones: e.target.value || null, dimensionesAMano: true })}
+              placeholder='4" CLASE 300'
+            />
+          )
+        }
+        despues={alLado}
+      />
     )
   }
 
@@ -2673,104 +2702,113 @@ function MedidasDeLaForma({
         324 renglones. Y los schedules que comparten pared van juntos —para 2"
         el STD, el 40 y el 40S son los mismos 3,91 mm—, así que la lista de una
         medida pasa de diez renglones a seis.
+
+        Cada selector cae encima de lo que completa: la medida sobre el
+        diámetro exterior, el schedule sobre la pared. En una reducción, la
+        entrada y después la salida.
       */}
       {forma.usa_cano && (
-        <div className={`mb-2 grid gap-1.5 ${conSalida ? 'lg:grid-cols-2' : 'lg:w-2/3'}`}>
-          <div>
-            {conSalida && <Etiqueta>Entrada</Etiqueta>}
-            <div className="grid gap-1.5 sm:grid-cols-2">
-              <select
-                aria-label="Medida del caño"
-                value={cano?.nombre ?? ''}
-                onChange={(e) => elegirMedidaDeCano(e.target.value)}
-                className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand"
-              >
-                <option value="">Caño de medida especial — cargo las medidas yo</option>
-                {medidasDeCano.map((m) => (
-                  <option key={m.nombre} value={m.nombre}>
-                    {m.nombre} · Ø{m.diametro_mm} mm
-                  </option>
-                ))}
-              </select>
-
-              <select
-                aria-label="Schedule del caño"
-                value={linea.calc.canoId ?? ''}
-                disabled={!cano}
-                onChange={(e) => elegirCano(e.target.value ? Number(e.target.value) : null)}
-                className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-2.5 text-[12.5px] outline-none focus:border-brand disabled:bg-soft disabled:text-faint"
-              >
-                <option value="">{cano ? 'Elegí el schedule' : '—'}</option>
-                {schedulesDeLaMedida.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    SCH {g.etiqueta} · pared {g.pared} mm
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {conSalida && (
-            <div>
-              <Etiqueta>Salida</Etiqueta>
-              <SelectorDeCano cano={cano2} catalogos={catalogos} aria="de salida" onElegir={elegirCanoSalida} />
-            </div>
-          )}
-        </div>
+        <RenglonDeMedidas
+          className="mb-1.5"
+          medidas={
+            <>
+              <SelectorDeCano
+                etiqueta={conSalida ? 'Entrada' : 'Caño'}
+                cano={cano}
+                catalogos={catalogos}
+                aria={conSalida ? 'de entrada' : ''}
+                onElegir={(c) => elegirCano(c?.id ?? null)}
+              />
+              {conSalida && (
+                <SelectorDeCano etiqueta="Salida" cano={cano2} catalogos={catalogos} aria="de salida" onElegir={elegirCanoSalida} />
+              )}
+            </>
+          }
+        />
       )}
-      {/* Las mismas columnas que lo que pidió el cliente: Diámetro cae sobre
-          Diámetro y Cantidad sobre Cantidad. Seis en pantalla ancha, cuatro en
-          una mediana: con seis, en 1024 px "114" no entraba en el casillero. */}
-      <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-        {campos.map((campo) => {
-          const cargada = linea.calc.medidas[campo.clave] ?? { valor: '', unidad: 'mm' }
-          const puestoPorCano =
-            (Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')) ||
-            (Boolean(cano2) && (campo.clave === 'outer2' || campo.clave === 'wall2'))
 
-          // Con largo variable, en lugar del largo van los dos extremos.
-          if (campo.clave === 'length' && largoVariable) {
-            const leer = (v: string) => (v === '' ? null : aMilimetros(v, cargada.unidad))
+      <RenglonDeMedidas
+        medidas={
+          campos.map((campo) => {
+            const cargada = linea.calc.medidas[campo.clave] ?? { valor: '', unidad: 'mm' }
+            const puestoPorCano =
+              (Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')) ||
+              (Boolean(cano2) && (campo.clave === 'outer2' || campo.clave === 'wall2'))
+
+            // Con largo variable, en lugar del largo van los dos extremos.
+            if (campo.clave === 'length' && largoVariable) {
+              const leer = (v: string) => (v === '' ? null : aMilimetros(v, cargada.unidad))
+
+              return (
+                <div key={campo.clave} className="lg:col-span-2">
+                  <Etiqueta ayuda="el peso se saca del promedio">Largo, de mínimo a máximo</Etiqueta>
+                  <div className="flex">
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      aria-label="Largo mínimo"
+                      value={desdeMm(linea.largo_min_mm ?? null, cargada.unidad)}
+                      onChange={(e) =>
+                        ponerRango(leer(e.target.value), linea.largo_max_mm ?? null, cargada.unidad)
+                      }
+                      className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                    />
+                    <span className="flex h-7 items-center border-y border-line-strong bg-app px-2 text-[11px] text-muted">
+                      a
+                    </span>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      aria-label="Largo máximo"
+                      value={desdeMm(linea.largo_max_mm ?? null, cargada.unidad)}
+                      onChange={(e) =>
+                        ponerRango(linea.largo_min_mm ?? null, leer(e.target.value), cargada.unidad)
+                      }
+                      className="h-7 min-w-0 flex-1 border-y border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                    />
+                    <select
+                      aria-label="Unidad del largo"
+                      value={cargada.unidad}
+                      onChange={(e) =>
+                        ponerRango(
+                          linea.largo_min_mm ?? null,
+                          linea.largo_max_mm ?? null,
+                          e.target.value,
+                        )
+                      }
+                      className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                    >
+                      {UNIDADES_MEDIDA.map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )
+            }
 
             return (
-              <div key={campo.clave} className="lg:col-span-2">
-                <Etiqueta ayuda="el peso se saca del promedio">Largo, de mínimo a máximo</Etiqueta>
+              <div key={campo.clave}>
+                <Etiqueta ayuda={puestoPorCano ? 'lo pone el caño' : undefined}>{campo.label}</Etiqueta>
                 <div className="flex">
                   <input
                     type="number"
                     step="any"
                     min="0"
-                    aria-label="Largo mínimo"
-                    value={desdeMm(linea.largo_min_mm ?? null, cargada.unidad)}
-                    onChange={(e) =>
-                      ponerRango(leer(e.target.value), linea.largo_max_mm ?? null, cargada.unidad)
-                    }
-                    className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
-                  />
-                  <span className="flex h-7 items-center border-y border-line-strong bg-app px-2 text-[11px] text-muted">
-                    a
-                  </span>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    aria-label="Largo máximo"
-                    value={desdeMm(linea.largo_max_mm ?? null, cargada.unidad)}
-                    onChange={(e) =>
-                      ponerRango(linea.largo_min_mm ?? null, leer(e.target.value), cargada.unidad)
-                    }
-                    className="h-7 min-w-0 flex-1 border-y border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
+                    value={cargada.valor}
+                    onChange={(e) => cambiarMedida(campo.clave, { valor: e.target.value })}
+                    disabled={puestoPorCano}
+                    className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand disabled:bg-[#f1f5f9] disabled:text-muted"
                   />
                   <select
-                    aria-label="Unidad del largo"
                     value={cargada.unidad}
-                    onChange={(e) =>
-                      ponerRango(
-                        linea.largo_min_mm ?? null,
-                        linea.largo_max_mm ?? null,
-                        e.target.value,
-                      )
-                    }
-                    className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand"
+                    onChange={(e) => cambiarMedida(campo.clave, { unidad: e.target.value })}
+                    disabled={puestoPorCano}
+                    className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand disabled:bg-[#f1f5f9]"
                   >
                     {UNIDADES_MEDIDA.map((u) => (
                       <option key={u} value={u}>
@@ -2781,59 +2819,33 @@ function MedidasDeLaForma({
                 </div>
               </div>
             )
-          }
-
-          return (
-            <div key={campo.clave}>
-              <Etiqueta ayuda={puestoPorCano ? 'lo pone el caño' : undefined}>{campo.label}</Etiqueta>
-              <div className="flex">
+          })
+        }
+        despues={
+          <>
+            {/*
+              En lugar de "Piezas", la cantidad y su unidad (Roberto, 11-10 y
+              14-10): "Piezas" parecía la cantidad pero solo la usaba el cálculo
+              del peso, y lo escrito ahí no llegaba a la cotización — en TOSAMA se
+              corrigió a 1 y la línea siguió pidiendo 114.
+            */}
+            {alLado}
+            {piezasAparte && (
+              <div>
+                <Etiqueta ayuda="para el peso">Piezas</Etiqueta>
                 <input
                   type="number"
                   step="any"
                   min="0"
-                  value={cargada.valor}
-                  onChange={(e) => cambiarMedida(campo.clave, { valor: e.target.value })}
-                  disabled={puestoPorCano}
-                  className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand disabled:bg-[#f1f5f9] disabled:text-muted"
+                  value={linea.calc.piezas}
+                  onChange={(e) => onCambio({ calc: { ...linea.calc, piezas: e.target.value } })}
+                  className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
                 />
-                <select
-                  value={cargada.unidad}
-                  onChange={(e) => cambiarMedida(campo.clave, { unidad: e.target.value })}
-                  disabled={puestoPorCano}
-                  className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand disabled:bg-[#f1f5f9]"
-                >
-                  {UNIDADES_MEDIDA.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
               </div>
-            </div>
-          )
-        })}
-
-        {/*
-          En lugar de "Piezas", la cantidad y su unidad (Roberto, 11-10 y
-          14-10): "Piezas" parecía la cantidad pero solo la usaba el cálculo
-          del peso, y lo escrito ahí no llegaba a la cotización — en TOSAMA se
-          corrigió a 1 y la línea siguió pidiendo 114.
-        */}
-        {alLado}
-        {piezasAparte && (
-          <div>
-            <Etiqueta ayuda="para el peso">Piezas</Etiqueta>
-            <input
-              type="number"
-              step="any"
-              min="0"
-              value={linea.calc.piezas}
-              onChange={(e) => onCambio({ calc: { ...linea.calc, piezas: e.target.value } })}
-              className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
-            />
-          </div>
-        )}
-      </div>
+            )}
+          </>
+        }
+      />
 
       {/* Sólo donde tiene sentido: un disco o una esfera no llevan largo. */}
       {campos.some((c) => c.clave === 'length') && (
@@ -2898,8 +2910,14 @@ function LineaFila({
     canoDeLasMedidas(linea.calc.medidas, catalogos, true),
   )
   // La característica ofrecida —"s/c", "ASTM B348"— entra en la descripción
-  // impresa, salvo que ya esté escrita a mano.
-  const descArmada = armarDescripcion(nombreMaterial, formaElegida, dimArmada, linea.caracteristicas)
+  // impresa, salvo que ya esté escrita a mano. Una forma sin medidas
+  // configuradas lleva la medida que se escribió en su casillero "Medida".
+  const descArmada = armarDescripcion(
+    nombreMaterial,
+    formaElegida,
+    formaElegida?.campos?.length ? dimArmada : (linea.dimensiones ?? ''),
+    linea.caracteristicas,
+  )
 
   useEffect(() => {
     const cambios: Partial<LineaForm> = {}
@@ -3179,107 +3197,114 @@ function LineaFila({
             />
           </div>
 
-          {/* El caño que pidió el cliente se elige por su medida y su
-              schedule, como en lo que se ofrece y en el mismo lugar. Una
-              reducción tiene dos: la entrada y la salida, lado a lado. */}
+          {/* El caño que pidió el cliente, como en lo que se ofrece y en el
+              mismo lugar: la medida encima del diámetro exterior, el schedule
+              encima de la pared. Una reducción tiene dos, entrada y salida. */}
           {formaPedida?.usa_cano && (
-            <div className={`mt-1.5 grid gap-1.5 ${pedidoConSalida ? 'lg:grid-cols-2' : 'lg:w-2/3'}`}>
-              <div>
-                {pedidoConSalida && <Etiqueta>Entrada</Etiqueta>}
-                <SelectorDeCano
-                  cano={canoPedido}
-                  catalogos={catalogos}
-                  aria="pedido"
-                  onElegir={(c) => elegirCanoPedido(c)}
-                />
-              </div>
-              {pedidoConSalida && (
-                <div>
-                  <Etiqueta>Salida</Etiqueta>
+            <RenglonDeMedidas
+              className="mt-1.5"
+              medidas={
+                <>
                   <SelectorDeCano
-                    cano={canoPedido2}
+                    etiqueta={pedidoConSalida ? 'Entrada' : 'Caño'}
+                    cano={canoPedido}
                     catalogos={catalogos}
-                    aria="pedido de salida"
-                    onElegir={(c) => elegirCanoPedido(c, true)}
+                    aria="pedido"
+                    onElegir={(c) => elegirCanoPedido(c)}
                   />
-                </div>
-              )}
-            </div>
+                  {pedidoConSalida && (
+                    <SelectorDeCano
+                      etiqueta="Salida"
+                      cano={canoPedido2}
+                      catalogos={catalogos}
+                      aria="pedido de salida"
+                      onElegir={(c) => elegirCanoPedido(c, true)}
+                    />
+                  )}
+                </>
+              }
+            />
           )}
 
           {/*
-            Las medidas de lo pedido, con los nombres que les pone la forma, y
-            en las mismas columnas que las de lo ofrecido: Diametro cae sobre
-            Diametro, Largo sobre Largo, Cantidad sobre Cantidad. Con una forma
-            que no está en el catálogo queda la caja de texto, como las líneas
-            viejas.
+            Las medidas de lo pedido, con los nombres que les pone la forma, en
+            el mismo renglón que las de lo ofrecido (ver RenglonDeMedidas): la
+            cantidad y la unidad caen siempre sobre las de abajo. Con una forma
+            que no está en el catálogo queda la caja de texto.
           */}
-          <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-            {camposDeLoPedido.length > 0 ? (
-              camposDeLoPedido.map((campo) => {
-                const cargada = linea.pedido_medidas?.[campo.clave] ?? { valor: '', unidad: 'mm' }
-                const puestoPorCano =
-                  (Boolean(canoPedido) && (campo.clave === 'outer' || campo.clave === 'wall')) ||
-                  (Boolean(canoPedido2) && (campo.clave === 'outer2' || campo.clave === 'wall2'))
+          <RenglonDeMedidas
+            className="mt-1.5"
+            medidas={
+              camposDeLoPedido.length > 0 ? (
+                camposDeLoPedido.map((campo) => {
+                  const cargada = linea.pedido_medidas?.[campo.clave] ?? { valor: '', unidad: 'mm' }
+                  const puestoPorCano =
+                    (Boolean(canoPedido) && (campo.clave === 'outer' || campo.clave === 'wall')) ||
+                    (Boolean(canoPedido2) && (campo.clave === 'outer2' || campo.clave === 'wall2'))
 
-                return (
-                  <div key={campo.clave}>
-                    <Etiqueta ayuda={puestoPorCano ? 'lo pone el caño' : undefined}>{campo.label}</Etiqueta>
-                    <div className="flex">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        aria-label={`${campo.label} pedido`}
-                        value={cargada.valor}
-                        onChange={(e) => cambiarMedidaPedida(campo.clave, { valor: e.target.value })}
-                        disabled={puestoPorCano}
-                        className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand disabled:bg-[#f1f5f9] disabled:text-muted"
-                      />
-                      <select
-                        aria-label={`Unidad de ${campo.label.toLowerCase()} pedido`}
-                        value={cargada.unidad}
-                        onChange={(e) => cambiarMedidaPedida(campo.clave, { unidad: e.target.value })}
-                        disabled={puestoPorCano}
-                        className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand disabled:bg-[#f1f5f9]"
-                      >
-                        {UNIDADES_MEDIDA.map((u) => (
-                          <option key={u} value={u}>
-                            {u}
-                          </option>
-                        ))}
-                      </select>
+                  return (
+                    <div key={campo.clave}>
+                      <Etiqueta ayuda={puestoPorCano ? 'lo pone el caño' : undefined}>{campo.label}</Etiqueta>
+                      <div className="flex">
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          aria-label={`${campo.label} pedido`}
+                          value={cargada.valor}
+                          onChange={(e) => cambiarMedidaPedida(campo.clave, { valor: e.target.value })}
+                          disabled={puestoPorCano}
+                          className="h-7 min-w-0 flex-1 rounded-l-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand disabled:bg-[#f1f5f9] disabled:text-muted"
+                        />
+                        <select
+                          aria-label={`Unidad de ${campo.label.toLowerCase()} pedido`}
+                          value={cargada.unidad}
+                          onChange={(e) => cambiarMedidaPedida(campo.clave, { unidad: e.target.value })}
+                          disabled={puestoPorCano}
+                          className="h-7 rounded-r-[7px] border border-l-0 border-line-strong bg-white px-1.5 text-[11px] text-muted outline-none focus:border-brand disabled:bg-[#f1f5f9]"
+                        >
+                          {UNIDADES_MEDIDA.map((u) => (
+                            <option key={u} value={u}>
+                              {u}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                  </div>
-                )
-              })
-            ) : (
-              <Texto
-                etiqueta="Medidas"
-                className="lg:col-span-2"
-                value={linea.pedido_dimensiones ?? ''}
-                onChange={(e) => onCambio({ pedido_dimensiones: e.target.value || null })}
-                placeholder="DIA 65 X 145 MM"
-              />
-            )}
-            <Texto
-              etiqueta="Cantidad"
-              type="number"
-              step="0.01"
-              value={linea.cantidad_pedida ?? ''}
-              onChange={(e) =>
-                onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
-              }
-            />
-            <Lista
-              etiqueta="Unidad"
-              value={linea.unidad_pedida_id ?? ''}
-              onChange={(e) =>
-                onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
-              }
-              opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
-            />
-          </div>
+                  )
+                })
+              ) : (
+                <Texto
+                  etiqueta="Medida"
+                  className="sm:col-span-2"
+                  value={linea.pedido_dimensiones ?? ''}
+                  onChange={(e) => onCambio({ pedido_dimensiones: e.target.value || null })}
+                  placeholder="DIA 65 X 145 MM"
+                />
+              )
+            }
+            despues={
+              <>
+                <Texto
+                  etiqueta="Cantidad"
+                  type="number"
+                  step="0.01"
+                  value={linea.cantidad_pedida ?? ''}
+                  onChange={(e) =>
+                    onCambio({ cantidad_pedida: e.target.value ? Number(e.target.value) : null })
+                  }
+                />
+                <Lista
+                  etiqueta="Unidad"
+                  value={linea.unidad_pedida_id ?? ''}
+                  onChange={(e) =>
+                    onCambio({ unidad_pedida_id: e.target.value ? Number(e.target.value) : null })
+                  }
+                  opciones={unidades.map((u) => ({ valor: u.id, texto: u.codigo }))}
+                />
+              </>
+            }
+          />
           {/*
             El motivo se elige o se escribe, y lo escrito queda en la lista.
 
