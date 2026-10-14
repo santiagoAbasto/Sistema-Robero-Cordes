@@ -150,6 +150,16 @@
     </tr>
 </table>
 
+{{--
+    Cuando alguna linea se entrega en una unidad y se factura en otra —por
+    metro y por kilo—, la tabla suma la cantidad y la unidad de facturacion
+    antes del precio: la fila se lee como una factura, cantidad facturada por
+    precio unitario igual al importe (lista del cliente, 14-10-2026). Si
+    ninguna cambia de unidad, la tabla queda como siempre.
+--}}
+@php
+    $conFacturacion = $lineas->contains(fn ($l) => $l->cambiaDeUnidad() && $l->cantidad_facturar);
+@endphp
 <table class="lineas">
     <thead>
         <tr>
@@ -157,6 +167,10 @@
             <th style="width:38pt">Cant.</th>
             <th style="width:40pt">Unidad</th>
             <th>Descripcion</th>
+            @if ($conFacturacion)
+                <th style="width:44pt">Cant. fact.</th>
+                <th style="width:40pt">Unid. fact.</th>
+            @endif
             @if ($incluyeImportes)
                 <th class="der" style="width:76pt">P. unitario</th>
                 <th class="der" style="width:76pt">Importe</th>

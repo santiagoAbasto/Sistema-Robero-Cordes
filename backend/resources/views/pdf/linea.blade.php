@@ -11,6 +11,8 @@
     hereda de la hoja.
 --}}
 @php
+    // Lo pone la hoja; sin ella (una linea suelta) no hay columnas de facturacion.
+    $conFacturacion ??= false;
     $cantidad = fn ($v) => $v ? rtrim(rtrim(number_format((float) $v, 2, ',', '.'), '0'), ',') : '';
     $metros = fn ($mm) => number_format((float) $mm / 1000, 2, ',', '.');
 @endphp
@@ -45,9 +47,11 @@
             {{ $linea->caracteristicas }}
         @endif
         @if ($linea->aprox)<span class="aprox">(aprox.)</span>@endif
-        {{-- Un item que no se cotiza queda en la hoja, con su motivo, sin precio. --}}
-        @if ($linea->no_cotizada)
-            <div class="no-cotiza">No se cotiza{{ $linea->motivo_no_cotiza ? '  ·  '.$linea->motivo_no_cotiza : '' }}</div>
+        {{-- Un item que no se cotiza queda en la hoja, sin precio. Debajo del
+             material va solo el motivo: "no se cotiza" ya lo dice la columna
+             del importe (lista del cliente, 14-10-2026). --}}
+        @if ($linea->no_cotizada && $linea->motivo_no_cotiza)
+            <div class="no-cotiza">{{ $linea->motivo_no_cotiza }}</div>
         @endif
         @if (! $esAlternativa && ! $linea->transporte && $linea->plazo_dias)
             <div class="nota-linea">Entrega aprox. {{ $linea->plazo_dias }} dias</div>
@@ -85,23 +89,25 @@
                 @endif
             </div>
         @endif
-        {{-- Se cotiza en una unidad y se factura en otra. --}}
-        @if ($linea->cambiaDeUnidad() && $linea->cantidad_facturar)
-            <div class="pedido" style="color:#0a6ca6">
-                Se factura {{ number_format((float) $linea->cantidad_facturar, 2, ',', '.') }}
-                {{ $linea->unidadFactura?->codigo }}
-                @if ($incluyeImportes && $linea->precio_por_kilo)
-                    a {{ $simbolo }}{{ number_format((float) $linea->precio_por_kilo, 2, ',', '.') }}
-                    por {{ mb_strtolower($linea->unidadFactura?->codigo ?? '') }}
-                @endif
-            </div>
-        @endif
     </td>
+    {{--
+        La cantidad y la unidad en que se factura, y el precio de esa unidad:
+        6 barras que se facturan 45,30 KG a $12 el kilo. Una linea que no
+        cambia de unidad repite las suyas. La hoja que no tiene ninguna no
+        trae estas columnas (ver cotizacion.blade.php).
+    --}}
+    @php
+        $factura = $conFacturacion && $linea->cambiaDeUnidad() && $linea->cantidad_facturar;
+    @endphp
+    @if ($conFacturacion)
+        <td>{{ $linea->no_cotizada ? '' : $cantidad($factura ? $linea->cantidad_facturar : $linea->cantidad) }}</td>
+        <td>{{ $linea->no_cotizada ? '' : ($factura ? $linea->unidadFactura?->codigo : $linea->unidadVenta?->codigo) }}</td>
+    @endif
     @if ($incluyeImportes)
         @if ($linea->no_cotizada)
             <td colspan="2" class="no-cotiza-importe">no se cotiza</td>
         @else
-            <td>@include('pdf.plata', ['monto' => $linea->precio_unitario])</td>
+            <td>@include('pdf.plata', ['monto' => $factura && $linea->precio_por_kilo ? $linea->precio_por_kilo : $linea->precio_unitario])</td>
             <td>@include('pdf.plata', ['monto' => $linea->importe])</td>
         @endif
     @endif
