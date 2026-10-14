@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Forma;
 use App\Models\Material;
 use App\Models\MaterialAlias;
 use App\Services\LectorDeSolicitud;
@@ -91,6 +92,30 @@ class LectorDeSolicitudTest extends TestCase
         $this->assertEqualsWithDelta(6.0, $barra['cantidad'], 0.001);
         $this->assertFalse($barra['igual_a_lo_pedido']);
         $this->assertSame('AISI 420', $barra['pedido_material']);
+    }
+
+    /**
+     * Con las formas del sistema anterior prendidas hay unas 250, y varias son
+     * palabras de todos los dias. La forma se busca en palabras enteras, gana
+     * la que tiene medidas cargadas y el plural vale en cada palabra.
+     */
+    public function test_con_todas_las_formas_prendidas_no_ve_formas_en_cualquier_palabra(): void
+    {
+        foreach (['JUNTA', 'JUNTA ESPIRALADA', 'PLANO', 'MONEDAS', 'REDONDA', 'RECTA', 'CUPLA', '1/2 CUPLA'] as $nombre) {
+            Forma::create(['nombre' => $nombre, 'clave' => Forma::claveDesde($nombre), 'activo' => true]);
+        }
+
+        $forma = fn (string $renglon) => $this->leer($renglon)['forma'] ?? null;
+
+        // Adentro de otra palabra no es nada.
+        $this->assertSame('CAÑO', $forma('Te mando la planilla adjunta: 10 caños 2" sch 40 x 6000 mm'));
+        $this->assertSame('CHAPA', $forma('3 chapas 2 x 1000 x 2000, entrega directa, precio en otras monedas'));
+        // La que tiene medidas le gana a la que no: es un caño, no un plano.
+        $this->assertSame('CAÑO', $forma('4 caños 1" sch 40 x 6000 segun plano'));
+        // El plural en cada palabra, y "media" es 1/2.
+        $this->assertSame('BARRA REDONDA', $forma('4 barras redondas Ø 25 x 3000'));
+        $this->assertSame('JUNTA ESPIRALADA', $forma('5 juntas espiraladas 4" clase 150'));
+        $this->assertSame('1/2 CUPLA', $forma('1 unidad media cupla 1/2"'));
     }
 
     /**
