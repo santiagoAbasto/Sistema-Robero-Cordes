@@ -78,7 +78,10 @@
                     Largos variables, aprox. {{ $metros($linea->largo_min_mm) }} m
                 @else
                     Largos de {{ $metros($linea->largo_min_mm) }} a {{ $metros($linea->largo_max_mm) }} m
-                    &nbsp;&middot;&nbsp; peso calculado sobre el promedio, {{ $metros($linea->largoPromedioMm()) }} m
+                    {{-- Solo si el precio sale del peso: por metro no entra en la cuenta. --}}
+                    @if ($linea->precioSaleDelPeso())
+                        &nbsp;&middot;&nbsp; peso calculado sobre el promedio, {{ $metros($linea->largoPromedioMm()) }} m
+                    @endif
                 @endif
             </div>
         @endif

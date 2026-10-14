@@ -94,6 +94,63 @@ class LectorDeSolicitudTest extends TestCase
     }
 
     /**
+     * Una ficha con material y cantidad se lee como ficha de la web, y esa
+     * lectura solo conocia DIMENSIONES: el diametro y el largo rotulados
+     * aparte se perdian sin aviso.
+     */
+    public function test_una_ficha_con_diametro_y_largo_rotulados_no_pierde_las_medidas(): void
+    {
+        $lineas = $this->lector->interpretar(
+            "MATERIAL: INCONEL\nDIAMETRO: 114 mm\nLARGO: 105 mm\nCANTIDAD: 1\n"
+            ."MATERIAL: INCONEL\nDIAMETRO: 140 mm\nLARGO: 150 mm\nCANTIDAD: 3"
+        )['lineas'];
+
+        $this->assertCount(2, $lineas);
+        $this->assertEqualsWithDelta(114.0, $lineas[0]['diametro_mm'], 0.001);
+        $this->assertEqualsWithDelta(105.0, $lineas[0]['largo_mm'], 0.001);
+        $this->assertEqualsWithDelta(150.0, $lineas[1]['largo_mm'], 0.001);
+        $this->assertEqualsWithDelta(3.0, $lineas[1]['cantidad'], 0.001);
+        $this->assertSame('INCONEL', $lineas[1]['pedido_material']);
+    }
+
+    /**
+     * El pedido de Farca (RIC, 14-10): nueve items y salian ocho. La media
+     * cupla —un articulo que el catalogo no tiene, sin medida— se tomaba por
+     * un renglon de "Cantidad: 1" y se perdia sin aviso. Y la brida ciega se
+     * cortaba en "(4"), Clase 300", que quedaba suelta.
+     */
+    public function test_un_item_que_el_catalogo_no_conoce_no_se_pierde(): void
+    {
+        $r = $this->lector->interpretar(
+            "1 unidad – Brida WN RF DN 40, Clase 300.\n"
+            ."1 metro – Caño DN 40, Schedule 80.\n"
+            ."1 unidad – Media cupla DN 40, en material equivalente.\n"
+            ."1 unidad – Barra maciza de diámetro 70 mm y largo 75 mm.\n"
+            ."1 unidad – Brida ciega DN 100 (4\"), Clase 300.\n\n"
+            ."1 unidad – Brida WN RF DN 100, Clase 600, Schedule 80.\n"
+            ."1 metro – Caño DN 100, Schedule 80.\n"
+            ."1 unidad – Media cupla de 1/2\" BSPT, con tapón compatible.\n"
+            ."1 unidad – Brida BL RF DN 100, Clase 600, Schedule 80."
+        );
+
+        $this->assertCount(9, $r['lineas']);
+        $this->assertSame([], $r['sin_reconocer']);
+        $this->assertStringContainsString('Media cupla DN 40', $r['lineas'][2]['descripcion']);
+        $this->assertStringContainsString('Clase 300', $r['lineas'][4]['descripcion']);
+
+        // "diámetro 70 mm y largo 75 mm": el largo tambien.
+        $this->assertEqualsWithDelta(70.0, $r['lineas'][3]['diametro_mm'], 0.001);
+        $this->assertEqualsWithDelta(75.0, $r['lineas'][3]['largo_mm'], 0.001);
+
+        // Lo que si es una cantidad sola sigue enganchandose.
+        $this->assertEqualsWithDelta(
+            10.0,
+            $this->lector->interpretar("Ti. Gr. 4 Ø4,76\n10 Barras")['lineas'][0]['cantidad'],
+            0.001,
+        );
+    }
+
+    /**
      * Una captura de pantalla llega en vertical: la forma en un renglon y abajo
      * cada medida y el material con su rotulo. Es UN item, no tres renglones.
      */

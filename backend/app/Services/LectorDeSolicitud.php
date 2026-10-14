@@ -63,6 +63,41 @@ class LectorDeSolicitud
         'width' => 'ancho_mm', 'length' => 'largo_mm',
     ];
 
+    /**
+     * Los titulos de columna de una tabla de pedido y que dato es cada uno.
+     * El interno va antes que el diametro: "Diametro interno" no es el
+     * exterior.
+     */
+    private const TITULOS = [
+        '/^(?:DIAMETRO|DIAM)\s+(?:INTERNO|INTERIOR|INT)$/' => 'interior',
+        '/^(?:DIAMETRO|DIAM|OD)(?:\s+(?:EXTERNO|EXTERIOR|EXT))?$/' => 'diameter',
+        '/^(?:ESPESOR|ESP|PARED)$/' => 'wall',
+        '/^ANCHO$/' => 'width',
+        '/^(?:LADO|SECCION)$/' => 'side',
+        '/^(?:LARGO|LONGITUD|LONG)$/' => 'length',
+        '/^(?:MEDIDAS?|DIMENSIONES)$/' => 'medidas',
+        '/^(?:MATERIAL|CALIDAD|ALEACION)$/' => 'material',
+        '/^(?:FORMA|PRODUCTO)$/' => 'forma',
+        '/^(?:CANT|CANTIDAD|QTY|PIEZAS|PZAS)$/' => 'cantidad',
+        '/^(?:ITEM|POS|POSICION|NRO|N)$/' => 'item',
+    ];
+
+    /**
+     * Los rotulos de cada medida en una ficha, en el orden en que las leen
+     * las formas. Se juntan despues en "dimensiones".
+     */
+    private const ROTULOS_DE_MEDIDA = [
+        'm_diam' => ['DIAMETRO', 'DIÁMETRO', 'DIAM'],
+        'm_lado' => ['LADO', 'SECCION', 'SECCIÓN', 'SECC'],
+        'm_ancho' => ['ANCHO'],
+        'm_esp' => ['ESPESOR', 'ESP'],
+        'm_med' => ['MEDIDAS', 'MEDIDA', 'DIMENSIONES'],
+        'm_largo' => ['LONGITUD', 'LARGO', 'LONG'],
+    ];
+
+    /** Las columnas de una tabla que son una medida. */
+    private const MEDIDAS_DE_TABLA = ['diameter', 'interior', 'wall', 'width', 'side', 'length', 'medidas'];
+
     private EnlazadorDeLineas $buscadorDeMaterial;
 
     /** @var array<string, true> las palabras que nombran materiales */
@@ -79,14 +114,40 @@ class LectorDeSolicitud
         $lineas = [];
         $sinReconocer = [];
 
-        // Una ficha de la web trae cada dato rotulado: se lee por campo. Si no
-        // es una ficha de la web, puede ser una captura vertical —la forma en
-        // un renglon, y abajo "Seccion:", "Longitud:", "Material:"—.
-        $fichas = $this->fichasDeLaWeb($texto);
+        // Una tabla —una fila de titulos y un item por fila— se lee por columna.
+        $tabla = $this->fichasDeTabla($texto);
 
-        if ($fichas === []) {
-            $fichas = $this->fichasDeCaptura($texto, $formas);
+        if ($tabla !== []) {
+            foreach ($tabla as $fila) {
+                $linea = $this->leerFicha($fila['ficha'], $materiales, $formas, $unidades);
+
+                if ($linea === null) {
+                    $sinReconocer[] = implode(' ', $fila['ficha']);
+
+                    continue;
+                }
+
+                // Cada medida a su columna por el titulo, no por el orden en
+                // que vienen: en "Largo | Diametro" el primero no es el diametro.
+                if ($fila['medidas'] !== []) {
+                    foreach (['diametro_mm', 'espesor_mm', 'ancho_mm', 'largo_mm'] as $columna) {
+                        $linea[$columna] = null;
+                    }
+
+                    foreach ($fila['medidas'] as $clave => $mm) {
+                        $linea[self::COLUMNA[$clave]] = $mm;
+                    }
+                }
+
+                $lineas[] = $linea;
+            }
+
+            return ['lineas' => $lineas, 'sin_reconocer' => $sinReconocer];
         }
+
+        // Una ficha trae cada dato rotulado —la de la web, una captura
+        // vertical—: se lee por campo.
+        $fichas = $this->fichas($texto, $formas);
 
         if ($fichas !== []) {
             foreach ($fichas as $ficha) {
@@ -131,7 +192,8 @@ class LectorDeSolicitud
             $arriba = array_key_last($lineas);
 
             if ($arriba !== null && $lineas[$arriba]['cantidad'] === null
-                && $linea['material_id'] === null && $linea['dimensiones'] === null) {
+                && $linea['material_id'] === null && $linea['dimensiones'] === null
+                && $this->soloDiceCuantas($linea['descripcion'])) {
                 $lineas[$arriba]['descripcion'] .= ' '.$linea['descripcion'];
                 $lineas[$arriba]['cantidad'] = $linea['cantidad'];
                 $lineas[$arriba]['unidad_venta_id'] = $linea['unidad_venta_id'];
@@ -145,7 +207,8 @@ class LectorDeSolicitud
             // "Cantidad: 6" en su renglon, antes del item: se guarda para el
             // proximo item que no traiga la suya.
             if ($linea['cantidad'] !== null && $linea['material_id'] === null
-                && $linea['dimensiones'] === null && $linea['forma_id'] === null) {
+                && $linea['dimensiones'] === null && $linea['forma_id'] === null
+                && $this->soloDiceCuantas($linea['descripcion'])) {
                 $pendienteCantidad = [
                     'cantidad' => $linea['cantidad'],
                     'unidad_venta_id' => $linea['unidad_venta_id'],
@@ -171,9 +234,33 @@ class LectorDeSolicitud
     }
 
     /**
-     * Las fichas de un "DETALLE SOLICITADO" de la web.
+     * Si el renglon dice cuantas y nada mas: "Cantidad: 6", "10 Barras", "6
+     * unidades". Uno que ademas nombra un articulo —"1 unidad – Media cupla DN
+     * 40"— es un item aunque el catalogo no conozca el articulo: antes se
+     * tomaba por la cantidad del item de al lado y se perdia sin aviso (Farca,
+     * 14-10).
+     */
+    private function soloDiceCuantas(string $renglon): bool
+    {
+        // ponytail: hasta dos palabras ademas de los numeros; si aparece un
+        // "6 barras largas" que deba engancharse, mirar el vocabulario en vez
+        // de contar.
+        $palabras = preg_split(
+            '/\s+/',
+            $this->conEspacios(preg_replace('/\d+(?:[.,]\d+)?/', ' ', $renglon) ?? ''),
+            -1,
+            PREG_SPLIT_NO_EMPTY,
+        ) ?: [];
+
+        return count($palabras) <= 2;
+    }
+
+    /**
+     * Las fichas: cada dato del item con su rotulo.
      *
-     * Vienen asi, con las columnas aplanadas por el copiar y pegar:
+     * Llegan de dos lados. El "DETALLE SOLICITADO" de la web, con las columnas
+     * aplanadas por el copiar y pegar —el rotulo al final de un renglon y el
+     * valor en el siguiente—:
      *
      *     MATERIAL
      *     AISI 420        FORMA
@@ -182,104 +269,307 @@ class LectorDeSolicitud
      *     Ø10mm x 3 metros de largo      CANTIDAD
      *     3 metros
      *
-     * Leido renglon por renglon salian tres lineas: "Ø10mm" se tomaba por la
-     * cantidad, "CANTIDAD" quedaba pegado a la medida, y la aclaracion del
-     * cliente era una linea mas. Es UNA linea, y cada dato ya dice que es.
-     *
-     * Hacen falta dos de los datos del item. Un mail que diga "Material:
-     * titanio" en un renglon suelto sigue leyendose como mail.
-     *
-     * @return list<array<string, string>>
-     */
-    private function fichasDeLaWeb(string $texto): array
-    {
-        $fichas = CamposDeFormulario::leer($texto, [
-            'material' => ['MATERIAL'],
-            'forma' => ['FORMA'],
-            'dimensiones' => ['DIMENSIONES', 'MEDIDAS', 'MEDIDA'],
-            'cantidad' => ['CANTIDAD'],
-            // No arma la linea: se reconoce para que no se lea como una.
-            'aclaraciones' => ['ACLARACIONES / OBSERVACIONES', 'ACLARACIONES', 'OBSERVACIONES'],
-        ]);
-
-        // Las aclaraciones no cuentan: "Material: titanio" y "Observaciones:
-        // urgente" en un mail no hacen un item.
-        return array_values(array_filter(
-            $fichas,
-            fn ($f) => count(array_intersect_key($f, array_flip(['material', 'forma', 'dimensiones', 'cantidad']))) >= 2,
-        ));
-    }
-
-    /**
-     * Las capturas de pantalla, que llegan en vertical.
-     *
-     * Una foto de un pedido se transcribe asi: la forma en un renglon, y abajo
-     * cada medida y el material con su rotulo —
+     * Y las capturas de pantalla, que la IA copia en vertical: la forma sola en
+     * un renglon y abajo cada medida y el material con su rotulo —
      *
      *     BARRA CUADRADA
      *     Seccion: 12 mm
      *     Longitud: 1000 mm
      *     Material: Acero ASTM A276 420
      *
-     * Leido renglon por renglon salian tres lineas sueltas y el material se
-     * perdia. Es UN item: la forma (el renglon que es SOLO una forma), las
-     * medidas (cada rotulo en su campo, que se juntan en el orden que las lee
-     * la forma) y el material. Se arma como una ficha y se lee como las demas.
+     * Leidas renglon por renglon salian varias lineas sueltas y se perdian el
+     * material o la medida. Es UN item, y cada dato ya dice que es.
+     *
+     * Eran dos lecturas con dos listas de rotulos, y la de la web —que solo
+     * conocia DIMENSIONES— ganaba con "MATERIAL / DIAMETRO / LARGO / CANTIDAD"
+     * y perdia el diametro y el largo sin aviso. Ahora es una, con todos.
+     *
+     * Hacen falta dos datos del item. Un mail que diga "Material: titanio" en
+     * un renglon suelto sigue leyendose como mail.
      *
      * @return list<array<string, string>>
      */
-    private function fichasDeCaptura(string $texto, $formas): array
+    private function fichas(string $texto, $formas): array
     {
-        // Un renglon que es SOLO una forma se marca "FORMA: ...", para que entre
-        // en el bloque de la captura. Con numero o dos puntos no es una forma
-        // suelta: "barra 12 x 1000" es una linea normal.
-        $renglones = array_map(function ($linea) use ($formas) {
+        $lineas = preg_split('/\R/u', $texto) ?: [];
+
+        // Un renglon que es SOLO una forma se marca "FORMA: ...": es la forma
+        // de una captura. Con numero o dos puntos no es una forma suelta
+        // ("barra 12 x 1000" es una linea normal), y si arriba quedo el rotulo
+        // FORMA solo, es su valor, como viene la web.
+        foreach ($lineas as $i => $linea) {
             $l = trim($linea);
 
             if ($l === '' || str_contains($l, ':') || preg_match('/\d/u', $l) || mb_strlen($l) > 30) {
-                return $linea;
+                continue;
             }
 
-            return $this->buscarForma($this->normalizar($l), $l, $formas) !== null ? 'FORMA: '.$l : $linea;
-        }, preg_split('/\R/u', $texto) ?: []);
+            $celdas = preg_split('/\t/u', trim($lineas[$i - 1] ?? '')) ?: [];
 
-        $fichas = CamposDeFormulario::leer(implode("\n", $renglones), [
+            if ($this->conEspacios((string) end($celdas)) === 'FORMA') {
+                continue;
+            }
+
+            if ($this->buscarForma($this->normalizar($l), $l, $formas) !== null) {
+                $lineas[$i] = 'FORMA: '.$l;
+            }
+        }
+
+        $fichas = CamposDeFormulario::leer(implode("\n", $lineas), [
             'forma' => ['FORMA'],
             'material' => ['MATERIAL'],
             'cantidad' => ['CANTIDAD', 'CANT'],
             // Cada medida en su rotulo: se juntan despues.
-            'm_diam' => ['DIAMETRO', 'DIÁMETRO', 'DIAM'],
-            'm_lado' => ['LADO', 'SECCION', 'SECCIÓN', 'SECC'],
-            'm_ancho' => ['ANCHO'],
-            'm_esp' => ['ESPESOR', 'ESP'],
-            'm_med' => ['MEDIDAS', 'MEDIDA', 'DIMENSIONES'],
-            'm_largo' => ['LONGITUD', 'LARGO', 'LONG'],
+            ...self::ROTULOS_DE_MEDIDA,
+            // No arma la linea: se reconoce para que no se lea como una.
+            'aclaraciones' => ['ACLARACIONES / OBSERVACIONES', 'ACLARACIONES', 'OBSERVACIONES'],
         ]);
 
-        $items = [];
+        // Las aclaraciones no cuentan: "Material: titanio" y "Observaciones:
+        // urgente" en un mail no hacen un item.
+        return array_values(array_filter(array_map(fn ($f) => $this->armarFicha($f), $fichas)));
+    }
 
-        foreach ($fichas as $f) {
-            // En el orden en que las leen las formas: lo que mide la seccion
-            // primero, el largo al final.
-            $medidas = array_filter([
-                $f['m_diam'] ?? null, $f['m_lado'] ?? null, $f['m_ancho'] ?? null,
-                $f['m_esp'] ?? null, $f['m_med'] ?? null, $f['m_largo'] ?? null,
-            ]);
+    /**
+     * Una ficha leida, hecha item: las medidas juntas en el orden en que las
+     * leen las formas —lo que mide la seccion primero, el largo al final—.
+     * Hacen falta dos datos del item; si no los tiene, null.
+     *
+     * @param  array<string, string>  $f
+     * @return array<string, string>|null
+     */
+    private function armarFicha(array $f): ?array
+    {
+        $medidas = array_filter(array_map(fn ($rotulo) => $f[$rotulo] ?? null, array_keys(self::ROTULOS_DE_MEDIDA)));
 
-            $ficha = array_filter([
-                'material' => $f['material'] ?? null,
-                'forma' => $f['forma'] ?? null,
-                'dimensiones' => $medidas === [] ? null : implode(' X ', $medidas),
-                'cantidad' => $f['cantidad'] ?? null,
-            ], fn ($v) => $v !== null && $v !== '');
+        $ficha = array_filter([
+            'material' => $f['material'] ?? null,
+            'forma' => $f['forma'] ?? null,
+            'dimensiones' => $medidas === [] ? null : implode(' X ', $medidas),
+            'cantidad' => $f['cantidad'] ?? null,
+        ], fn ($v) => $v !== null && $v !== '');
 
-            // Como las del web: dos datos como minimo para que sea un item.
-            if (count($ficha) >= 2) {
-                $items[] = $ficha;
+        return count($ficha) >= 2 ? $ficha : null;
+    }
+
+    /**
+     * Las tablas: una fila de titulos y abajo un item por fila.
+     *
+     * Llegan de dos maneras. Pegadas de un Excel o copiadas de una captura,
+     * cada fila en su renglon con las celdas separadas por "|" o por tabs:
+     *
+     *     Item | Diametro externo | Largo  | Material | cant
+     *     1    | 114 mm           | 105 mm | INCONEL  | 1
+     *
+     * O en vertical, una celda por renglon: asi copio la IA la tabla de
+     * TOSAMA (14-10) —"Item", "Diametro externo", "Largo", "Material",
+     * "cant", y despues "1", "114 mm", "105 mm"—. Leida renglon por renglon,
+     * cada "114 mm" era un item con cantidad 114.
+     *
+     * Los titulos dicen que es cada celda, asi que cada fila se arma como una
+     * ficha y se lee como las demas. Si una fila no cierra —una medida sin
+     * numero, una cantidad que no es numero— la tabla esta corrida y ahi
+     * termina: mejor un item de menos que uno armado con celdas de otro.
+     *
+     * @return list<array{ficha: array<string, string>, medidas: array<string, float>}>
+     */
+    private function fichasDeTabla(string $texto): array
+    {
+        $renglones = array_values(array_filter(
+            array_map('trim', preg_split('/\R/u', $texto) ?: []),
+            fn ($r) => $r !== '',
+        ));
+
+        // Por filas: los titulos en un renglon y cada item en el suyo.
+        foreach ($renglones as $i => $renglon) {
+            $titulos = array_map(fn ($c) => $this->titulo($c), $this->celdas($renglon));
+
+            if (! $this->sonTitulos($titulos)) {
+                continue;
+            }
+
+            $filas = [];
+
+            foreach (array_slice($renglones, $i + 1) as $siguiente) {
+                // La raya que separa los titulos en una tabla de markdown.
+                if (preg_match('/^[\s|:\-–—]+$/u', $siguiente)) {
+                    continue;
+                }
+
+                $celdas = $this->celdas($siguiente);
+
+                if (count($celdas) !== count($titulos) || ! $this->esFila($titulos, $celdas)) {
+                    break;
+                }
+
+                $filas[] = $celdas;
+            }
+
+            if ($filas !== []) {
+                return array_map(fn ($f) => $this->fichaDeFila($titulos, $f), $filas);
             }
         }
 
-        return $items;
+        // En vertical: los titulos de a uno por renglon, y abajo las celdas de
+        // a una, fila tras fila.
+        foreach ($renglones as $i => $renglon) {
+            $titulos = [];
+
+            while (isset($renglones[$i + count($titulos)])
+                && ($titulo = $this->titulo($renglones[$i + count($titulos)])) !== null) {
+                $titulos[] = $titulo;
+            }
+
+            if (! $this->sonTitulos($titulos)) {
+                continue;
+            }
+
+            $filas = [];
+
+            foreach (array_chunk(array_slice($renglones, $i + count($titulos)), count($titulos)) as $celdas) {
+                if (count($celdas) !== count($titulos) || ! $this->esFila($titulos, $celdas)) {
+                    break;
+                }
+
+                $filas[] = $celdas;
+            }
+
+            // La primera fila de titulos decide: si abajo no hay filas que
+            // cierren, no es una tabla, y probar desde el titulo siguiente
+            // leeria las celdas corridas.
+            return array_map(fn ($f) => $this->fichaDeFila($titulos, $f), $filas);
+        }
+
+        return [];
+    }
+
+    /**
+     * Que dato es una columna, por su titulo: "Diámetro externo", "cant.",
+     * "Largo (mm)". La unidad del titulo vale para las celdas que no la traen.
+     *
+     * @return array{0: string, 1: ?string}|null
+     */
+    private function titulo(string $celda): ?array
+    {
+        if (mb_strlen($celda) > 30 || preg_match('/\d/', $celda)) {
+            return null;
+        }
+
+        $titulo = $this->conEspacios($celda);
+        $unidad = null;
+
+        if (preg_match('/^(.+?)\s+(?:EN\s+)?(MM|CM|MTS?|METROS?|M)$/', $titulo, $m)) {
+            [$titulo, $unidad] = [$m[1], $m[2]];
+        }
+
+        foreach (self::TITULOS as $patron => $clave) {
+            if (preg_match($patron, $titulo)) {
+                return [$clave, $unidad];
+            }
+        }
+
+        return null;
+    }
+
+    /** Las celdas de una fila: separadas por "|", por tabs o por dos espacios. */
+    private function celdas(string $renglon): array
+    {
+        $partes = match (true) {
+            str_contains($renglon, '|') => explode('|', trim($renglon, " \t|")),
+            str_contains($renglon, "\t") => explode("\t", $renglon),
+            default => preg_split('/\s{2,}/u', $renglon) ?: [],
+        };
+
+        return array_map('trim', $partes);
+    }
+
+    /** Tres columnas reconocidas, y que alguna diga que se pide. */
+    private function sonTitulos(array $titulos): bool
+    {
+        $claves = array_column(array_filter($titulos), 0);
+
+        return count($claves) >= 3
+            && array_intersect($claves, ['material', 'forma', ...self::MEDIDAS_DE_TABLA]) !== [];
+    }
+
+    /**
+     * Que la fila cierre con sus titulos. Una medida sin numero o una cantidad
+     * que no es numero quiere decir que las celdas estan corridas.
+     */
+    private function esFila(array $titulos, array $celdas): bool
+    {
+        $pide = false;
+
+        foreach ($titulos as $i => $titulo) {
+            $valor = trim($celdas[$i] ?? '');
+
+            if ($titulo === null || $valor === '') {
+                continue;
+            }
+
+            if (in_array($titulo[0], self::MEDIDAS_DE_TABLA, true) && ! preg_match('/\d/', $valor)) {
+                return false;
+            }
+
+            if ($titulo[0] === 'cantidad' && ! preg_match('/^\d+(?:[.,]\d+)?\s*[A-Za-z.]{0,6}$/u', $valor)) {
+                return false;
+            }
+
+            $pide = $pide || $titulo[0] !== 'item';
+        }
+
+        return $pide;
+    }
+
+    /**
+     * Una fila hecha ficha. Las medidas van juntas en "dimensiones", como las
+     * escribio el cliente, y cada una ademas en milimetros con su clave para
+     * ponerla en su columna.
+     *
+     * @return array{ficha: array<string, string>, medidas: array<string, float>}
+     */
+    private function fichaDeFila(array $titulos, array $celdas): array
+    {
+        $ficha = [];
+        $textos = [];
+        $largos = [];
+        $medidas = [];
+
+        foreach ($titulos as $i => $titulo) {
+            $valor = trim($celdas[$i] ?? '');
+
+            if ($titulo === null || $valor === '' || $titulo[0] === 'item') {
+                continue;
+            }
+
+            [$clave, $unidad] = $titulo;
+
+            if (! in_array($clave, self::MEDIDAS_DE_TABLA, true)) {
+                $ficha[$clave] = $valor;
+
+                continue;
+            }
+
+            // Sin unidad escrita, la del titulo: "Largo (m)" y "3" son 3 metros.
+            if ($unidad !== null && preg_match('/^\d+(?:[.,]\d+)?$/', $valor)) {
+                $valor .= ' '.$unidad;
+            }
+
+            // El largo al final, que es como se escribe una medida: "25 X 3 M".
+            $clave === 'length' ? $largos[] = $valor : $textos[] = $valor;
+
+            // En pulgadas queda como texto: «1 1/2"» no es 1 mm.
+            if (isset(self::COLUMNA[$clave])
+                && preg_match('/^(\d+(?:[.,]\d+)?)\s*(MM|CM|MTS?|METROS?|M)?$/iu', $valor, $m)) {
+                $medidas[$clave] = $this->aMilimetros($m[1], $m[2] ?? '');
+            }
+        }
+
+        if ([...$textos, ...$largos] !== []) {
+            $ficha['dimensiones'] = implode(' X ', [...$textos, ...$largos]);
+        }
+
+        return ['ficha' => $ficha, 'medidas' => $medidas];
     }
 
     /**
@@ -362,7 +652,10 @@ class LectorDeSolicitud
         // Tambien antes de un rotulo de la ficha de contacto pegado al pedido:
         // "...largo 970 mm.Nombre: Carlos". Una lista cerrada, porque cortar
         // antes de cualquier "Palabra:" rompe "de largo. Material: Titanio".
-        $renglones = preg_split('/[\r\n]+|(?<=\))\s*[,;]\s*|(?<!\/)(?<!\/ )(?=\b(?:NOMBRE|CARGO|EMPRESA|DIRECCI[OÓ]N|TEL[EÉ]FONO|CELULAR|WHATSAPP|E-?MAIL|WEB)\b[^:\r\n]{0,20}:)/iu', $texto) ?: [];
+        // Despues de un parentesis y una coma, solo si sigue otro item con su
+        // cantidad: "Brida ciega DN 100 (4"), Clase 300." es UN item, y cortado
+        // ahi la clase quedaba suelta y sin reconocer (Farca, 14-10).
+        $renglones = preg_split('/[\r\n]+|(?<=\))\s*[,;]\s*(?=\d)|(?<!\/)(?<!\/ )(?=\b(?:NOMBRE|CARGO|EMPRESA|DIRECCI[OÓ]N|TEL[EÉ]FONO|CELULAR|WHATSAPP|E-?MAIL|WEB)\b[^:\r\n]{0,20}:)/iu', $texto) ?: [];
 
         $limpios = array_map(
             fn ($r) => trim(preg_replace(self::VINETA, '', trim($r)) ?? ''),
@@ -880,14 +1173,15 @@ class LectorDeSolicitud
         */
 
         // "38.1 X 145 MM" · "2 X 1000 X 2000" · "DIA 65 X 145MM" · "Ø127mm x 25.4mm" · "Ø10mm x 3 metros"
-        // "76 mm largo 970 mm": LARGO separa como la x.
-        $serie = '/(DIA\s*|Ø\s*)?'.$numero.$unidad.'(?:\s*(?:X|LARGO)\s*'.$numero.$unidad.'){1,2}/iu';
+        // "76 mm largo 970 mm": LARGO separa como la x. Y "70 mm y largo 75 mm"
+        // tambien (Farca, 14-10): sin el "y" el largo se perdia.
+        $serie = '/(DIA\s*|Ø\s*)?'.$numero.$unidad.'(?:\s*(?:X|(?:Y\s+)?LARGO)\s*'.$numero.$unidad.'){1,2}/iu';
 
         if (preg_match($serie, $renglon, $m)) {
             $medidas['texto'] = trim($m[0]);
             $marcado = trim($m[1] ?? '') !== '';
 
-            foreach (preg_split('/\s*(?:X|LARGO)\s*/i', $m[0]) ?: [] as $pieza) {
+            foreach (preg_split('/\s*(?:X|(?:Y\s+)?LARGO)\s*/i', $m[0]) ?: [] as $pieza) {
                 if (preg_match('/('.$numero.')\s*(MM|CM|MTS?|METROS?|M)?/iu', $pieza, $q)) {
                     $numeros[] = $this->aMilimetros($q[1], $q[2] ?? '');
                 }
