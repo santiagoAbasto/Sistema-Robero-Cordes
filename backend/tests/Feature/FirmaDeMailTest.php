@@ -246,4 +246,33 @@ class FirmaDeMailTest extends TestCase
         $this->assertSame('Juan Perez', $d['contacto']);
         $this->assertSame('Gerente de Compras', $d['cargo']);
     }
+
+    /**
+     * La firma de FAGISA, 14-10-2026, tal cual: iconos en vez de rotulos.
+     *
+     * "La IA trae solo el primero, el segundo telefono no esta llegando." Con
+     * el icono adelante las reglas no reconocian ningun telefono ni la calle.
+     */
+    public function test_firma_con_iconos_trae_los_dos_telefonos_y_la_calle(): void
+    {
+        $d = $this->leer("Analía Nemiña / Lucía Razzetti\n\n"
+            ."\u{2666}\u{FE0F} Manuel Quintana 155, B1878 - Quilmes, Buenos Aires\n"
+            ."\u{260E}\u{FE0F} +54 9 11 4252 0500\n"
+            ."\u{260E}\u{FE0F} +54 9 11 2829 4118\n"
+            ."\u{2709}\u{FE0F} compras@fagisa.com.ar\n"
+            ."\u{2666}\u{FE0F} www.fagisa.com.ar");
+
+        $this->assertSame(['+54 9 11 4252-0500', '+54 9 11 2829-4118'], array_column($d['telefonos'], 'valor'));
+        $this->assertSame('Manuel Quintana 155', $d['direccion']);
+        $this->assertSame('B1878', $d['codigo_postal']);
+        $this->assertSame('compras@fagisa.com.ar', $d['mail']);
+    }
+
+    /** Con el codigo de pais adelante un numero es un telefono, aunque no diga "Tel". */
+    public function test_numero_internacional_sin_rotulo(): void
+    {
+        $this->assertSame('+54 11 4252-0500', $this->leer("Juan Perez\n+54 11 4252 0500")['telefono']);
+        // Un codigo postal o una altura siguen sin serlo.
+        $this->assertNull($this->leer("Juan Perez\nAv. Mitre 4252\nB1878")['telefono']);
+    }
 }

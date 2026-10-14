@@ -689,7 +689,14 @@ class LectorDeSolicitud
 
         $forma = $this->buscarForma($normalizado, $renglon, $formas);
         [$cantidad, $unidad] = $this->buscarCantidad($renglon, $unidades);
-        $medidas = $this->buscarMedidas($renglon, $forma);
+        // El rango de largo se lee antes y se saca del renglon: si no, en
+        // "Ø 50 largo 2,80 - 3,20 m" el 2,80 entraba como largo, en milimetros.
+        [$largoMin, $largoMax, $rango] = $this->largosDe($renglon);
+        $medidas = $this->buscarMedidas($rango === null ? $renglon : str_replace($rango, ' ', $renglon), $forma);
+
+        if ($rango !== null) {
+            $medidas['texto'] = trim(($medidas['texto'] ?? '').' '.$rango);
+        }
 
         /*
           Que hace que un renglon sea una linea de pedido: que pida una
@@ -724,7 +731,10 @@ class LectorDeSolicitud
             'diametro_mm' => $medidas['diametro_mm'],
             'espesor_mm' => $medidas['espesor_mm'],
             'ancho_mm' => $medidas['ancho_mm'],
-            'largo_mm' => $medidas['largo_mm'],
+            // Con un rango de largo, el largo es el rango: el promedio lo saca la linea.
+            'largo_mm' => $largoMin === null ? $medidas['largo_mm'] : null,
+            'largo_min_mm' => $largoMin,
+            'largo_max_mm' => $largoMax,
             'cantidad' => $cantidad,
             'unidad_venta_id' => $unidad?->id,
             'unidad' => $unidad?->codigo,
@@ -759,6 +769,13 @@ class LectorDeSolicitud
             $encontradas[] = 'SIN COSTURA';
         } elseif (preg_match('~(?<![a-z])c\s*/\s*c(?![a-z])|con\s+costura~u', $t)) {
             $encontradas[] = 'CON COSTURA';
+        }
+
+        // "Largos aleatorios", "random", "L/A", "R/L": no es una medida, es como
+        // viene el material. Como caracteristica sale impreso; como medida se
+        // perdia (lista del cliente, 14-10-2026).
+        if (preg_match('~largos?\s+(?:aleatori|random|variable)|(?<![a-z])random(?![a-z])|(?<![a-z])[lr]\s*/\s*[al](?![a-z])~u', $t)) {
+            $encontradas[] = 'LARGOS ALEATORIOS';
         }
 
         $procesos = [
@@ -1275,6 +1292,41 @@ class LectorDeSolicitud
     }
 
     /** "3" y "METROS" son 3000 mm. Sin unidad, ya esta en milimetros. */
+    /**
+     * El largo escrito como rango: "en largos de 3 a 6 metros", "largo 2,80 -
+     * 3,20 m", "entre 3 y 6 m". Va a largo minimo y maximo, y la linea calcula
+     * con el promedio (ver LargosVariablesTest).
+     *
+     * En milimetros solo con la palabra LARGO: "de 2 a 3 mm" puede ser un
+     * espesor. En metros alcanza con "de" o "entre": nada mas se mide asi.
+     *
+     * @return array{0: ?float, 1: ?float, 2: ?string} minimo, maximo y lo escrito
+     */
+    private function largosDe(string $renglon): array
+    {
+        $n = '(\d+(?:[.,]\d+)?)';
+        $metros = '(MTS?|METROS?|M)(?![A-Z])';
+        $cualquiera = '(MM|CM|MTS?|METROS?|M)(?![A-Z])';
+
+        $patrones = [
+            '/\bLARGOS?\s*(?:DE|ENTRE)?\s*'.$n.'\s*(?:'.$cualquiera.')?\s*(?:A|Y|-|\/)\s*'.$n.'\s*'.$cualquiera.'/iu',
+            '/\b(?:DE|ENTRE)\s+'.$n.'\s*(?:'.$metros.')?\s*(?:A|Y|-)\s*'.$n.'\s*'.$metros.'/iu',
+        ];
+
+        foreach ($patrones as $patron) {
+            if (preg_match($patron, $renglon, $m)) {
+                $min = $this->aMilimetros($m[1], ($m[2] ?? '') !== '' ? $m[2] : $m[4]);
+                $max = $this->aMilimetros($m[3], $m[4]);
+
+                if ($min > 0 && $max > $min) {
+                    return [$min, $max, trim($m[0])];
+                }
+            }
+        }
+
+        return [null, null, null];
+    }
+
     private function aMilimetros(string $valor, string $unidad): float
     {
         $factor = match (true) {

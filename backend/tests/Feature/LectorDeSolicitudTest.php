@@ -95,6 +95,33 @@ class LectorDeSolicitudTest extends TestCase
     }
 
     /**
+     * Largos aleatorios (lista del cliente, 14-10-2026): "interpretacion mal".
+     *
+     * "Largos aleatorios", "random" y "L/A" se perdian, y "de 3 a 6 metros"
+     * no era nada. Aleatorio queda como caracteristica, que sale impresa; el
+     * rango va a largo minimo y maximo, y la linea calcula con el promedio.
+     */
+    public function test_largos_aleatorios_y_rangos_de_largo(): void
+    {
+        foreach (['10 barras Ø 25 mm largos aleatorios', '2 barras Ø 40 x L/A', 'barra Ø 30 x largos random'] as $renglon) {
+            $this->assertSame('LARGOS ALEATORIOS', $this->leer($renglon)['caracteristicas'], $renglon);
+        }
+
+        $rango = $this->leer('6 barras hexagonales 19 mm en largos de 3 a 6 metros');
+        $this->assertEquals([3000, 6000], [$rango['largo_min_mm'], $rango['largo_max_mm']]);
+        $this->assertNull($rango['largo_mm']);
+
+        // El primer numero del rango no es el largo: antes entraba 2,80 mm.
+        $barra = $this->leer('barra redonda Ø 50 largo 2,80 - 3,20 m');
+        $this->assertEquals([2800, 3200], [$barra['largo_min_mm'], $barra['largo_max_mm']]);
+        $this->assertEquals(50, $barra['diametro_mm']);
+
+        // Un largo fijo sigue siendo uno, y un rango en mm sin LARGO puede ser un espesor.
+        $this->assertEquals(3000, $this->leer('3 barras Ø 20 x 3000 mm')['largo_mm']);
+        $this->assertNull($this->leer('chapa de 2 a 3 mm de espesor 1000 x 2000')['largo_min_mm']);
+    }
+
+    /**
      * Con las formas del sistema anterior prendidas hay unas 250, y varias son
      * palabras de todos los dias. La forma se busca en palabras enteras, gana
      * la que tiene medidas cargadas y el plural vale en cada palabra.

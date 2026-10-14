@@ -52,6 +52,8 @@ class FirmaDeMail
      */
     public function leer(string $texto): array
     {
+        $texto = $this->sinIconos($texto);
+
         /*
           Primero, si es una ficha de la web.
 
@@ -99,6 +101,27 @@ class FirmaDeMail
         ];
 
         return $datos + $this->deDonde($texto);
+    }
+
+    /**
+     * Los iconos de una firma, leidos como lo que son.
+     *
+     * Firma de FAGISA, 14-10-2026: "☎️ +54 9 11 4252 0500" y debajo otro
+     * telefono, "♦️ Manuel Quintana 155". El icono del telefono hace de
+     * etiqueta —sin ella las reglas no aceptan un numero, para no confundirlo
+     * con un codigo postal— y los demas, al principio del renglon, son viñetas
+     * que tapaban la calle. No se reconocia ningun telefono, completaba la IA
+     * y llegaba uno solo.
+     */
+    private function sinIconos(string $texto): string
+    {
+        $texto = preg_replace(
+            ['/[\x{260E}\x{1F4DE}\x{2121}]\x{FE0F}?/u', '/[\x{1F4F1}\x{1F4F2}]\x{FE0F}?/u', '/\x{1F4E0}\x{FE0F}?/u'],
+            ['Tel ', 'Cel ', 'Fax '],
+            $texto,
+        ) ?? $texto;
+
+        return preg_replace('/^[\h\p{So}\x{FE0F}\x{200D}]+/mu', '', $texto) ?? $texto;
     }
 
     /**
@@ -333,6 +356,22 @@ class FirmaDeMail
         // "(2954) 15-412233" se reconoce solo por la forma.
         if (preg_match_all('/\(\d{2,5}\)\s*[\d\s.-]{6,15}/', $texto, $ms)) {
             foreach ($ms[0] as $num) {
+                $this->sumarTelefono($lista, $num, $this->pareceCelular($num) ? 'Celular' : 'Telefono');
+            }
+        }
+
+        // "+54 11 4252 0500" sin etiqueta: con el codigo de pais adelante no se
+        // confunde con un codigo postal ni con una altura. Dentro del renglon,
+        // y salvo que ya este, aunque sea con su interno: "Tel: +54 11 4699
+        // 7003 int 109" no son dos telefonos.
+        if (preg_match_all('/(?<![\w+])\+\d{1,3}[\h.-]*\d[\d\h.()-]{6,18}\d/u', $texto, $ms)) {
+            foreach ($ms[0] as $num) {
+                $cifras = preg_replace('/\D+/', '', $num) ?? '';
+
+                if (collect(array_keys($lista))->contains(fn ($ya) => str_contains((string) $ya, $cifras))) {
+                    continue;
+                }
+
                 $this->sumarTelefono($lista, $num, $this->pareceCelular($num) ? 'Celular' : 'Telefono');
             }
         }
@@ -578,7 +617,9 @@ class FirmaDeMail
             return mb_strtoupper($m[1]);
         }
 
-        if (preg_match('/\b([A-Z]\d{4}[A-Z]{3})\b/', $texto, $m)) {
+        // El CPA entero o corto, "B1878ABC" o "B1878": la letra es la de la
+        // provincia, que nunca es I ni O.
+        if (preg_match('/\b([A-HJ-NP-Z]\d{4}(?:[A-Z]{3})?)\b/', $texto, $m)) {
             return mb_strtoupper($m[1]);
         }
 

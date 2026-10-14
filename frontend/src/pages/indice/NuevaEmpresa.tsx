@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Wand2, X } from 'lucide-react'
 import { Boton, Card, PageHeader, Aviso } from '../../components/ui'
@@ -50,6 +50,13 @@ export default function NuevaEmpresa() {
   const [localidadesNuevas, setLocalidadesNuevas] = useState<{ id: number; nombre: string; provincia_id: number }[]>([])
   const idDelTipo = (nombre: string) => catalogos?.tipos_medio.find((t) => t.nombre === nombre)?.id
   const [valores, setValores] = useState<EstadoEmpresaForm>(estadoInicial())
+
+  // Argentina por defecto: casi todas las empresas nuevas son de aca. Se pone
+  // cuando llega la lista de paises, y solo si nadie eligio otro.
+  const argentina = catalogos?.paises.find((p) => p.nombre.toLowerCase() === 'argentina')?.id
+  useEffect(() => {
+    if (argentina) setValores((v) => (v.pais_id ? v : { ...v, pais_id: argentina }))
+  }, [argentina])
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
@@ -82,7 +89,8 @@ export default function NuevaEmpresa() {
         nombre: v.nombre || (datos.empresa ?? ''),
         direccion: v.direccion || (datos.direccion ?? ''),
         codigo_postal: v.codigo_postal || (datos.codigo_postal ?? ''),
-        pais_id: v.pais_id ?? datos.pais_id,
+        // El pais de la firma le gana al de por defecto.
+        pais_id: datos.pais_id ?? v.pais_id,
         provincia_id: v.provincia_id ?? datos.provincia_id,
         localidad_id: v.localidad_id ?? datos.localidad_id,
       }))

@@ -13,6 +13,7 @@ use App\Models\EmpresaEnlace;
 use App\Models\EmpresaRelacion;
 use App\Models\RazonSocial;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -158,7 +159,7 @@ class EmpresaEscrituraController extends Controller
         ));
         $porIa = $faltan !== [] && $ia->estaConfigurada() ? $ia->completarFirma($texto, $faltan) : [];
 
-        foreach ($porIa as $campo => $valor) {
+        foreach (Arr::except($porIa, 'telefonos') as $campo => $valor) {
             $leido[$campo] = $campo === 'direccion' ? $firma->soloLaCalle($valor) : $valor;
         }
 
@@ -166,17 +167,22 @@ class EmpresaEscrituraController extends Controller
             $leido['direccion_completa'] ??= $porIa['direccion'];
         }
 
-        if (isset($porIa['telefono'])) {
-            $leido['tipo_telefono'] = $firma->pareceCelular($porIa['telefono']) ? 'Celular' : 'Telefono';
-        }
-
-        // Si las reglas no encontraron ningun telefono y lo completo la IA, ese
-        // es el telefono: se normaliza igual que los demas y queda en la lista.
+        // Si las reglas no encontraron ningun telefono y los completo la IA,
+        // esos son los telefonos: todos, no solo el primero, normalizados
+        // igual que los demas.
         if (empty($leido['telefonos']) && filled($leido['telefono'])) {
-            $tipo = $leido['tipo_telefono'] ?? ($firma->pareceCelular($leido['telefono']) ? 'Celular' : 'Telefono');
-            $leido['telefono'] = $firma->normalizarTelefono($leido['telefono'], $tipo);
-            $leido['tipo_telefono'] = $tipo;
-            $leido['telefonos'] = $leido['telefono'] === null ? [] : [['valor' => $leido['telefono'], 'tipo' => $tipo]];
+            $leido['telefonos'] = collect($porIa['telefonos'] ?? [$leido['telefono']])
+                ->map(function (string $t) use ($firma) {
+                    $tipo = $firma->pareceCelular($t) ? 'Celular' : 'Telefono';
+
+                    return ['valor' => $firma->normalizarTelefono($t, $tipo), 'tipo' => $tipo];
+                })
+                ->filter(fn ($t) => $t['valor'] !== null)
+                ->unique('valor')
+                ->values()
+                ->all();
+            $leido['telefono'] = $leido['telefonos'][0]['valor'] ?? null;
+            $leido['tipo_telefono'] = $leido['telefonos'][0]['tipo'] ?? null;
         }
 
         /*
@@ -252,7 +258,7 @@ class EmpresaEscrituraController extends Controller
         $nombres = ['empresa' => 'la empresa', 'contacto' => 'el contacto', 'cargo' => 'el cargo',
             'mail' => 'el mail', 'telefono' => 'el telefono', 'direccion' => 'la direccion'];
         $completo = $porIa === [] ? ''
-            : ' La IA completo '.implode(', ', array_map(fn ($c) => $nombres[$c], array_keys($porIa))).'.';
+            : ' La IA completo '.implode(', ', array_map(fn ($c) => $nombres[$c], array_keys(Arr::except($porIa, 'telefonos')))).'.';
 
         return [
             'datos' => $leido,

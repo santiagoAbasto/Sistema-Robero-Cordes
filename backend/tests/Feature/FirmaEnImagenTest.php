@@ -161,6 +161,21 @@ class FirmaEnImagenTest extends TestCase
         $this->assertStringContainsString('La IA completo', $r->json('mensaje'));
     }
 
+    /** La IA trae todos los telefonos, no solo el primero, y cada uno tiene que estar escrito. */
+    public function test_la_ia_trae_todos_los_telefonos(): void
+    {
+        // Sin rotulo, sin parentesis y sin codigo de pais: las reglas no los toman.
+        $texto = "Juan Perez\nMetalurgica del Plata\n4252 0500 / 2829 4118";
+        $this->iaResponde(['telefono' => ['4252 0500', '2829 4118', '4444 5555']]);
+
+        $r = $this->leer(['texto' => $texto])->assertOk()->assertJsonPath('con_ia', true);
+
+        // El tercero no esta en el texto: se descarta.
+        $this->assertCount(2, $r->json('datos.telefonos'));
+        $this->assertSame($r->json('datos.telefonos.0.valor'), $r->json('datos.telefono'));
+        Http::assertSent(fn ($req) => str_contains($req['messages'][0]['content'], 'TODOS los telefonos'));
+    }
+
     /** Sin clave, el texto se lee como siempre, solo con reglas, y no se llama a nadie. */
     public function test_sin_ia_el_texto_se_lee_igual(): void
     {
