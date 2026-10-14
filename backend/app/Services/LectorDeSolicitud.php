@@ -989,29 +989,48 @@ class LectorDeSolicitud
      * un anillo, una brida o un alambre entraban sin forma. Y sin forma no
      * hay donde poner las medidas, y sin medidas no hay peso ni precio.
      *
-     * Gana el nombre mas largo que aparezca escrito, y da lo mismo el plural:
-     * el cliente escribe "3 Barras", "2 Discos", "4 Caños".
+     * El nombre tiene que estar escrito en palabras enteras, y da lo mismo el
+     * plural: "3 Barras", "2 Discos", "4 Caños". Con las formas del sistema
+     * anterior prendidas (14-10) se busca entre unas 250, y adentro de otra
+     * palabra aparecian solas: JUNTA en "planilla adjunta", RECTA en "entrega
+     * directa", MONEDAS en "otras monedas".
+     *
+     * Gana la que tiene sus medidas cargadas —"caño ... segun plano" es un
+     * CAÑO, no un PLANO—, y entre iguales el nombre mas largo: "brida ciega"
+     * es BRIDA CIEGA y no BRIDA.
      */
     private function buscarForma(string $normalizado, string $renglon, $formas): ?Forma
     {
+        $conEspacios = $this->conEspacios($renglon);
         $mejor = null;
-        $largoMejor = 0;
+        $puntaje = [-1, 0];
 
         foreach ($formas as $forma) {
-            $candidato = $this->normalizar($forma->nombre);
-
             // Menos de cuatro letras no alcanza para distinguir nada.
-            if (mb_strlen($candidato) < 4 || mb_strlen($candidato) <= $largoMejor) {
+            if (mb_strlen($this->normalizar($forma->nombre)) < 4) {
                 continue;
             }
 
-            foreach ([$candidato, $this->plural($candidato)] as $variante) {
-                if (str_contains($normalizado, $variante)) {
-                    $mejor = $forma;
-                    $largoMejor = mb_strlen($candidato);
+            $nombre = $this->conEspacios($forma->nombre);
 
-                    break;
-                }
+            // El plural en cada palabra —"barras redondas", "juntas
+            // espiraladas"—, y "1/2" escrito como "media": "media cupla" es la
+            // 1/2 CUPLA, no la CUPLA.
+            $palabras = explode(' ', $nombre);
+            $media = ($palabras[0] ?? '') === '1' && ($palabras[1] ?? '') === '2';
+            $patron = ($media ? '(?:1\s+2|MEDIA)\s+' : '')
+                .implode('(?:E?S)?\s+', array_map(fn ($p) => preg_quote($p, '/'), $media ? array_slice($palabras, 2) : $palabras))
+                .'(?:E?S)?';
+
+            if (! preg_match('/\b'.$patron.'\b/u', $conEspacios)) {
+                continue;
+            }
+
+            $este = [empty($forma->campos) ? 0 : 1, mb_strlen($nombre)];
+
+            if ($este > $puntaje) {
+                $mejor = $forma;
+                $puntaje = $este;
             }
         }
 
@@ -1029,8 +1048,6 @@ class LectorDeSolicitud
           BARRA a secas no esta en la lista: se resuelve abajo, despues de
           que las abreviaturas de hexagonal y cuadrada tuvieron su turno.
         */
-        $conEspacios = $this->conEspacios($renglon);
-
         foreach (self::ABREVIATURAS as $nombre => $claves) {
             foreach ($claves as $clave) {
                 // El plural va con S o con ES: "hexagonales" es HEXAGONAL + ES.
@@ -1068,12 +1085,6 @@ class LectorDeSolicitud
         }
 
         return null;
-    }
-
-    /** "CAÑO" -> "CAÑOS", "CHAPA" -> "CHAPAS", "PERFIL" -> "PERFILES". */
-    private function plural(string $palabra): string
-    {
-        return $palabra.(preg_match('/[AEIOU]$/', $palabra) ? 'S' : 'ES');
     }
 
     /**
