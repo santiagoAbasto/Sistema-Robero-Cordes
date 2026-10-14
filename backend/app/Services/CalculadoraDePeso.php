@@ -66,6 +66,15 @@ class CalculadoraDePeso
     ): array {
         $foto = $this->fotoVacia($material, $forma, $cano, $unidadResultado, $piezas);
 
+        // Las medidas quedan en la foto aunque no salga el peso. El editor
+        // vuelve a llenar los casilleros desde aca: sin densidad —1062 de los
+        // 1249 materiales— o sin formula —un codo— la linea se reabria con las
+        // medidas en blanco.
+        if ($forma) {
+            [$valores, $detalle] = $this->aMilimetros($medidas, $forma, $cano);
+            $foto['medidas'] = $detalle;
+        }
+
         if (! $material) {
             return $this->sinPeso($foto, 'Falta elegir el material');
         }
@@ -87,9 +96,6 @@ class CalculadoraDePeso
         if ($piezas <= 0) {
             return $this->sinPeso($foto, 'La cantidad de piezas tiene que ser mayor que cero');
         }
-
-        [$valores, $detalle] = $this->aMilimetros($medidas, $forma, $cano);
-        $foto['medidas'] = $detalle;
 
         if ($falta = $this->medidaQueFalta($forma, $valores)) {
             return $this->sinPeso($foto, 'Falta cargar '.$falta);
