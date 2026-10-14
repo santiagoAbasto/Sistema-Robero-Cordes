@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   Check,
+  Download,
   FlaskConical,
   Play,
   Plus,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react'
 import {
@@ -27,8 +29,11 @@ import { Casilla, Etiqueta, Guardado, Texto } from '../../components/ui/form'
 import { mensajeDeError, useCarga, useDebounce } from '../../lib/indice'
 import {
   borrarForma,
+  bajarPlanillaDeFormas,
+  erroresDePlanilla,
   guardarForma,
   ordenarFormas,
+  subirPlanillaDeFormas,
   probarFormula,
   traerFormas,
   type CampoDeForma,
@@ -147,6 +152,28 @@ export default function FormasYFormulas() {
   const [editando, setEditando] = useState<Borrador | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // La planilla de Excel: lo que la rechazo, fila por fila.
+  const [erroresPlanilla, setErroresPlanilla] = useState<string[]>([])
+  const [subiendo, setSubiendo] = useState(false)
+  const archivo = useRef<HTMLInputElement>(null)
+
+  async function subirPlanilla(elegido: File) {
+    setSubiendo(true)
+    setError(null)
+    setErroresPlanilla([])
+    try {
+      const r = await subirPlanillaDeFormas(elegido)
+      setAviso(`Planilla cargada: ${r.creadas} nuevas, ${r.actualizadas} corregidas, ${r.sin_cambios} sin cambios.`)
+      recargar()
+    } catch (e) {
+      const filas = erroresDePlanilla(e)
+      if (filas.length > 0) setErroresPlanilla(filas)
+      else setError(mensajeDeError(e))
+    } finally {
+      setSubiendo(false)
+      if (archivo.current) archivo.current.value = ''
+    }
+  }
 
   async function mover(id: number, hacia: -1 | 1) {
     const ids = (datos?.formas ?? []).map((f) => f.id)
@@ -174,13 +201,40 @@ export default function FormasYFormulas() {
         titulo="Formas y formulas"
         bajada="Cada forma define qué medidas hay que cargar y con qué cuenta se saca su volumen. La pantalla de cotización arma sus campos con esto."
         acciones={
-          <Boton variante="primario" onClick={() => setEditando(borradorNuevo())}>
-            <Plus size={15} strokeWidth={2.2} /> Nueva forma
-          </Boton>
+          <>
+            {/* Todas las formas en una planilla: se revisan juntas en Excel y se
+                vuelven a subir (lista del cliente, 14-10-2026). */}
+            <Boton variante="suave" onClick={() => bajarPlanillaDeFormas().catch((e) => setError(mensajeDeError(e)))}>
+              <Download size={15} strokeWidth={2.2} /> Bajar Excel
+            </Boton>
+            <Boton variante="suave" disabled={subiendo} onClick={() => archivo.current?.click()}>
+              <Upload size={15} strokeWidth={2.2} /> {subiendo ? 'Subiendo…' : 'Subir Excel'}
+            </Boton>
+            <input
+              ref={archivo}
+              type="file"
+              accept=".xlsx"
+              hidden
+              onChange={(e) => e.target.files?.[0] && subirPlanilla(e.target.files[0])}
+            />
+            <Boton variante="primario" onClick={() => setEditando(borradorNuevo())}>
+              <Plus size={15} strokeWidth={2.2} /> Nueva forma
+            </Boton>
+          </>
         }
       />
 
       {error && <Aviso tono="ambar">{error}</Aviso>}
+      {erroresPlanilla.length > 0 && (
+        <Aviso tono="ambar" titulo="La planilla no se cargó">
+          No se guardó ninguna fila: corregí estas en el Excel y volvé a subirlo.
+          <ul className="mt-1 list-disc pl-5">
+            {erroresPlanilla.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        </Aviso>
+      )}
 
       <Aviso tono="info">
         Lo que se cambie acá vale de acá en adelante.{' '}

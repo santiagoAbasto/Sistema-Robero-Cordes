@@ -6,8 +6,10 @@ use App\Models\Forma;
 use App\Models\Material;
 use App\Services\CalculadoraDePeso;
 use App\Services\EvaluadorDeFormulas;
+use App\Services\PlanillaXlsx;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -212,6 +214,186 @@ class FormaController extends Controller
             .'siguen mostrando lo que dijeron el dia que se hicieron.';
     }
 
+
+    /** Las columnas de la planilla de formas, en el orden en que se bajan. */
+    private const COLUMNAS = [
+        'nombre' => 'Nombre',
+        'medidas' => 'Medidas',
+        'formula' => 'Formula',
+        'cano' => 'Usa la tabla de caños',
+        'escritura' => 'Como se escribe',
+        'orden' => 'Orden',
+        'activa' => 'Activa',
+    ];
+
+    /**
+     * Todas las formas en una planilla de Excel.
+     *
+     * Lista de ajustes del cliente, 14-10-2026: "tabla Excel para formas y
+     * formulas". Con 250 formas del sistema anterior, revisarlas de a una en
+     * la pantalla no tiene fin; en la planilla se ven todas juntas, se
+     * corrigen y se vuelven a subir.
+     */
+    public function exportar(PlanillaXlsx $planilla)
+    {
+        $filas = Forma::orderBy('orden')->orderBy('nombre')->get()->map(fn (Forma $f) => [
+            $f->nombre,
+            implode(', ', array_column($f->camposDelCalculo(), 'label')),
+            (string) $f->expresion,
+            $f->usa_cano ? 'SI' : 'NO',
+            (string) $f->medidas_habituales,
+            (int) $f->orden,
+            $f->activo ? 'SI' : 'NO',
+        ]);
+
+        return response($planilla->escribir([array_values(self::COLUMNAS), ...$filas], 'Formas'), 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="formas-y-formulas.xlsx"',
+        ]);
+    }
+
+    /**
+     * La planilla de vuelta: cada fila es una forma, y se reconoce por el nombre.
+     *
+     * Todo o nada: cada fila pasa por la misma validacion que la pantalla —la
+     * formula tiene que resolverse y nombrar solo medidas que la forma pide— y
+     * si una falla no se guarda ninguna, con la fila y el motivo. Lo que no
+     * esta en la planilla no se toca: ni las formas que faltan ni una columna
+     * que se haya borrado.
+     */
+    public function importar(Request $request, PlanillaXlsx $planilla)
+    {
+        $request->validate(['archivo' => ['required', 'file', 'max:2048', 'extensions:xlsx']]);
+
+        try {
+            $filas = $planilla->leer($request->file('archivo')->getRealPath());
+        } catch (\RuntimeException $e) {
+            throw ValidationException::withMessages(['archivo' => $e->getMessage()]);
+        }
+
+        $titulos = array_map(fn ($t) => $this->plano($t), array_shift($filas) ?? []);
+        $donde = collect(self::COLUMNAS)->map(fn ($titulo) => array_search($this->plano($titulo), $titulos, true));
+
+        if ($donde['nombre'] === false) {
+            throw ValidationException::withMessages(['archivo' => 'La planilla no tiene la columna "Nombre" en la primera fila.']);
+        }
+
+        $cambios = [];
+        $errores = [];
+        $vistos = [];
+        // Por nombre, sin mirar mayusculas. En PHP y no con LOWER() de SQL: en
+        // SQLite LOWER no baja la Ñ, y "CAÑO" no encontraba al CAÑO.
+        $existentes = Forma::all()->keyBy(fn (Forma $f) => mb_strtolower($f->nombre));
+
+        foreach ($filas as $i => $fila) {
+            $numero = $i + 2;
+            $celda = fn (string $col) => $donde[$col] === false ? null : trim((string) ($fila[$donde[$col]] ?? ''));
+            $nombre = $celda('nombre');
+
+            if (implode('', $fila) === '') {
+                continue;
+            }
+
+            if ($nombre === '') {
+                $errores[] = "Fila {$numero}: falta el nombre.";
+
+                continue;
+            }
+
+            if (isset($vistos[mb_strtolower($nombre)])) {
+                $errores[] = "Fila {$numero}: {$nombre} ya esta en la fila {$vistos[mb_strtolower($nombre)]}.";
+
+                continue;
+            }
+
+            $vistos[mb_strtolower($nombre)] = $numero;
+            $forma = $existentes[mb_strtolower($nombre)] ?? null;
+
+            try {
+                $datos = [
+                    'nombre' => $forma?->nombre ?? $nombre,
+                    'campos' => $celda('medidas') === null ? ($forma?->campos ?? []) : $this->medidasDe($celda('medidas'), $forma),
+                    'expresion' => $celda('formula') ?? $forma?->expresion,
+                    'usa_cano' => $celda('cano') === null ? (bool) $forma?->usa_cano : $this->siONo($celda('cano')),
+                    // Una celda vacia es "sin dato", como en la base: no un texto vacio.
+                    'medidas_habituales' => $celda('escritura') === null ? $forma?->medidas_habituales : ($celda('escritura') ?: null),
+                    'orden' => $celda('orden') === null || $celda('orden') === '' ? $forma?->orden : (int) $celda('orden'),
+                    'activo' => $celda('activa') === null ? ($forma?->activo ?? true) : $this->siONo($celda('activa')),
+                ];
+
+                $validados = $this->validar(Request::create('', 'POST', $datos), $forma);
+
+                // Sin medidas antes y sin medidas en la planilla: no se toca. Si
+                // no, bajar y volver a subir la planilla sin cambiar nada
+                // "corregia" las 232 formas del Access que no tienen medidas.
+                if ($forma && $validados['campos'] === [] && empty($forma->campos)) {
+                    unset($validados['campos']);
+                }
+
+                $cambios[] = [$forma, $validados];
+            } catch (ValidationException $e) {
+                $errores[] = "Fila {$numero} ({$nombre}): ".collect($e->errors())->flatten()->first();
+            }
+        }
+
+        if ($errores !== []) {
+            throw ValidationException::withMessages(['archivo' => $errores]);
+        }
+
+        $cuenta = ['creadas' => 0, 'actualizadas' => 0, 'sin_cambios' => 0];
+
+        DB::transaction(function () use ($cambios, &$cuenta) {
+            foreach ($cambios as [$forma, $datos]) {
+                if ($forma === null) {
+                    $datos['orden'] ??= (int) Forma::max('orden') + 1;
+                    Forma::create($datos + ['clave' => Forma::claveDesde($datos['nombre'])]);
+                    $cuenta['creadas']++;
+
+                    continue;
+                }
+
+                $forma->fill($datos);
+                $forma->isDirty() ? $cuenta['actualizadas']++ : $cuenta['sin_cambios']++;
+                $forma->save();
+            }
+        });
+
+        return $cuenta;
+    }
+
+    /**
+     * "Diametro exterior, Espesor de pared, Largo" -> los campos de la forma.
+     *
+     * Si la forma ya tenia esa medida con otro nombre a la vista, se conserva.
+     */
+    private function medidasDe(string $texto, ?Forma $forma = null): array
+    {
+        $propias = collect($forma?->campos ?? [])->pluck('label', 'clave');
+
+        return collect(preg_split('/\s*[,;]\s*/', $texto) ?: [])
+            ->filter(fn ($t) => $t !== '')
+            ->map(function (string $escrita) {
+                $clave = collect(self::MEDIDAS)->search(fn ($label, $clave) => in_array($this->plano($escrita), [$this->plano($label), $clave], true));
+
+                if ($clave === false) {
+                    throw ValidationException::withMessages(['campos' => 'no se conoce la medida "'.$escrita.'". Las que hay: '.implode(', ', self::MEDIDAS).'.']);
+                }
+
+                return ['clave' => $clave, 'label' => $propias[$clave] ?? self::MEDIDAS[$clave]];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function siONo(string $valor): bool
+    {
+        return in_array($this->plano($valor), ['si', 's', 'x', '1', 'true', 'verdadero'], true);
+    }
+
+    private function plano(string $texto): string
+    {
+        return mb_strtolower(trim(Str::ascii($texto)));
+    }
 
     /** El orden en que se muestran: primero las que mas se usan. */
     public function ordenar(Request $request)

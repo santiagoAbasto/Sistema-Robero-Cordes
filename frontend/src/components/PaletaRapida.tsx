@@ -90,14 +90,22 @@ export default function PaletaRapida({
     [texto, encontradas, ultimas],
   )
 
+  // Configuracion se abre en otra pestaña, como desde el menu.
+  function ir(item: { to: string; nuevaPestana: boolean }) {
+    if (item.nuevaPestana) window.open(item.to, '_blank')
+    else navigate(item.to)
+    onCerrar()
+  }
+
   const todo = useMemo(
     () => [
-      ...empresas.map((e) => ({ tipo: 'empresa' as const, label: e.nombre, to: `/empresas/${e.id}` })),
+      ...empresas.map((e) => ({ tipo: 'empresa' as const, label: e.nombre, to: `/empresas/${e.id}`, nuevaPestana: false })),
       ...resultados.map((d) => ({
         tipo: 'menu' as const,
         label: d.label,
         seccion: d.parent ?? '',
         to: d.to,
+        nuevaPestana: Boolean(d.nuevaPestana),
       })),
     ],
     [empresas, resultados],
@@ -131,8 +139,7 @@ export default function PaletaRapida({
 
     if (e.key === 'Enter' && todo[activo]) {
       e.preventDefault()
-      navigate(todo[activo].to)
-      onCerrar()
+      ir(todo[activo])
     }
   }
 
@@ -183,10 +190,7 @@ export default function PaletaRapida({
                     key={`${item.tipo}-${item.to}-${i}`}
                     type="button"
                     onMouseEnter={() => setActivo(i)}
-                    onClick={() => {
-                      navigate(item.to)
-                      onCerrar()
-                    }}
+                    onClick={() => ir(item)}
                     className={`flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors ${
                       i === activo ? 'bg-brand-50' : 'hover:bg-app'
                     }`}

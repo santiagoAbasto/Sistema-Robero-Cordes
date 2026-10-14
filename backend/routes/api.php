@@ -3,12 +3,14 @@
 use App\Http\Controllers\AlternativaController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CatalogoController;
+use App\Http\Controllers\CondicionesController;
 use App\Http\Controllers\ConsultaController;
 use App\Http\Controllers\ConsultaEscrituraController;
 use App\Http\Controllers\DireccionController;
 use App\Http\Controllers\EmpresaController;
 use App\Http\Controllers\EmpresaEscrituraController;
 use App\Http\Controllers\FormaController;
+use App\Http\Controllers\ListasController;
 use App\Http\Controllers\HistorialController;
 use App\Http\Controllers\PdfController;
 use App\Http\Controllers\PermisoController;
@@ -48,9 +50,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/formas', [FormaController::class, 'store']);
     Route::post('/formas/probar', [FormaController::class, 'probar']);
     Route::post('/formas/orden', [FormaController::class, 'ordenar']);
+    // Todas las formas en una planilla de Excel, para bajar y volver a subir.
+    Route::get('/formas/planilla', [FormaController::class, 'exportar']);
+    Route::post('/formas/planilla', [FormaController::class, 'importar']);
     Route::put('/formas/{forma}', [FormaController::class, 'update']);
     // Si ya tiene cotizaciones no se borra: se desactiva. Lo decide el servidor.
     Route::delete('/formas/{forma}', [FormaController::class, 'destroy']);
+
+    // Configuracion: las listas y los juegos de condiciones que edita la empresa.
+    Route::get('/config/listas', [ListasController::class, 'index']);
+    Route::post('/config/listas/{lista}', [ListasController::class, 'store']);
+    Route::post('/config/listas/{lista}/orden', [ListasController::class, 'ordenar']);
+    Route::put('/config/listas/{lista}/{id}', [ListasController::class, 'update']);
+    Route::delete('/config/listas/{lista}/{id}', [ListasController::class, 'destroy']);
+    Route::get('/config/condiciones', [CondicionesController::class, 'index']);
+    Route::post('/config/condiciones', [CondicionesController::class, 'store']);
+    Route::post('/config/condiciones/orden', [CondicionesController::class, 'ordenar']);
+    Route::put('/config/condiciones/{condicion}', [CondicionesController::class, 'update']);
+    Route::delete('/config/condiciones/{condicion}', [CondicionesController::class, 'destroy']);
 
     // Listas que el sistema propone (formas, materiales, monedas, unidades…).
     Route::get('/catalogos', [CatalogoController::class, 'index']);

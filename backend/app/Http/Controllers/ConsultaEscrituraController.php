@@ -749,7 +749,7 @@ class ConsultaEscrituraController extends Controller
 
             // Importacion o stock: cambian el plazo de entrega y la forma de
             // pago, asi que no hay uno por defecto.
-            'juego_condiciones' => ['nullable', Rule::in(['Importacion', 'Stock', 'Reventa'])],
+            'juego_condiciones' => ['nullable', Rule::in(\App\Models\CondicionHabitual::JUEGOS)],
             'condiciones' => ['array'],
             'condiciones.*.titulo' => ['nullable', 'string', 'max:60'],
             // Los bloques reales pasan los 700 caracteres: "Forma de Pago"

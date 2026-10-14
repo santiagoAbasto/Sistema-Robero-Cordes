@@ -20,6 +20,8 @@ import BorradoresEliminados from './pages/indice/BorradoresEliminados'
 import Imprimir from './pages/indice/Imprimir'
 import QuienVeQue from './pages/indice/QuienVeQue'
 import FormasYFormulas from './pages/indice/FormasYFormulas'
+import ListasEditables from './pages/indice/ListasEditables'
+import CondicionesHabituales from './pages/indice/CondicionesHabituales'
 import DatosDelSistemaAnterior from './pages/indice/DatosDelSistemaAnterior'
 // TEMPORAL: se saca junto con la pantalla cuando CORDES revise la carga.
 import AntesYAhora from './pages/indice/AntesYAhora'
@@ -30,7 +32,9 @@ import { BuscarConsultas, ConsultasPorFecha, EmpresasPorCondicion } from './page
 /** Las que ya están hechas: el resto sigue mostrando el placeholder. */
 const HECHAS = [
   '/config/antes-y-ahora',
+  '/config/condiciones',
   '/config/formas',
+  '/config/listas',
   '/config/migracion',
   '/config/usuarios',
   '/consultas/condicion',
@@ -78,6 +82,8 @@ export default function App() {
               <Route path="/imprimir" element={<Imprimir />} />
               <Route path="/config/usuarios" element={<QuienVeQue />} />
               <Route path="/config/formas" element={<FormasYFormulas />} />
+              <Route path="/config/listas" element={<ListasEditables />} />
+              <Route path="/config/condiciones" element={<CondicionesHabituales />} />
               <Route path="/config/migracion" element={<DatosDelSistemaAnterior />} />
               <Route path="/cotizaciones/seguimiento" element={<Seguimiento />} />
               <Route path="/reportes" element={<Reportes />} />
