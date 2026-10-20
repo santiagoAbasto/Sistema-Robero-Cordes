@@ -1211,8 +1211,35 @@ class LectorDeSolicitud
         if (preg_match($pulgadas, $renglon, $m)) {
             $medidas['texto'] = trim($m[0]);
 
-            // El largo escrito aparte en mm: «... x 1500 mm», «Largo: 1500 mm».
-            if (preg_match('/(?:x|largo)[\s:]*('.$numero.')\s*(MM|CM|MTS?|METROS?|M)\b/iu', $renglon, $l)) {
+            /*
+              El diametro en milimetros que puso el cliente entre parentesis:
+              «2" (50.8)», «6" (168,3 MM)». Nos lo dio el —no lo estamos
+              convirtiendo nosotros— asi que se usa. Antes se descartaba y el
+              tubo entraba sin diametro (DUPLEX 2205 de Roberto, 20-10-2026).
+            */
+            if (preg_match('/\(\s*('.$numero.')\s*(?:MM)?\s*\)/iu', $renglon, $d)) {
+                $medidas['diametro_mm'] = $this->aMilimetros($d[1], 'MM');
+            }
+
+            /*
+              La pared, cuando esta dicha con todas las letras. Va antes que el
+              largo porque es el mismo «x N mm»: en «2" (50.8) x 1.5 mm de
+              pared por un largo de 3.9 m», 1,5 es la pared y 3900 el largo.
+              Leer 1,5 como largo daba un tubo de milimetro y medio.
+            */
+            if (preg_match('/('.$numero.')\s*(MM|CM|MTS?|METROS?|M)?\s*(?:DE\s+)?(?:PARED|ESPESOR)/iu', $renglon, $p)) {
+                $medidas['espesor_mm'] = $this->aMilimetros($p[1], ($p[2] ?? '') !== '' ? $p[2] : 'MM');
+            }
+
+            /*
+              El largo: primero el que esta nombrado —«Largo: 1500 mm», «de
+              largo 3,5 m», «por un largo de 3.9 m»— y si no, el que viene
+              suelto detras de una x, salteando el que resulto ser la pared.
+            */
+            $conNombre = '/LARGO\s*(?:DE\s+)?[\s:]*('.$numero.')\s*(MM|CM|MTS?|METROS?|M)\b/iu';
+            $detrasDeX = '/x[\s:]*('.$numero.')\s*(MM|CM|MTS?|METROS?|M)\b(?!\s*(?:DE\s+)?(?:PARED|ESPESOR))/iu';
+
+            if (preg_match($conNombre, $renglon, $l) || preg_match($detrasDeX, $renglon, $l)) {
                 $medidas['largo_mm'] = $this->aMilimetros($l[1], $l[2]);
             }
 

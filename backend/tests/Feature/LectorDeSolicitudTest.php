@@ -681,4 +681,45 @@ class LectorDeSolicitudTest extends TestCase
         // Sin unidad sigue siendo milimetros, como escribe casi todo el mundo.
         $this->assertEquals(145, $this->leer('4 un barra DIA 65 X 145MM')['largo_mm']);
     }
+
+    /**
+     * El caño en pulgadas con su equivalencia en mm, la pared y el largo.
+     *
+     * "1 corte de Tubo de 2\" (50.8) x 1.5 mm de pared por un largo de 3.9 m".
+     * De las tres medidas se leia UNA y mal: el 1,5 de la pared entraba como
+     * largo —un tubo de milimetro y medio— y el diametro que el cliente habia
+     * puesto entre parentesis se tiraba. Caso real de Roberto, 20-10-2026.
+     */
+    public function test_el_tubo_en_pulgadas_con_pared_y_largo_en_metros(): void
+    {
+        $l = $this->leer('1 corte de Tubo de 2" (50.8) x 1.5 mm de pared por un largo de 3.9 m');
+
+        $this->assertNotNull($l);
+        $this->assertEqualsWithDelta(50.8, $l['diametro_mm'], 0.01, 'el diametro que dio el cliente');
+        $this->assertEqualsWithDelta(1.5, $l['espesor_mm'], 0.01, 'la pared no es el largo');
+        $this->assertEqualsWithDelta(3900, $l['largo_mm'], 0.01, '3,9 m son 3900 mm');
+    }
+
+    /** Lo mismo escrito al reves: "de largo 3.5 m" al final. */
+    public function test_el_largo_en_metros_nombrado_al_final(): void
+    {
+        $l = $this->leer('1 corte de tubo de 2" (50.8) x 1.5 mm de pared de largo 3.5 m');
+
+        $this->assertEqualsWithDelta(50.8, $l['diametro_mm'], 0.01);
+        $this->assertEqualsWithDelta(1.5, $l['espesor_mm'], 0.01);
+        $this->assertEqualsWithDelta(3500, $l['largo_mm'], 0.01);
+    }
+
+    /**
+     * Sin la palabra pared, el numero detras de la x sigue siendo el largo.
+     *
+     * Es el caso que ya andaba y no se puede romper: «1.5" SCH40S x 3340mm».
+     */
+    public function test_el_cano_con_el_largo_suelto_detras_de_la_x(): void
+    {
+        $l = $this->leer('2 caños 1.5" SCH40S x 3340mm');
+
+        $this->assertEqualsWithDelta(3340, $l['largo_mm'], 0.01);
+        $this->assertNull($l['espesor_mm'], 'sin "pared" escrito, no se inventa espesor');
+    }
 }

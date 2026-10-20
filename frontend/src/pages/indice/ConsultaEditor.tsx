@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Calculator, Check, Copy, Eye, EyeOff, FilePlus2, Layers, Lock, Plus, Trash2, Wand2, Scale } from 'lucide-react'
+import { Calculator, Check, Copy, Download, Eye, EyeOff, FilePlus2, Layers, Lock, Mail, MessageCircle, Plus, Send, Trash2, Wand2, Scale } from 'lucide-react'
 import {
   Accion,
   Aviso,
@@ -22,6 +22,7 @@ import {
   emitirConsulta,
   fecha as fmtFecha,
   mensajeDeError,
+  mandarLaHoja,
   nombreDeLaHoja,
   plata,
   imagenPegada,
@@ -509,6 +510,7 @@ export default function ConsultaEditor() {
     return () => window.removeEventListener('beforeunload', avisar)
   }, [hayCambios])
   const [guardando, setGuardando] = useState(false)
+  const [bajando, setBajando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(alGuardar?.aviso ?? null)
   const [nuevaObs, setNuevaObs] = useState('')
@@ -815,19 +817,69 @@ export default function ConsultaEditor() {
     }
   }
 
-  /** Vuelve a sacar la hoja de una emitida. No guarda nada: no hay qué. */
-  async function reimprimir(pestana: Window | null) {
+  /**
+   * Baja la hoja con su nombre: "Cotización - 2026-0012 R0 - DIACROM - ...".
+   *
+   * Sin pestaña a proposito. Abierta en el visor del navegador, el archivo es
+   * una direccion interna y el boton de bajar del visor lo guarda con ese
+   * nombre: "ddcecb32-cb81-4c59-9610-59a9c78f1a6f.pdf" (Roberto, 20-10-2026).
+   * Bajandolo derecho, el nombre lo ponemos nosotros.
+   */
+  async function descargar() {
+    setBajando(true)
+
     try {
       await traerLaHoja(
         Number(consultaId),
-        pestana,
+        null,
         existente
           ? nombreDeLaHoja(existente, empresaActual!.nombre)
           : `${tipo} - ${empresaActual!.nombre}`,
       )
     } catch (err) {
-      pestana?.close()
       setError(mensajeDeError(err))
+    } finally {
+      setBajando(false)
+    }
+  }
+
+  /**
+   * Manda la hoja por WhatsApp o por correo, al contacto de la ficha.
+   *
+   * Sin teléfono o sin mail cargado no se abre una ventana vacía: se va a la
+   * pantalla de envío, que es donde se elige a quién y con qué datos sale.
+   */
+  async function mandarla(via: 'WhatsApp' | 'Correo') {
+    const contacto =
+      (empresaActual?.contactos ?? []).find((c) => c.id === Number(cabecera.contacto_id)) ??
+      (empresaActual?.contactos ?? []).find((c) => c.principal) ??
+      (empresaActual?.contactos ?? [])[0]
+
+    const destino =
+      via === 'WhatsApp' ? contacto?.telefonos?.[0]?.valor : contacto?.mails?.[0]?.valor
+
+    if (!destino) {
+      navigate(`/imprimir?empresa=${idFicha}&consulta=${consultaId}`)
+
+      return
+    }
+
+    setBajando(true)
+
+    try {
+      await mandarLaHoja(
+        Number(consultaId),
+        via,
+        destino,
+        existente
+          ? nombreDeLaHoja(existente, empresaActual!.nombre)
+          : `${tipo} - ${empresaActual!.nombre}`,
+        empresaActual!.nombre,
+      )
+    } catch (err) {
+      setError(mensajeDeError(err))
+    } finally {
+      setBajando(false)
     }
   }
 
@@ -1113,19 +1165,30 @@ export default function ConsultaEditor() {
         acciones={
           emitida ? (
             /*
-              Emitida: se lee, se vuelve a imprimir, o se revisa. No hay
-              "Guardar" porque no hay nada que guardar.
+              Emitida: se baja, se manda, o se revisa. No hay "Guardar" porque
+              no hay nada que guardar.
+
+              "Mandar al cliente" reemplaza al viejo "Imprimir", que abría el
+              PDF en una pestaña y ahí se terminaba: Roberto preguntó "¿cómo
+              hago para enviarla al cliente? no veo ningún link desde donde
+              terminé de cotizar" (20-10-2026). La pantalla de envío ya existía
+              —con impresora, PDF, correo y WhatsApp, y deja registrado por
+              dónde salió— pero no se llegaba a ella desde acá.
             */
             <>
               <Boton variante="suave" onClick={() => navigate(`/empresas/${idFicha}`)}>
                 Volver
               </Boton>
+              <Boton variante="suave" onClick={descargar} disabled={bajando}>
+                <Download size={13} strokeWidth={2.4} />
+                {bajando ? 'Bajando…' : 'Descargar'}
+              </Boton>
               <Boton
                 variante="suave"
-                // La pestaña se abre dentro del clic, o el navegador la bloquea.
-                onClick={() => reimprimir(window.open('', '_blank'))}
+                onClick={() => navigate(`/imprimir?empresa=${idFicha}&consulta=${consultaId}`)}
               >
-                Imprimir
+                <Send size={13} strokeWidth={2.4} />
+                Mandar al cliente
               </Boton>
               <Boton variante="primario" onClick={hacerRevision} disabled={guardando}>
                 {guardando ? 'Abriendo…' : 'Hacer una revisión'}
@@ -1217,6 +1280,39 @@ export default function ConsultaEditor() {
             Copiar a otra empresa
             <span className="text-[10.5px] font-medium text-faint">· con o sin precios</span>
           </Link>
+        </div>
+      )}
+
+      {/*
+        Recién emitida: cómo se la mandamos al cliente.
+
+        Es lo que sigue después de emitir y no estaba en ningún lado: "¿cómo
+        hago para enviarla al cliente? no veo ningún link desde donde terminé
+        de cotizar" (Roberto, 20-10-2026). WhatsApp y correo abren la
+        conversación o el mail con el texto escrito y la hoja ya bajada para
+        adjuntar —ninguno de los dos deja adjuntar desde un enlace— y queda
+        registrado por dónde salió.
+      */}
+      {emitida && tipo !== 'Observacion' && (
+        <div className="flex flex-wrap items-center gap-2.5 rounded-[12px] border border-brand-200 bg-[#f3f9fe] p-2.5">
+          <span className="pl-1 text-[10.5px] font-bold uppercase tracking-wide text-brand-600">
+            Mandársela al cliente
+          </span>
+          <Boton variante="suave" onClick={() => mandarla('WhatsApp')} disabled={bajando}>
+            <MessageCircle size={14} strokeWidth={2.2} />
+            WhatsApp
+          </Boton>
+          <Boton variante="suave" onClick={() => mandarla('Correo')} disabled={bajando}>
+            <Mail size={14} strokeWidth={2.2} />
+            Correo
+          </Boton>
+          <Boton variante="suave" onClick={descargar} disabled={bajando}>
+            <Download size={14} strokeWidth={2.2} />
+            {bajando ? 'Bajando…' : 'Descargar el PDF'}
+          </Boton>
+          <span className="text-[11.5px] text-muted">
+            La hoja se baja sola para que la adjuntes.
+          </span>
         </div>
       )}
 
@@ -1338,7 +1434,15 @@ export default function ConsultaEditor() {
               </button>
             </Aviso>
           )}
-          <HojaPrevia consultaId={Number(consultaId)} recarga={existente} />
+          <HojaPrevia
+            consultaId={Number(consultaId)}
+            recarga={existente}
+            nombre={
+              existente && empresaActual
+                ? nombreDeLaHoja(existente, empresaActual.nombre)
+                : undefined
+            }
+          />
         </>
       )}
 
@@ -3356,7 +3460,6 @@ function LineaFila({
               (sinMedidas(linea.calc.medidas) ||
                 mismasMedidas(linea.calc.medidas, medidasDeLaLinea(leidas, formaElegida)))
             const nuevas = intactas ? medidasDeLaLinea(leidas, nueva) : {}
-            const hayNuevas = !sinMedidas(nuevas)
 
             // Lo que pidió el cliente, lo mismo: si sigue como lo dejó el lector,
             // pasa a los casilleros de su forma (que es esta, si no nombró otra).
@@ -3368,6 +3471,27 @@ function LineaFila({
             const pedidas = pedidoIntacto
               ? medidasDeLaLinea(leidas, formaDeLoPedido({ ...linea, forma_id: id }, catalogos))
               : {}
+
+            /*
+              El largo sobrevive al cambio de forma.
+
+              Es la única medida que significa lo mismo en todas: 3900 mm de
+              largo son 3900 mm en un tubo, en un caño y en una barra. Se
+              perdía al pasar TUBO a CAÑO y había que volver a tipearlo
+              (Roberto, 20-10-2026). El diámetro NO se arrastra, y es a
+              propósito: el "diámetro" de una redonda y el "lado" de una
+              cuadrada son el mismo número con otro significado.
+
+              Si lo que se ofrece todavía no tiene largo, se toma el de lo que
+              pidió el cliente: el largo es lo que el cliente necesita, y al
+              cotizar distinto lo que cambia es el diámetro o la pared.
+            */
+            const largo =
+              linea.calc.medidas.length?.valor || linea.pedido_medidas?.length?.valor || ''
+            const llevaLargo = (nueva?.campos ?? []).some((c) => c.clave === 'length')
+            const medidas =
+              llevaLargo && largo ? { ...nuevas, length: { valor: largo, unidad: 'mm' } } : nuevas
+            const hayMedidas = !sinMedidas(medidas)
 
             onCambio({
               forma_id: id,
@@ -3384,12 +3508,12 @@ function LineaFila({
               // ahí no se ven, y volver a 1 pesaba una barra en vez de tres.
               calc: {
                 ...calculadoraVacia(),
-                medidas: hayNuevas ? nuevas : {},
+                medidas,
                 piezas: piezasAparte ? linea.calc.piezas : String(linea.cantidad ?? 1),
               },
-              ...(hayNuevas
-                ? planasDeLasMedidas(nuevas)
-                : { diametro_mm: null, espesor_mm: null, ancho_mm: null }),
+              ...(hayMedidas
+                ? planasDeLasMedidas(medidas)
+                : { diametro_mm: null, espesor_mm: null, ancho_mm: null, largo_mm: null }),
               ...(!sinMedidas(pedidas) ? { pedido_medidas: pedidas } : {}),
               factor_conversion: null,
             })

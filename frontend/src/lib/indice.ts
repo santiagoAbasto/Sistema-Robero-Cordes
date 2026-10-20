@@ -971,6 +971,91 @@ export async function urlDeLaHojaPrevia(id: number): Promise<string> {
   return URL.createObjectURL(new Blob([data], { type: 'application/pdf' }))
 }
 
+/**
+ * Mandarle la hoja al cliente por WhatsApp o por correo.
+ *
+ * Ni WhatsApp ni el correo dejan adjuntar un archivo desde un enlace, asi que
+ * el PDF se baja primero —con el nombre de la cotizacion— y despues se abre la
+ * conversacion o el mail con el texto escrito, listo para adjuntarlo. Es lo
+ * mismo que hacen a mano, en un clic y quedando registrado por donde salio.
+ *
+ * El telefono va sin espacios ni guiones y con el 54 de Argentina si no trae
+ * pais: wa.me no abre nada con un numero escrito "11-5593-4261".
+ */
+export function telefonoParaWhatsApp(crudo: string): string {
+  let solo = crudo.replace(/\D/g, '').replace(/^0+/, '')
+
+  // Ya viene con el pais puesto: se respeta como lo escribieron.
+  if (solo.startsWith('54')) return solo
+
+  /*
+    El "15" de los celulares viejos se saca.
+
+    Asi estan cargados muchos telefonos del indice: "011-15-5593-4261". Ese 15
+    se marca solo dentro del pais; en el numero internacional va el 9 despues
+    del 54 y el 15 NO va. Dejandolo salia un numero de quince digitos que no
+    existe y WhatsApp abria una conversacion con nadie.
+
+    Se saca solo si al sacarlo quedan los diez digitos de un numero argentino
+    (area + abonado). Si no cierra, se deja como esta: mejor un numero raro que
+    uno mutilado.
+  */
+  if (solo.length > 10) {
+    for (const corte of [2, 3, 4]) {
+      if (solo.slice(corte, corte + 2) === '15' && solo.length - 2 === 10) {
+        solo = solo.slice(0, corte) + solo.slice(corte + 2)
+        break
+      }
+    }
+  }
+
+  // Los celulares argentinos se marcan con el 9 entre el pais y el area.
+  return '54' + (solo.startsWith('9') ? '' : '9') + solo
+}
+
+export function textoParaElCliente(nombreDeLaCotizacion: string, empresa: string): string {
+  return (
+    `Hola, les paso la cotizacion de Roberto Cordes S.A. para ${empresa}: ` +
+    `${nombreDeLaCotizacion}. Queda adjunta en este mensaje. ` +
+    'Cualquier duda, quedamos a disposicion.'
+  )
+}
+
+/**
+ * Baja la hoja y abre WhatsApp o el correo con el texto puesto.
+ *
+ * Devuelve false si no hay a quien mandarsela: ahi la pantalla manda a elegir
+ * el contacto en vez de abrir una ventana vacia.
+ */
+export async function mandarLaHoja(
+  id: number,
+  via: 'WhatsApp' | 'Correo',
+  destino: string | null,
+  nombre: string,
+  empresa: string,
+): Promise<boolean> {
+  if (!destino) return false
+
+  const texto = textoParaElCliente(nombre, empresa)
+
+  // La ventana se abre DENTRO del clic o el navegador la bloquea por emergente;
+  // recien despues se pide el PDF, que tarda.
+  const ventana = window.open('', '_blank')
+
+  await traerLaHoja(id, null, nombre, via)
+
+  const url =
+    via === 'WhatsApp'
+      ? `https://wa.me/${telefonoParaWhatsApp(destino)}?text=${encodeURIComponent(texto)}`
+      : `mailto:${encodeURIComponent(destino)}` +
+        `?subject=${encodeURIComponent(nombre)}&body=${encodeURIComponent(texto)}`
+
+  if (ventana && !ventana.closed) ventana.location.href = url
+  else window.location.href = url
+
+  return true
+}
+
 export async function traerLaHoja(
   id: number,
   pestana: Window | null,

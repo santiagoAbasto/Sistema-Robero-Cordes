@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { FileText } from 'lucide-react'
-import { Aviso, Card } from '../../components/ui'
+import { Download, FileText } from 'lucide-react'
+import { Aviso, Boton, Card } from '../../components/ui'
 import { mensajeDeError, urlDeLaHojaPrevia } from '../../lib/indice'
 
 /* ---------------------------------------------------------------------------
@@ -20,10 +20,13 @@ import { mensajeDeError, urlDeLaHojaPrevia } from '../../lib/indice'
 export default function HojaPrevia({
   consultaId,
   recarga,
+  nombre,
 }: {
   consultaId: number
   /** Cambia cuando la cotización se vuelve a leer: la hoja se rearma. */
   recarga?: unknown
+  /** Con qué nombre se guarda el archivo al bajarlo desde acá. */
+  nombre?: string
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -69,6 +72,31 @@ export default function HojaPrevia({
 
   return (
     <Card className="overflow-hidden p-0">
+      {/*
+        El botón de bajar, acá arriba y no sólo el del visor.
+
+        El visor del navegador guarda el archivo con la dirección interna que
+        usa para mostrarlo —"ddcecb32-cb81-4c59-9610-59a9c78f1a6f.pdf"— y ese
+        nombre no lo elegimos nosotros (Roberto, 20-10-2026). Bajándolo desde
+        acá sale con el nombre de la cotización.
+      */}
+      {nombre && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-[18px] py-2.5">
+          <span className="truncate text-[11.5px] text-muted">{nombre}</span>
+          <Boton
+            variante="suave"
+            onClick={() => {
+              const a = document.createElement('a')
+              a.href = url
+              a.download = `${nombre}.pdf`
+              a.click()
+            }}
+          >
+            <Download size={13} strokeWidth={2.4} />
+            Descargar
+          </Boton>
+        </div>
+      )}
       {/*
         Al ancho de la hoja y sin la columna de miniaturas: el visor abria al
         50% con la columna al costado, y la hoja quedaba chica para leer.

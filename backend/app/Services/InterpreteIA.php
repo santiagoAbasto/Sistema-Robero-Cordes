@@ -361,8 +361,23 @@ class InterpreteIA
         - "unidad" tiene que ser EXACTAMENTE una de: {$this->lista($unidades)}
         - "dimensiones" son SOLO las medidas, no la frase entera: de "10 metros de
           barra de titanio de 25.4 mm" corresponde "25.4 MM", no todo el renglon.
-        - Las medidas van en milimetros. Si el cliente escribe pulgadas, dejá
-          "dimensiones" con el texto original y no completes los milimetros.
+        - Las medidas van SIEMPRE en milimetros, convertidas vos:
+          · metros: "3,9 m" son 3900. "un largo de 3.5 m" son 3500.
+          · centimetros: "30 cm" son 300.
+          · milimetros: tal cual.
+          Un largo en metros es lo normal en caños y barras: 3,9 m NO es 3,9.
+        - Pulgadas: si el cliente escribe SOLO la pulgada ("2\"", "1/2 NPT"), dejá
+          "dimensiones" con el texto original y no completes los milimetros. Pero
+          si escribe la pulgada Y su equivalencia en mm —"2\" (50.8)", "Ø 2 pulg
+          = 50,8 mm"— usá el numero en mm: 50.8. Nos lo dio el cliente, no lo
+          estamos convirtiendo nosotros.
+        - Cada medida a su casillero, por como la nombra el cliente:
+          · "de pared", "pared", "espesor", "x 1,5 mm de pared" -> "espesor_mm".
+            La pared NUNCA es el largo.
+          · "de largo", "largo", "por un largo de" -> "largo_mm".
+          · el diametro exterior o el Ø -> "diametro_mm".
+          En "Tubo de 2\" (50.8) x 1.5 mm de pared por un largo de 3.9 m" son
+          diametro_mm 50.8, espesor_mm 1.5 y largo_mm 3900.
         - "largo_mm" es el largo de la pieza: de "Ø 260 x 110mm de largo" son 110.
           Sin el largo no se puede calcular el peso de una barra, asi que si el
           cliente lo escribio, tiene que estar.
