@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Calculator, Check, Copy, Download, Eye, EyeOff, FilePlus2, Layers, Lock, Mail, MessageCircle, Plus, Send, Trash2, Wand2, Scale } from 'lucide-react'
 import {
@@ -38,7 +38,7 @@ import {
   hoy,
 } from '../../lib/indice'
 import { JUEGOS_DE_CONDICIONES } from '../../types/indice'
-import type { CanoEstandar, JuegoDeCondiciones } from '../../types/indice'
+import type { CampoDeForma, CanoEstandar, JuegoDeCondiciones } from '../../types/indice'
 import { traerLaHoja } from '../../lib/indice'
 import type { DatosLinea } from '../../lib/indice'
 
@@ -2147,6 +2147,60 @@ function RenglonDeMedidas({ medidas, despues, className }: { medidas: ReactNode;
   )
 }
 
+/**
+ * Un parámetro que no es una medida: el schedule, el rating, el tipo.
+ *
+ * Se escribe, con lo habitual para elegir. Sin lista propia, el diámetro
+ * nominal y el schedule ofrecen los de la tabla de caños.
+ */
+function ParametroDeTexto({
+  campo,
+  valor,
+  catalogos,
+  aria,
+  onCambio,
+}: {
+  campo: CampoDeForma
+  valor: string
+  catalogos: Catalogos | null
+  aria: string
+  onCambio: (valor: string) => void
+}) {
+  const id = useId()
+  const canos = catalogos?.canos ?? []
+  const opciones = campo.opciones?.length
+    ? campo.opciones
+    : [
+        ...new Set(
+          ['dn', 'dn2'].includes(campo.clave)
+            ? canos.map((c) => c.nombre)
+            : ['schedule', 'schedule2'].includes(campo.clave)
+              ? canos.map((c) => c.schedule)
+              : [],
+        ),
+      ]
+
+  return (
+    <div>
+      <Etiqueta>{campo.label}</Etiqueta>
+      <input
+        list={opciones.length ? id : undefined}
+        aria-label={aria}
+        value={valor}
+        onChange={(e) => onCambio(e.target.value)}
+        className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] outline-none focus:border-brand"
+      />
+      {opciones.length > 0 && (
+        <datalist id={id}>
+          {opciones.map((o) => (
+            <option key={o} value={o} />
+          ))}
+        </datalist>
+      )}
+    </div>
+  )
+}
+
 /** El diámetro y la pared de un caño elegido, o vacíos para cargarlos a mano. */
 function medidasDelCano(
   medidas: Record<string, { valor: string; unidad: string }>,
@@ -2839,6 +2893,19 @@ function MedidasDeLaForma({
               (Boolean(cano) && (campo.clave === 'outer' || campo.clave === 'wall')) ||
               (Boolean(cano2) && (campo.clave === 'outer2' || campo.clave === 'wall2'))
 
+            if (campo.tipo === 'texto') {
+              return (
+                <ParametroDeTexto
+                  key={campo.clave}
+                  campo={campo}
+                  valor={cargada.valor}
+                  catalogos={catalogos}
+                  aria={campo.label}
+                  onCambio={(valor) => cambiarMedida(campo.clave, { valor })}
+                />
+              )
+            }
+
             // Con largo variable, en lugar del largo van los dos extremos.
             if (campo.clave === 'length' && largoVariable) {
               const leer = (v: string) => (v === '' ? null : aMilimetros(v, cargada.unidad))
@@ -3345,6 +3412,19 @@ function LineaFila({
                   const puestoPorCano =
                     (Boolean(canoPedido) && (campo.clave === 'outer' || campo.clave === 'wall')) ||
                     (Boolean(canoPedido2) && (campo.clave === 'outer2' || campo.clave === 'wall2'))
+
+                  if (campo.tipo === 'texto') {
+                    return (
+                      <ParametroDeTexto
+                        key={campo.clave}
+                        campo={campo}
+                        valor={cargada.valor}
+                        catalogos={catalogos}
+                        aria={`${campo.label} pedido`}
+                        onCambio={(valor) => cambiarMedidaPedida(campo.clave, { valor })}
+                      />
+                    )
+                  }
 
                   return (
                     <div key={campo.clave}>

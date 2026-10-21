@@ -641,6 +641,16 @@ class ConsultaEscrituraController extends Controller
 
     private function validar(Request $request, ?Consulta $consulta = null): array
     {
+        // Una medida es un numero; un parametro como el schedule o el rating,
+        // un texto corto. La clave es la del medio: "lineas.0.calc_medidas.dn.valor".
+        $valorDeMedida = function (string $atributo, mixed $valor, \Closure $falla) {
+            $texto = in_array(explode('.', $atributo)[3] ?? '', Forma::TEXTO, true);
+
+            if ($texto ? mb_strlen((string) $valor) > 60 : ! is_numeric($valor)) {
+                $falla($texto ? 'Es demasiado largo.' : 'Tiene que ser un numero.');
+            }
+        };
+
         $datos = $request->validate([
             'tipo' => ['required', Rule::in(['Cotizacion', 'Pedido', 'Observacion'])],
             'fecha' => ['required', 'date'],
@@ -714,7 +724,7 @@ class ConsultaEscrituraController extends Controller
             // estructura que las de la calculadora. pedido_dimensiones sigue
             // siendo el texto que sale impreso, armado a partir de estas.
             'lineas.*.pedido_medidas' => ['nullable', 'array'],
-            'lineas.*.pedido_medidas.*.valor' => ['nullable', 'numeric'],
+            'lineas.*.pedido_medidas.*.valor' => ['nullable', $valorDeMedida],
             'lineas.*.pedido_medidas.*.unidad' => ['nullable', 'string', 'in:mm,cm,m,in,ft'],
             'lineas.*.cantidad_pedida' => ['nullable', 'numeric'],
             'lineas.*.unidad_pedida_id' => ['nullable', 'exists:unidades,id'],
@@ -732,7 +742,7 @@ class ConsultaEscrituraController extends Controller
             'lineas.*.calc_piezas' => ['nullable', 'numeric', 'min:0'],
             'lineas.*.calc_cano_id' => ['nullable', 'exists:canos_estandar,id'],
             'lineas.*.calc_medidas' => ['nullable', 'array'],
-            'lineas.*.calc_medidas.*.valor' => ['nullable', 'numeric'],
+            'lineas.*.calc_medidas.*.valor' => ['nullable', $valorDeMedida],
             'lineas.*.calc_medidas.*.unidad' => ['nullable', 'string', 'in:mm,cm,m,in,ft'],
 
             // Una alternativa es una linea entera que cuelga de otra: el numero

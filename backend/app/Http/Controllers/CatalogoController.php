@@ -61,7 +61,9 @@ class CatalogoController extends Controller
             // la calculadora con eso, sin tener las cuentas escritas adentro.
             'formas' => Forma::where('activo', true)->orderBy('nombre')
                 ->get(['id', 'clave', 'nombre', 'medidas_habituales', 'medidas_necesarias',
-                    'campos', 'expresion', 'usa_cano']),
+                    'campos', 'expresion', 'usa_cano'])
+                // Cada campo dice si es una medida o un texto, y que ofrece.
+                ->each(fn (Forma $f) => $f->campos = $f->camposDelCalculo() ?: null),
             'materiales' => Material::where('activo', true)->orderBy('nombre')
                 ->get(['id', 'nombre', 'familia', 'densidad', 'uns', 'w_nr']),
             'canos' => CanoEstandar::where('activo', true)->orderBy('orden')

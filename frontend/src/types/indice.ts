@@ -341,10 +341,21 @@ export interface Forma {
   medidas_habituales: string | null
   medidas_necesarias: string | null
   /** Las medidas que pide esta forma, con el nombre que usa la formula. */
-  campos: { clave: string; label: string }[] | null
+  campos: CampoDeForma[] | null
   /** La cuenta que da el volumen en cm3. Null: no tiene calculo automatico. */
   expresion: string | null
   usa_cano: boolean
+}
+
+/**
+ * Lo que pide una forma: una medida, que se pasa a milímetros, o un parámetro
+ * de texto como el schedule o el rating, con lo habitual para elegir.
+ */
+export interface CampoDeForma {
+  clave: string
+  label: string
+  tipo?: 'numero' | 'texto'
+  opciones?: string[]
 }
 
 export interface CanoEstandar {

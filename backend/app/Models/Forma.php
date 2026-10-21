@@ -25,6 +25,27 @@ class Forma extends Model
     ];
 
     /**
+     * Los parametros que no son una medida: se escriben, no se pasan a mm.
+     *
+     * Salen de la matriz de parametros de CORDES (21-10-2026): un codo se pide
+     * por diametro nominal, schedule, radio y angulo; una brida, por rating y
+     * resalte. "6"", "SCH 40", "LR" o "RF" no son milimetros, y la cuenta del
+     * peso no los usa.
+     */
+    public const TEXTO = [
+        'dn', 'dn2', 'schedule', 'schedule2', 'rating', 'angle', 'radius',
+        'ends', 'facing', 'type', 'series', 'mesh', 'thread',
+    ];
+
+    /** Lo que se ofrece para elegir, si la forma no trae su propia lista. */
+    public const SUGERENCIAS = [
+        'rating' => ['150', '300', '600', '900', '1500', '2500', '3000', '6000'],
+        'angle' => ['45°', '90°', '180°'],
+        'facing' => ['RF', 'FF', 'RTJ'],
+        'series' => ['A', 'B'],
+    ];
+
+    /**
      * Una forma sin clave no puede existir, asi que se la pone sola.
      *
      * Evita que cada lugar que crea formas —seeders, importaciones, la
@@ -40,13 +61,20 @@ class Forma extends Model
     /**
      * Las medidas que hay que cargar para esta forma.
      *
-     * @return list<array{clave: string, label: string}>
+     * Cada una dice si es una medida o un texto, y que se ofrece para elegir.
+     *
+     * @return list<array{clave: string, label: string, tipo: string, opciones: list<string>}>
      */
     public function camposDelCalculo(): array
     {
         return collect($this->campos ?? [])
             ->filter(fn ($c) => filled($c['clave'] ?? null))
-            ->map(fn ($c) => ['clave' => $c['clave'], 'label' => $c['label'] ?? $c['clave']])
+            ->map(fn ($c) => [
+                'clave' => $c['clave'],
+                'label' => $c['label'] ?? $c['clave'],
+                'tipo' => in_array($c['clave'], self::TEXTO, true) ? 'texto' : 'numero',
+                'opciones' => $c['opciones'] ?? self::SUGERENCIAS[$c['clave']] ?? [],
+            ])
             ->values()
             ->all();
     }

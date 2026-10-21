@@ -131,6 +131,16 @@ class MedidasDeLoPedidoTest extends TestCase
         ])->assertStatus(422)->assertJsonValidationErrors('lineas.0.pedido_medidas.diameter.valor');
     }
 
+    /** Un parametro de texto, como el schedule, si se guarda escrito (matriz de formas, 21-10-2026). */
+    public function test_un_parametro_de_texto_se_guarda_escrito(): void
+    {
+        $this->guardar([
+            'pedido_medidas' => ['schedule' => ['valor' => '40S', 'unidad' => 'mm']],
+        ])->assertOk();
+
+        $this->assertSame('40S', $this->laLinea()->pedido_medidas['schedule']['valor']);
+    }
+
     /** Una forma que no esta en el catalogo sigue usando la caja de texto. */
     public function test_sin_medidas_sueltas_queda_el_texto_como_antes(): void
     {

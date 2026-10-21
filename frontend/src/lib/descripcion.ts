@@ -57,36 +57,55 @@ export function armarDimensiones(
     return `${numero(String(min / porUnidad))}-${numero(String(max / porUnidad))}`
   }
 
+  /*
+    Los parámetros de texto, como se escribieron. El diámetro nominal va con su
+    schedule y adelante, como se escribe un caño: "6" SCH 40 X 4" SCH 40 X
+    6000 MM BE".
+  */
+  const escrito = (clave: string) => (campos.some((c) => c.clave === clave) ? (medidas[clave]?.valor ?? '').trim() : '')
+  const nominal = (dn: string, sch: string) => [escrito(dn), escrito(sch) && `SCH ${escrito(sch)}`].filter(Boolean).join(' ')
+  const resto = campos
+    .filter((c) => c.tipo === 'texto' && !['dn', 'dn2', 'schedule', 'schedule2'].includes(c.clave))
+    .map((c) => escrito(c.clave))
+
   // Con un caño comercial la medida es su nombre y su schedule, no el
   // diámetro: es como lo pide el cliente y como lo busca el proveedor.
   if (forma.usa_cano && cano) {
     const largo = medidas.length
+    const salida = cano2 ? `${cano2.nombre} SCH ${cano2.schedule}` : nominal('dn2', 'schedule2')
 
     return [
       `${cano.nombre} SCH ${cano.schedule}`,
-      cano2 ? `X ${cano2.nombre} SCH ${cano2.schedule}` : '',
+      salida ? `X ${salida}` : '',
       largo?.valor ? `X ${texto('length', largo)} ${largo.unidad.toUpperCase()}` : '',
+      ...resto,
     ]
       .filter(Boolean)
       .join(' ')
   }
 
   const cargadas = campos
+    .filter((c) => c.tipo !== 'texto')
     .map((c) => ({ clave: c.clave, m: medidas[c.clave] }))
     // Una medida en 0 no está cargada: "76 X 0 MM" no le sirve a nadie.
     .filter((x): x is { clave: string; m: MedidaCargada } =>
       Boolean(x.m?.valor) && Number.parseFloat(x.m.valor) > 0,
     )
 
-  if (cargadas.length === 0) return ''
-
   const unidades = new Set(cargadas.map((x) => x.m.unidad))
+  const enMedidas =
+    cargadas.length === 0
+      ? ''
+      : unidades.size === 1
+        ? `${cargadas.map((x) => texto(x.clave, x.m)).join(' X ')} ${[...unidades][0].toUpperCase()}`
+        : cargadas.map((x) => `${texto(x.clave, x.m)} ${x.m.unidad.toUpperCase()}`).join(' X ')
 
-  if (unidades.size === 1) {
-    return `${cargadas.map((x) => texto(x.clave, x.m)).join(' X ')} ${[...unidades][0].toUpperCase()}`
-  }
-
-  return cargadas.map((x) => `${texto(x.clave, x.m)} ${x.m.unidad.toUpperCase()}`).join(' X ')
+  return [
+    [nominal('dn', 'schedule'), nominal('dn2', 'schedule2'), enMedidas].filter(Boolean).join(' X '),
+    ...resto,
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 /**

@@ -179,6 +179,15 @@ class CalculadoraDePeso
         foreach ($forma->camposDelCalculo() as $campo) {
             $clave = $campo['clave'];
             $cargado = $medidas[$clave] ?? null;
+
+            // "SCH 40" o "RF" quedan escritos tal cual: no son milimetros y la
+            // cuenta no los usa, pero la linea los tiene que volver a mostrar.
+            if ($campo['tipo'] === 'texto') {
+                $detalle[$clave] = ['label' => $campo['label'], 'valor' => (string) ($cargado['valor'] ?? ''), 'unidad' => null, 'valor_mm' => null];
+
+                continue;
+            }
+
             $unidad = $cargado['unidad'] ?? 'mm';
             $valor = (float) ($cargado['valor'] ?? 0);
             $enMm = $valor * (self::A_MILIMETROS[$unidad] ?? 1.0);
@@ -207,7 +216,7 @@ class CalculadoraDePeso
     private function medidaQueFalta(Forma $forma, array $valores): ?string
     {
         foreach ($forma->camposDelCalculo() as $campo) {
-            if (($valores[$campo['clave']] ?? 0) > 0) {
+            if ($campo['tipo'] === 'texto' || ($valores[$campo['clave']] ?? 0) > 0) {
                 continue;
             }
 

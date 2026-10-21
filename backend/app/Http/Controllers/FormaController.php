@@ -37,6 +37,24 @@ class FormaController extends Controller
         // cliente, 14-10-2026).
         'outer2' => 'Diametro exterior de salida',
         'wall2' => 'Espesor de pared de salida',
+        // La matriz de parametros de CORDES (21-10-2026). Las de texto estan
+        // en Forma::TEXTO.
+        'diameter2' => 'Diametro 2',
+        'side2' => 'Lado 2',
+        'thread_length' => 'Largo de rosca',
+        'dn' => 'Diametro nominal',
+        'dn2' => 'Diametro nominal 2',
+        'schedule' => 'Schedule',
+        'schedule2' => 'Schedule 2',
+        'rating' => 'Rating',
+        'angle' => 'Angulo',
+        'radius' => 'Radio',
+        'ends' => 'Extremos / conexion',
+        'facing' => 'Tipo de resalte',
+        'type' => 'Tipo',
+        'series' => 'Serie',
+        'mesh' => 'Malla',
+        'thread' => 'Rosca',
     ];
 
     public function __construct(private EvaluadorDeFormulas $evaluador) {}
@@ -368,11 +386,12 @@ class FormaController extends Controller
     /**
      * "Diametro exterior, Espesor de pared, Largo" -> los campos de la forma.
      *
-     * Si la forma ya tenia esa medida con otro nombre a la vista, se conserva.
+     * Si la forma ya tenia esa medida, se conserva como estaba: el nombre a la
+     * vista y lo que ofrece para elegir.
      */
     private function medidasDe(string $texto, ?Forma $forma = null): array
     {
-        $propias = collect($forma?->campos ?? [])->pluck('label', 'clave');
+        $propias = collect($forma?->campos ?? [])->keyBy('clave');
 
         return collect(preg_split('/\s*[,;]\s*/', $texto) ?: [])
             ->filter(fn ($t) => $t !== '')
@@ -383,7 +402,7 @@ class FormaController extends Controller
                     throw ValidationException::withMessages(['campos' => 'no se conoce la medida "'.$escrita.'". Las que hay: '.implode(', ', self::MEDIDAS).'.']);
                 }
 
-                return ['clave' => $clave, 'label' => $propias[$clave] ?? self::MEDIDAS[$clave]];
+                return ['clave' => $clave, 'label' => self::MEDIDAS[$clave], ...($propias[$clave] ?? [])];
             })
             ->values()
             ->all();
@@ -485,6 +504,8 @@ class FormaController extends Controller
             'campos' => ['array'],
             'campos.*.clave' => ['required', 'string', 'in:'.implode(',', array_keys(self::MEDIDAS))],
             'campos.*.label' => ['nullable', 'string', 'max:40'],
+            'campos.*.opciones' => ['nullable', 'array'],
+            'campos.*.opciones.*' => ['string', 'max:60'],
             'expresion' => ['nullable', 'string', 'max:2000'],
             'usa_cano' => ['boolean'],
             'activo' => ['boolean'],
