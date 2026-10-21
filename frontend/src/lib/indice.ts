@@ -989,6 +989,14 @@ export function telefonoParaWhatsApp(crudo: string): string {
   if (solo.startsWith('54')) return solo
 
   /*
+    "15-4496-5568": un celular de Buenos Aires cargado sin el 11. Hay 89 asi
+    en el indice. Ocho cifras de abonado solo tiene el area 11, asi que el
+    area es esa. Con menos cifras ("15-510-3595") no se sabe de que area es
+    y se deja como esta.
+  */
+  if (/^15\d{8}$/.test(solo)) solo = '11' + solo.slice(2)
+
+  /*
     El "15" de los celulares viejos se saca.
 
     Asi estan cargados muchos telefonos del indice: "011-15-5593-4261". Ese 15
