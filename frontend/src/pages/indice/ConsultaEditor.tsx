@@ -36,6 +36,7 @@ import {
   useCarga,
   useCatalogos,
   hoy,
+  claveUnica,
 } from '../../lib/indice'
 import { JUEGOS_DE_CONDICIONES } from '../../types/indice'
 import type { CampoDeForma, CanoEstandar, JuegoDeCondiciones } from '../../types/indice'
@@ -182,7 +183,7 @@ function etiquetasDeItem(lineas: LineaForm[]): string[] {
 
 function lineaVacia(): LineaForm {
   return {
-    clave: crypto.randomUUID(),
+    clave: claveUnica(),
     descripcion: '',
     codigo_cliente: null,
     item_cliente: null,
@@ -972,7 +973,7 @@ export default function ConsultaEditor() {
       // Las claves se asignan antes del map: una alternativa viene como el
       // índice de su línea madre (`alternativa_de`), y así puede apuntar a la
       // clave de esa madre.
-      const claves = r.lineas.map(() => crypto.randomUUID())
+      const claves = r.lineas.map(() => claveUnica())
 
       const nuevas: LineaForm[] = r.lineas.map((l, i) => {
         const esAlternativa = l.alternativa_de != null
@@ -2450,7 +2451,7 @@ function Lineas({
         ...p,
         {
           ...ultima,
-          clave: crypto.randomUUID(),
+          clave: claveUnica(),
           precio_unitario: null,
           precio_por_kilo: null,
           quitada: false,
@@ -2478,7 +2479,7 @@ function Lineas({
 
       const nueva: LineaForm = {
         ...madre,
-        clave: crypto.randomUUID(),
+        clave: claveUnica(),
         madreClave: madre.clave,
         precio_unitario: null,
         precio_por_kilo: null,

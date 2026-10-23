@@ -466,6 +466,19 @@ export function fechaHora(valor: string | null | undefined): string {
   return h ? `${fecha(f)} ${h}` : fecha(f)
 }
 
+/**
+ * Una clave única para la pantalla: una línea nueva, una sesión de búsqueda.
+ *
+ * crypto.randomUUID solo existe con HTTPS o en localhost. En el servidor de
+ * CORDES, que va por HTTP dentro de la red, no está, y abrir una cotización
+ * dejaba la pantalla en blanco (23-10-2026). getRandomValues está siempre.
+ */
+export function claveUnica(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+
+  return [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 export const useCallbackEstable = useCallback
 
 /* ---------------------------------------------------------------------------

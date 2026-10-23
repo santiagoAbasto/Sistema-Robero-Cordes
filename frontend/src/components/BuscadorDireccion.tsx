@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MapPin, Loader2 } from 'lucide-react'
 import api from '../lib/api'
-import { useDebounce } from '../lib/indice'
+import { claveUnica, useDebounce } from '../lib/indice'
 import { Etiqueta } from './ui/form'
 
 /* ---------------------------------------------------------------------------
@@ -32,11 +32,7 @@ export interface DireccionElegida {
   pais_nombre: string | null
 }
 
-function nuevaSesion(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2)
-}
+const nuevaSesion = claveUnica
 
 export default function BuscadorDireccion({
   valor,
