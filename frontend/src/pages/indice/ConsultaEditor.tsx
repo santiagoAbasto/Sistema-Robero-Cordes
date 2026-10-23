@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Calculator, Check, Copy, Download, Eye, EyeOff, FilePlus2, Layers, Lock, Mail, MessageCircle, Plus, Send, Trash2, Wand2, Scale } from 'lucide-react'
 import {
@@ -2129,21 +2129,44 @@ function SelectorDeCano({
 /**
  * Un renglón de medidas: el mismo en lo pedido y en lo ofrecido.
  *
- * "Todo siempre alineado, seleccione lo que seleccione" (14-10-2026). Las
- * medidas van en las cuatro primeras columnas y lo que sigue —cantidad y
- * unidad— siempre en la quinta y la sexta, sea la forma que sea: una barra
- * con dos medidas, una reducción con cuatro, una brida sin ninguna o un largo
- * variable que ocupa dos. Antes cada bloque ponía la cantidad donde terminaban
- * sus medidas, y con formas distintas arriba y abajo quedaba corrida.
+ * La cantidad y la unidad van primero, a la izquierda, y las medidas pegadas a
+ * continuación (Roberto, 23-10-2026: "compacto, que vaya al lado de las
+ * medidas, cantidad unidad... Cantidad quedó mal desalineado. Ponerlo a la
+ * izquierda"). Iban en la quinta y la sexta columna: una barra, con dos
+ * medidas, dejaba dos casilleros vacíos en el medio, y una forma con cinco
+ * bajaba la quinta y la cantidad quedaba sola arriba.
  *
- * Ninguna forma pide más de cuatro medidas; si alguna pidiera más, bajan a
- * otro renglón dentro de las cuatro columnas y la cantidad no se mueve.
+ * Siguen alineadas arriba y abajo con cualquier forma ("todo siempre
+ * alineado", 14-10): la cantidad está siempre en las dos primeras columnas y
+ * las medidas empiezan siempre en la tercera. El renglón de los selectores de
+ * caño, que no lleva cantidad, deja esas dos columnas vacías: así el selector
+ * cae encima de lo que completa.
+ *
+ * Y en un solo renglón, aunque la forma pida cinco o seis: las columnas se
+ * angostan en lugar de bajar a otra fila ("si son más de 5 no se rompe y se
+ * compacta, pero alineado arriba y abajo", 23-10-2026). Cuántas son lo decide
+ * la línea, mirando lo pedido y lo ofrecido, y todos sus renglones usan las
+ * mismas: así las columnas de arriba y de abajo coinciden.
  */
-function RenglonDeMedidas({ medidas, despues, className }: { medidas: ReactNode; despues?: ReactNode; className?: string }) {
+function RenglonDeMedidas({
+  medidas,
+  cantidad,
+  columnas,
+  className,
+}: {
+  medidas: ReactNode
+  cantidad?: ReactNode
+  /** Las columnas de medidas de la línea: las mismas en todos sus renglones. */
+  columnas: number
+  className?: string
+}) {
   return (
-    <div className={`grid items-end gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 ${className ?? ''}`}>
-      <div className="grid items-end gap-1.5 sm:col-span-2 sm:grid-cols-2 lg:col-span-4 lg:grid-cols-4">{medidas}</div>
-      {despues}
+    <div
+      style={{ '--columnas': columnas + 2 } as CSSProperties}
+      className={`grid items-end gap-1.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[repeat(var(--columnas),minmax(0,1fr))] ${className ?? ''}`}
+    >
+      {cantidad ?? <div aria-hidden="true" className="hidden xl:col-span-2 xl:block" />}
+      <div className="grid items-end gap-1.5 sm:col-span-2 sm:grid-cols-2 lg:col-span-4 lg:grid-cols-4 xl:contents">{medidas}</div>
     </div>
   )
 }
@@ -2706,12 +2729,15 @@ function MedidasDeLaForma({
   onCambio,
   alLado,
   piezasAparte,
+  columnas,
 }: {
   linea: LineaForm
   catalogos: Catalogos | null
   onCambio: (c: Partial<LineaForm>) => void
   /** Cantidad y unidad, en el mismo renglón que las medidas. */
   alLado: ReactNode
+  /** Las columnas de medidas de la línea (ver RenglonDeMedidas). */
+  columnas: number
   /** Vendiendo al peso o por metro las piezas no son la cantidad: van aparte. */
   piezasAparte: boolean
 }) {
@@ -2827,10 +2853,11 @@ function MedidasDeLaForma({
   if (!forma || campos.length === 0) {
     return (
       <RenglonDeMedidas
+        columnas={columnas}
         className="mt-1.5"
         medidas={
           !forma ? (
-            <p className="col-span-full pb-1.5 text-[11.5px] text-faint">
+            <p className="col-span-full pb-1.5 text-[11.5px] text-faint xl:col-span-4">
               Elegí la forma y aparecen las medidas que le corresponden.
             </p>
           ) : (
@@ -2849,7 +2876,7 @@ function MedidasDeLaForma({
             />
           )
         }
-        despues={alLado}
+        cantidad={alLado}
       />
     )
   }
@@ -2868,6 +2895,7 @@ function MedidasDeLaForma({
       */}
       {forma.usa_cano && (
         <RenglonDeMedidas
+          columnas={columnas}
           className="mb-1.5"
           medidas={
             <>
@@ -2887,6 +2915,7 @@ function MedidasDeLaForma({
       )}
 
       <RenglonDeMedidas
+        columnas={columnas}
         medidas={
           campos.map((campo) => {
             const cargada = linea.calc.medidas[campo.clave] ?? { valor: '', unidad: 'mm' }
@@ -2964,8 +2993,11 @@ function MedidasDeLaForma({
             }
 
             return (
-              <div key={campo.clave}>
-                <Etiqueta ayuda={puestoPorCano ? 'lo pone el caño' : undefined}>{campo.label}</Etiqueta>
+              // "Lo pone el caño" va al pasar el mouse: escrito al lado del
+              // nombre partía las etiquetas en dos renglones, y el gris ya dice
+              // que ese casillero no se escribe.
+              <div key={campo.clave} title={puestoPorCano ? 'Lo pone el caño elegido arriba' : undefined}>
+                <Etiqueta>{campo.label}</Etiqueta>
                 <div className="flex">
                   <input
                     type="number"
@@ -2991,19 +3023,14 @@ function MedidasDeLaForma({
                 </div>
               </div>
             )
-          })
-        }
-        despues={
-          <>
-            {/*
-              En lugar de "Piezas", la cantidad y su unidad (Roberto, 11-10 y
-              14-10): "Piezas" parecía la cantidad pero solo la usaba el cálculo
-              del peso, y lo escrito ahí no llegaba a la cotización — en TOSAMA se
-              corrigió a 1 y la línea siguió pidiendo 114.
-            */}
-            {alLado}
-            {piezasAparte && (
-              <div>
+          }).concat(
+            /*
+              Vendiendo al peso o por metro las piezas no son la cantidad: van
+              al final de las medidas, así la cantidad no se corre y lo de
+              arriba sigue alineado.
+            */
+            piezasAparte ? (
+              <div key="piezas">
                 <Etiqueta ayuda="para el peso">Piezas</Etiqueta>
                 <input
                   type="number"
@@ -3014,7 +3041,18 @@ function MedidasDeLaForma({
                   className="h-7 w-full rounded-[7px] border border-line-strong bg-white px-[11px] text-[12.5px] tabular-nums outline-none focus:border-brand"
                 />
               </div>
-            )}
+            ) : [],
+          )
+        }
+        cantidad={
+          <>
+            {/*
+              En lugar de "Piezas", la cantidad y su unidad (Roberto, 11-10 y
+              14-10): "Piezas" parecía la cantidad pero solo la usaba el cálculo
+              del peso, y lo escrito ahí no llegaba a la cotización — en TOSAMA se
+              corrigió a 1 y la línea siguió pidiendo 114.
+            */}
+            {alLado}
           </>
         }
       />
@@ -3166,6 +3204,21 @@ function LineaFila({
   // (Diametro, Largo, Piezas) y no como una caja de texto suelta.
   const formaPedida = formaDeLoPedido(linea, catalogos)
   const camposDeLoPedido = formaPedida?.campos ?? []
+
+  /*
+    Cuántas columnas de medidas lleva la línea: las mismas en lo pedido y en
+    lo ofrecido, para que queden alineados, y todas en un renglón aunque la
+    forma pida cinco o seis. Nunca menos de cuatro: una barra, con dos, no se
+    estira. El largo variable ocupa dos y las piezas una más; sin medidas,
+    la caja de texto ocupa dos.
+  */
+  const lugares = (campos: CampoDeForma[], conRango: boolean) =>
+    campos.length === 0 ? 2 : campos.length + (conRango && campos.some((c) => c.clave === 'length') ? 1 : 0)
+  const columnas = Math.max(
+    4,
+    lugares(formaElegida?.campos ?? [], linea.largo_min_mm != null || linea.largo_max_mm != null) + (piezasAparte ? 1 : 0),
+    linea.igual_a_lo_pedido ? 0 : lugares(camposDeLoPedido, false),
+  )
 
   // El caño que pidió el cliente, para que el selector arranque donde quedó.
   const canoPedido = useMemo(
@@ -3374,6 +3427,7 @@ function LineaFila({
               encima de la pared. Una reducción tiene dos, entrada y salida. */}
           {formaPedida?.usa_cano && (
             <RenglonDeMedidas
+              columnas={columnas}
               className="mt-1.5"
               medidas={
                 <>
@@ -3405,6 +3459,7 @@ function LineaFila({
             que no está en el catálogo queda la caja de texto.
           */}
           <RenglonDeMedidas
+            columnas={columnas}
             className="mt-1.5"
             medidas={
               camposDeLoPedido.length > 0 ? (
@@ -3428,8 +3483,8 @@ function LineaFila({
                   }
 
                   return (
-                    <div key={campo.clave}>
-                      <Etiqueta ayuda={puestoPorCano ? 'lo pone el caño' : undefined}>{campo.label}</Etiqueta>
+                    <div key={campo.clave} title={puestoPorCano ? 'Lo pone el caño elegido arriba' : undefined}>
+                      <Etiqueta>{campo.label}</Etiqueta>
                       <div className="flex">
                         <input
                           type="number"
@@ -3468,7 +3523,7 @@ function LineaFila({
                 />
               )
             }
-            despues={
+            cantidad={
               <>
                 <Texto
                   etiqueta="Cantidad"
@@ -3641,6 +3696,7 @@ function LineaFila({
         catalogos={catalogos}
         onCambio={onCambio}
         piezasAparte={piezasAparte}
+        columnas={columnas}
         alLado={
           <>
             <Texto
