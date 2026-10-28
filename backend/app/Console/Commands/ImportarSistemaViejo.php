@@ -58,6 +58,7 @@ class ImportarSistemaViejo extends Command
     protected $signature = 'importar:sistema-viejo
         {--carpeta= : donde estan los CSV exportados del Access}
         {--sumar : solo el indice telefonico, agregando lo que falta sin borrar nada}
+        {--desde-dos : el texto viene de DOS leido como Windows ("PE¥A" es PEÑA)}
         {--aplicar : escribe en la base; sin esto solo informa}';
 
     protected $description = 'Importa los datos reales del sistema anterior';
@@ -145,6 +146,8 @@ class ImportarSistemaViejo extends Command
 
     private bool $aplicar = false;
 
+    private bool $desdeDos = false;
+
     /** @var array<string, list<string>> ID|fecha => los renglones de septiembre de esa empresa ese dia */
     private array $deSeptiembre = [];
 
@@ -212,6 +215,7 @@ class ImportarSistemaViejo extends Command
         // Laravel reusa la misma instancia si el comando corre dos veces en un
         // proceso: sin esto, la segunda corrida arrastra lo que conto la primera.
         $this->aplicar = $aplicar;
+        $this->desdeDos = (bool) $this->option('desde-dos');
         $this->conteo = $this->yaEstaban = $this->nuevas = $this->sinCodigo = $this->conflictos = [];
         $this->nombresDelArchivo = $this->nombresQueYaEstaban = $this->cotizacionesQueYaEstaban = [];
         $this->paises = $this->provincias = $this->localidades = $this->localidadesDelPais = $this->rubros = $this->sinReconocer = [];
@@ -1540,7 +1544,7 @@ class ImportarSistemaViejo extends Command
 
         while (($fila = fgetcsv($f, 0, ',', '"', '')) !== false) {
             if (count($fila) === count($cabecera)) {
-                yield array_combine($cabecera, $fila);
+                yield array_combine($cabecera, $this->desdeDos ? array_map(CatalogoViejo::desdeDos(...), $fila) : $fila);
             } elseif ($fila !== [null]) {
                 $malas++;
             }

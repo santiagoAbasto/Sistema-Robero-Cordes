@@ -954,4 +954,37 @@ class ImportarSistemaViejoTest extends TestCase
             ->doesntExpectOutputToContain('ALAMBRE')
             ->assertSuccessful();
     }
+
+    /**
+     * El Access completo trae el texto de DOS leido como Windows.
+     *
+     * "BAR í 1.6" es la "BAR Ý 1.6" de septiembre (la Ø del sistema viejo) y
+     * "PE¥A" es PEÑA. Con --desde-dos se traduce: la de septiembre se
+     * reconoce y no entra dos veces, y la ficha nueva queda bien escrita.
+     */
+    public function test_el_texto_de_dos_leido_como_windows_se_traduce(): void
+    {
+        $this->sistemaEnUso();
+        $this->guardarOriginales('migracion');
+        Consulta::query()->update(['origen_clave' => null]);
+
+        $carpeta = $this->indice(['PE¥A HNOS,,,,420'], []);
+        file_put_contents("{$carpeta}/cotizaciones.csv",
+            "EMPRESA,CRESP,DOLAR,PE1,PE2,PE3,PE4,PE5,PR1,PR2,PR3,PR4,PR5,MON,FECHA,NOTA,NROFACT,ID\n"
+            ."FERRUM S.A.,,0,BAR í 1.6 X 915MM,,,,,250,0,0,0,0,PESOS,19301204,,0,101\n");
+
+        // Sin traducir no se reconoce: entraria otra vez.
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true])
+            ->expectsOutputToContain('(mirar)')
+            ->assertSuccessful();
+
+        $antes = Consulta::count();
+
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true, '--desde-dos' => true, '--aplicar' => true])
+            ->doesntExpectOutputToContain('(mirar)')
+            ->assertSuccessful();
+
+        $this->assertSame($antes, Consulta::count(), 'la BAR Ø de septiembre no vuelve a entrar');
+        $this->assertSame('PEÑA HNOS', Empresa::where('codigo_indice', '420')->value('nombre'));
+    }
 }
