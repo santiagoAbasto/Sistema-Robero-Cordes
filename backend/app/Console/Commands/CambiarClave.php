@@ -77,6 +77,9 @@ class CambiarClave extends Command
         // que tenga que quedar en el historial de la cotizacion.
         User::whereKey($usuario->id)->update(['password' => Hash::make($clave)]);
 
+        // Y el que habia quedado logueado con la clave vieja, sale.
+        $usuario->tokens()->delete();
+
         $this->newLine();
         $this->info('Listo. La clave nueva no quedo escrita en ningun archivo.');
 

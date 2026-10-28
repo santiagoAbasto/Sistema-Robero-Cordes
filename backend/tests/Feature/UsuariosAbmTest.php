@@ -171,6 +171,20 @@ class UsuariosAbmTest extends TestCase
         $this->withToken($token)->getJson('/api/me')->assertUnauthorized();
     }
 
+    /** Cambiarle la clave cierra la sesion que tenia abierta con la vieja. */
+    public function test_la_clave_nueva_cierra_la_sesion_abierta(): void
+    {
+        $this->admin();
+        $otro = User::factory()->create(['email' => 'otro@cordes.com', 'role' => 'Vendedor', 'activo' => true]);
+        $otro->createToken('cordes-spa');
+
+        $this->putJson("/api/usuarios/{$otro->id}", [
+            'nombre' => $otro->name, 'email' => 'otro@cordes.com', 'rol' => 'Vendedor', 'clave' => 'otra-clave-larga',
+        ])->assertOk();
+
+        $this->assertSame(0, $otro->tokens()->count());
+    }
+
     /** Modificar a alguien dado de baja no lo vuelve a activar sin avisar. */
     public function test_modificar_no_reactiva(): void
     {

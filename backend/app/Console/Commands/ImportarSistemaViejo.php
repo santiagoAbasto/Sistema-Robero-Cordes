@@ -14,11 +14,14 @@ use App\Models\Localidad;
 use App\Models\Material;
 use App\Models\MaterialAlias;
 use App\Models\Moneda;
+use App\Models\Pais;
 use App\Models\Provincia;
+use App\Models\Rubro;
 use App\Models\TipoMedio;
 use App\Models\Unidad;
 use App\Models\User;
 use App\Services\Migracion\CatalogoViejo;
+use App\Services\Migracion\OriginalesDelAccess;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -37,20 +40,112 @@ use Illuminate\Support\Facades\DB;
  *  · no asigna formulas por parecido de nombre
  *  · no convierte australes a pesos
  *  · no toca usuarios ni permisos
+ *
+ * Con --sumar entra solo el indice telefonico (empresas.csv y
+ * cotizaciones.csv) y NO se borra nada: ya hay gente cargando en el sistema
+ * nuevo. Lo que ya estaba se reconoce y se saltea, y entra lo que falta:
+ *  · la empresa, por el ID del indice; la ficha que crearon en el sistema
+ *    nuevo, por el nombre, y se le pone el ID en vez de duplicarla
+ *  · la cotizacion, por empresa + fecha + los cinco renglones tal cual
+ *
+ * Pais, provincia, localidad, rubro y unidad entran como quedaron despues de
+ * las limpiezas del 26-09 y del 01-10 (ajustes_del_catalogo, rubros_repetidos,
+ * localidades_recuperadas): sin eso, el indice completo volvia a crear
+ * Buenos Aires escrita de nueve formas.
  */
 class ImportarSistemaViejo extends Command
 {
     protected $signature = 'importar:sistema-viejo
         {--carpeta= : donde estan los CSV exportados del Access}
+        {--sumar : solo el indice telefonico, agregando lo que falta sin borrar nada}
         {--aplicar : escribe en la base; sin esto solo informa}';
 
     protected $description = 'Importa los datos reales del sistema anterior';
 
-    /** Donde cuelga una localidad cuya ficha no dice de que provincia es. */
-    private const SIN_PROVINCIA = 'Sin determinar';
+    /**
+     * Como escribieron cada provincia, y cual es: la tabla de la limpieza del
+     * 26-09. Lo que no esta aca y no coincide sin acentos ni puntos con una
+     * que ya existe, entra como vino.
+     */
+    private const PROVINCIAS = [
+        'BSAS' => 'Buenos Aires',
+        'BSAIRES' => 'Buenos Aires',
+        'BAIRES' => 'Buenos Aires',
+        'BS' => 'Buenos Aires',
+        'PROVBSAS' => 'Buenos Aires',
+        'CAPFED' => 'Ciudad Autónoma de Buenos Aires',
+        'CAPITAL' => 'Ciudad Autónoma de Buenos Aires',
+        'CAPITALFEDE' => 'Ciudad Autónoma de Buenos Aires',
+        'CAPITALFEDERAL' => 'Ciudad Autónoma de Buenos Aires',
+        'CABA' => 'Ciudad Autónoma de Buenos Aires',
+        'SANAFE' => 'Santa Fe',
+        'SANTAFED' => 'Santa Fe',
+    ];
+
+    /** Los paises escritos de otra forma. Sin pais es Argentina. */
+    private const PAISES = [
+        '' => 'Argentina',
+        'ARG' => 'Argentina',
+        'ARGENTINA' => 'Argentina',
+        'PARAGUAYA' => 'Paraguay',
+    ];
+
+    /** Las que se apagaron el 26-09 por repetidas, y la que quedo. */
+    private const UNIDADES_REPETIDAS = ['C/U' => 'UN', 'M' => 'MT', 'TON' => 'TN'];
+
+    /** Lo que dice la nota de cada cotizacion que vino del Access. */
+    private const NOTA_IMPORTADA = 'Importada del sistema anterior.';
 
     /** @var array<string, int> */
     private array $conteo = [];
+
+    private bool $sumar = false;
+
+    private bool $aplicar = false;
+
+    /** @var array<string, true> ID que ya estaba y en el Access nuevo es otra empresa */
+    private array $conflictos = [];
+
+    /**
+     * Los catalogos por nombre plano: pais, pais|provincia,
+     * pais|provincia|localidad y rubro. En el informe, lo que se crearia
+     * queda con id null.
+     *
+     * @var array<string, ?int>
+     */
+    private array $paises = [];
+
+    /** @var array<string, ?int> */
+    private array $provincias = [];
+
+    /** @var array<string, ?int> */
+    private array $localidades = [];
+
+    /** @var array<string, array<string, array{0: ?int, 1: ?int}>> pais|localidad => [localidad, provincia] */
+    private array $localidadesDelPais = [];
+
+    /** @var array<string, ?int> */
+    private array $rubros = [];
+
+    /** @var array<string, string> ID del indice que ya estaba => su nombre plano */
+    private array $yaEstaban = [];
+
+    /** @var array<string, true> ID del indice que entra en esta corrida */
+    private array $nuevas = [];
+
+    /** @var array<string, int> nombre plano => la unica ficha sin ID del indice con ese nombre */
+    private array $sinCodigo = [];
+
+    /** @var array<string, int> nombre plano => cuantas filas del Access lo usan */
+    private array $nombresDelArchivo = [];
+
+    /** @var array<string, true> */
+    private array $nombresQueYaEstaban = [];
+
+    /** @var array<string, true> huella (empresa|fecha|texto) de cada cotizacion importada */
+    private array $cotizacionesQueYaEstaban = [];
+
+    private string $ultimaImportada = '1900-01-01';
 
     private function contar(string $que, int $cuantos = 1): void
     {
@@ -61,8 +156,21 @@ class ImportarSistemaViejo extends Command
     {
         $carpeta = rtrim((string) $this->option('carpeta'), '/');
         $aplicar = (bool) $this->option('aplicar');
+        $this->sumar = (bool) $this->option('sumar');
 
-        foreach (['Materiales', 'FamiliaMaterial', 'Forma', 'Unidades', 'empresas', 'cotizaciones'] as $a) {
+        // Laravel reusa la misma instancia si el comando corre dos veces en un
+        // proceso: sin esto, la segunda corrida arrastra lo que conto la primera.
+        $this->aplicar = $aplicar;
+        $this->conteo = $this->yaEstaban = $this->nuevas = $this->sinCodigo = $this->conflictos = [];
+        $this->nombresDelArchivo = $this->nombresQueYaEstaban = $this->cotizacionesQueYaEstaban = [];
+        $this->paises = $this->provincias = $this->localidades = $this->localidadesDelPais = $this->rubros = [];
+        $this->ultimaImportada = '1900-01-01';
+
+        $archivos = $this->sumar
+            ? ['empresas', 'cotizaciones']
+            : ['Materiales', 'FamiliaMaterial', 'Forma', 'Unidades', 'empresas', 'cotizaciones'];
+
+        foreach ($archivos as $a) {
             if (! is_file("{$carpeta}/{$a}.csv")) {
                 $this->error("Falta {$carpeta}/{$a}.csv");
 
@@ -85,13 +193,18 @@ class ImportarSistemaViejo extends Command
 
         try {
             DB::transaction(function () use ($carpeta, $aplicar) {
-            if ($aplicar) {
-                $this->sacarLoDeEjemplo();
+            if ($this->sumar) {
+                $this->loQueYaEsta($carpeta);
+            } else {
+                if ($aplicar) {
+                    $this->sacarLoDeEjemplo();
+                }
+
+                $this->formas($carpeta, $aplicar);
+                $this->unidades($carpeta, $aplicar);
+                $this->materiales($carpeta, $aplicar);
             }
 
-            $this->formas($carpeta, $aplicar);
-            $this->unidades($carpeta, $aplicar);
-            $this->materiales($carpeta, $aplicar);
             $this->empresas($carpeta, $aplicar);
             $this->cotizaciones($carpeta, $aplicar);
 
@@ -102,6 +215,11 @@ class ImportarSistemaViejo extends Command
             });
         } catch (SoloInforme) {
             // Esperado.
+        } catch (IdsQueNoCoinciden $e) {
+            $this->resumenEnPantalla();
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
         }
 
         $this->resumenEnPantalla();
@@ -373,6 +491,200 @@ class ImportarSistemaViejo extends Command
         return null;
     }
 
+    /**
+     * Lo que ya esta en el sistema, para sumar sin duplicar.
+     *
+     * Y antes de escribir nada, si los ID del Access nuevo son los mismos que
+     * los del que ya se importo. Son la clave de todo: si el Access se
+     * renumero, el ID 543 del nuevo no es la ficha 543 que ya esta, y sumar
+     * colgaria cotizaciones de una empresa en otra.
+     */
+    private function loQueYaEsta(string $carpeta): void
+    {
+        // Con el nombre del Access que ya se importo y no con el de hoy: la
+        // que renombraron en el sistema nuevo sigue siendo la misma empresa.
+        $comoVino = [];
+
+        foreach (OriginalesDelAccess::deLaBase('empresas.csv') as $fila) {
+            $nombre = CatalogoViejo::texto($fila['EMPRESA'] ?? null);
+            $id = trim((string) ($fila['ID'] ?? ''));
+
+            if ($nombre !== null && $id !== '') {
+                $comoVino[$id] = CatalogoViejo::plano($nombre);
+            }
+        }
+
+        foreach (Empresa::whereNotNull('codigo_indice')->pluck('nombre', 'codigo_indice') as $codigo => $nombre) {
+            $this->yaEstaban[(string) $codigo] = $comoVino[(string) $codigo] ?? CatalogoViejo::plano($nombre);
+        }
+
+        foreach (Empresa::pluck('nombre') as $nombre) {
+            $this->nombresQueYaEstaban[CatalogoViejo::plano($nombre)] = true;
+        }
+
+        // Las que creo la gente en el sistema nuevo no tienen ID del indice.
+        // Solo se reconocen si el nombre no se repite: con dos iguales no hay
+        // como saber cual es.
+        $this->sinCodigo = Empresa::whereNull('codigo_indice')->get(['id', 'nombre'])
+            ->groupBy(fn ($e) => CatalogoViejo::plano($e->nombre))
+            ->filter(fn ($iguales) => $iguales->count() === 1)
+            ->map(fn ($iguales) => $iguales->first()->id)
+            ->all();
+
+        /*
+          Lo que ya entro, por la fila del Access y no por como esta hoy la
+          cotizacion: la gente corrige fechas, notas y textos, y una corregida
+          ya no se reconoceria. Las filas originales de la primera importacion
+          estan guardadas en la base; las que entran con --sumar llevan su
+          huella en origen_clave.
+        */
+        foreach (OriginalesDelAccess::deLaBase('cotizaciones.csv') as $fila) {
+            $codigo = trim((string) ($fila['ID'] ?? '')) ?: null;
+            [$huella, $guardada] = $this->huella($fila, $codigo, CatalogoViejo::fecha($fila['FECHA'] ?? null));
+            $this->cotizacionesQueYaEstaban[$huella] = true;
+            $this->ultimaImportada = max($this->ultimaImportada, $guardada);
+        }
+
+        foreach (DB::table('consultas')->whereNotNull('origen_clave')->pluck('origen_clave') as $huella) {
+            $this->cotizacionesQueYaEstaban[$huella] = true;
+        }
+
+        // Y por si faltaran las originales, como estan hoy. Sin las copias ni
+        // las revisiones: heredan la nota pero son cotizaciones nuevas.
+        $importadas = DB::table('consultas')
+            ->where('nota', 'like', self::NOTA_IMPORTADA.'%')
+            ->whereNull('copiada_de_id')
+            ->whereNull('revision_de_id')
+            ->select('id_sistema', 'fecha', 'texto')
+            ->cursor();
+
+        foreach ($importadas as $c) {
+            $fecha = substr((string) $c->fecha, 0, 10);
+            $this->cotizacionesQueYaEstaban[md5($c->id_sistema.'|'.$fecha.'|'.md5((string) $c->texto))] = true;
+
+            if ($fecha <= date('Y-m-d')) {
+                $this->ultimaImportada = max($this->ultimaImportada, $fecha);
+            }
+        }
+
+        $iguales = 0;
+        $distintas = 0;
+
+        foreach ($this->leer("{$carpeta}/empresas.csv") as $e) {
+            $nombre = CatalogoViejo::texto($e['EMPRESA'] ?? null);
+
+            if ($nombre === null) {
+                continue;
+            }
+
+            $plano = CatalogoViejo::plano($nombre);
+            $this->nombresDelArchivo[$plano] = ($this->nombresDelArchivo[$plano] ?? 0) + 1;
+
+            $codigo = trim((string) ($e['ID'] ?? ''));
+
+            if (isset($this->yaEstaban[$codigo])) {
+                if ($this->yaEstaban[$codigo] === $plano) {
+                    $iguales++;
+                } else {
+                    $distintas++;
+                    $this->conflictos[$codigo] = true;
+                }
+            }
+        }
+
+        if ($distintas > 0) {
+            /*
+              Mismo ID, otra empresa: no se adivina cual es. No entra la fila
+              del Access ni ninguna cotizacion suya, para no colgarle a una
+              ficha el historial de otra. Se listan los ID para mirarlos.
+            */
+            $this->contar('fichas con el mismo ID y otro nombre: no se suma nada de ellas', $distintas);
+        }
+
+        // ponytail: umbral fijo. Una correccion de nombres aca y alla pasa; que
+        // uno de cada cinco no coincida ya es otra numeracion.
+        if ($distintas > ($iguales + $distintas) * 0.2) {
+            throw new IdsQueNoCoinciden(
+                "De las fichas que ya estaban, {$distintas} de ".($iguales + $distintas)
+                .' tienen en el Access nuevo otro nombre con el mismo ID: el Access se renumero.'
+                .' No se sumo nada.'
+            );
+        }
+    }
+
+    /**
+     * Si la fila del indice hay que crearla o ya esta.
+     *
+     * Ya esta si su ID ya esta, o si es una ficha que crearon en el sistema
+     * nuevo con el mismo nombre: a esa se le pone el ID y no se toca nada mas,
+     * lo que cargo la gente manda sobre el Access.
+     */
+    private function hayQueCrear(array $e, string $nombre, bool $aplicar): bool
+    {
+        $codigo = trim((string) ($e['ID'] ?? '')) ?: null;
+        $plano = CatalogoViejo::plano($nombre);
+
+        if ($codigo !== null && isset($this->conflictos[$codigo])) {
+            return false;
+        }
+
+        if ($codigo !== null && isset($this->yaEstaban[$codigo])) {
+            $this->contar('empresas que ya estaban');
+
+            return false;
+        }
+
+        if ($codigo !== null && isset($this->nuevas[$codigo])) {
+            $this->contar('filas con el ID repetido en el Access (entra la primera)');
+
+            return false;
+        }
+
+        $suya = $this->sinCodigo[$plano] ?? null;
+
+        if ($suya !== null && ($this->nombresDelArchivo[$plano] ?? 0) === 1) {
+            if ($aplicar && $codigo !== null) {
+                Empresa::find($suya)->update(['codigo_indice' => $codigo]);
+            }
+
+            unset($this->sinCodigo[$plano]);
+
+            if ($codigo !== null) {
+                $this->nuevas[$codigo] = true;
+            }
+
+            $this->contar('fichas del sistema nuevo que estaban en el Access (se les pone el ID)');
+
+            return false;
+        }
+
+        // Sin ID no hay con que reconocerla la proxima vez: solo entra si el
+        // nombre no esta, asi volver a correr la suma no la duplica.
+        $nombreQueYaEstaba = isset($this->nombresQueYaEstaban[$plano]);
+
+        if ($codigo === null) {
+            if ($nombreQueYaEstaba) {
+                $this->contar('filas sin ID con un nombre que ya esta (no entran)');
+
+                return false;
+            }
+
+            $this->nombresQueYaEstaban[$plano] = true;
+        } else {
+            $this->nuevas[$codigo] = true;
+        }
+
+        if ($nombreQueYaEstaba) {
+            // Puede estar bien —el indice tiene sucursales con el mismo
+            // nombre— pero si son cientos, el Access se renumero.
+            $this->contar('empresas nuevas con un nombre que ya estaba');
+        }
+
+        $this->contar('empresas nuevas');
+
+        return true;
+    }
+
     private function empresas(string $carpeta, bool $aplicar): void
     {
         $tipoTelefono = $aplicar ? TipoMedio::firstOrCreate(['nombre' => 'Telefono']) : null;
@@ -387,25 +699,26 @@ class ImportarSistemaViejo extends Command
 
             $this->contar('empresas');
 
-            if (! $aplicar) {
+            if ($this->sumar && ! $this->hayQueCrear($e, $nombre, $aplicar)) {
                 continue;
             }
 
-            $pais = $this->pais(CatalogoViejo::texto($e['PAIS'] ?? null));
-            $nombreProv = CatalogoViejo::texto($e['PROVINCIA'] ?? null);
-            $provincia = $nombreProv ? $this->provincia($nombreProv, $pais) : null;
+            // El informe de la suma tambien cuenta lo que se agregaria a los
+            // catalogos: un pais nuevo con nombre raro se ve antes de cargar.
+            if (! $aplicar && ! $this->sumar) {
+                continue;
+            }
 
-            /*
-              La localidad necesita una provincia porque localidades.provincia_id
-              es NOT NULL. 281 fichas traen localidad y no traen provincia, y se
-              perdian enteras. Ahora cuelgan de una provincia "Sin determinar"
-              del pais que corresponda: el dato se guarda, queda a la vista que
-              falta ubicarlo, y la ficha NO se inventa una provincia.
-            */
-            $localidad = $this->localidad(
-                CatalogoViejo::texto($e['LOCALIDAD'] ?? null),
-                $provincia ?? $this->provincia(self::SIN_PROVINCIA, $pais),
-            );
+            if ($this->paises === []) {
+                $this->cargarCatalogos();
+            }
+
+            [$paisId, $provinciaId, $localidadId, $cpEnElPais, $nota] = $this->ubicacion($e);
+            $rubroId = $this->rubro(CatalogoViejo::texto($e['RUBRO'] ?? null));
+
+            if (! $aplicar) {
+                continue;
+            }
 
             $empresa = Empresa::create([
                 // El ID del Access: es la clave real del indice telefonico y
@@ -413,12 +726,12 @@ class ImportarSistemaViejo extends Command
                 'codigo_indice' => trim((string) ($e['ID'] ?? '')) ?: null,
                 'nombre' => $nombre,
                 'direccion' => CatalogoViejo::texto($e['DIRECCION'] ?? null),
-                'localidad_id' => $localidad?->id,
-                'provincia_id' => $provincia?->id,
-                'pais_id' => $pais->id,
-                'codigo_postal' => $this->codigoPostal($e['CODPOSTAL'] ?? null),
-                'rubro_id' => $this->rubro(CatalogoViejo::texto($e['RUBRO'] ?? null))?->id,
-                'observacion_general' => $this->observacion($e),
+                'localidad_id' => $localidadId,
+                'provincia_id' => $provinciaId,
+                'pais_id' => $paisId,
+                'codigo_postal' => $this->codigoPostal($e['CODPOSTAL'] ?? null) ?? $cpEnElPais,
+                'rubro_id' => $rubroId,
+                'observacion_general' => $this->observacion($e, $nota),
                 'activa' => true,
             ]);
 
@@ -443,9 +756,10 @@ class ImportarSistemaViejo extends Command
      * caracteristica telefonica de 284 fichas: no se pega al numero —serian
      * numeros de antes de 1999 y quedarian mal marcados— pero se deja escrita.
      */
-    private function observacion(array $e): ?string
+    private function observacion(array $e, ?string $nota = null): ?string
     {
         $partes = array_filter([
+            $nota,
             CatalogoViejo::texto($e['OBSERV'] ?? null),
             filled($e['HORARIOS'] ?? null) ? 'Horarios: '.CatalogoViejo::texto($e['HORARIOS']) : null,
             filled($e['TELEDISC'] ?? null) ? 'Caracteristica telefonica: '.CatalogoViejo::texto($e['TELEDISC']) : null,
@@ -509,52 +823,135 @@ class ImportarSistemaViejo extends Command
         }
     }
 
-    private function rubro(?string $nombre): ?\App\Models\Rubro
+    /**
+     * Los catalogos de ubicacion y rubros, por nombre plano.
+     *
+     * Se leen una vez: son unos cientos de filas y el indice completo son
+     * miles de fichas que los consultan.
+     */
+    private function cargarCatalogos(): void
     {
-        return $nombre ? \App\Models\Rubro::firstOrCreate(['nombre' => $nombre], ['activo' => true]) : null;
+        $paisDe = [];
+
+        foreach (Pais::all(['id', 'nombre']) as $p) {
+            $paisDe[$p->id] = CatalogoViejo::plano($p->nombre);
+            $this->paises[$paisDe[$p->id]] ??= $p->id;
+        }
+
+        $provinciaDe = [];
+
+        foreach (Provincia::all(['id', 'nombre', 'pais_id']) as $p) {
+            $provinciaDe[$p->id] = ($paisDe[$p->pais_id] ?? '').'|'.CatalogoViejo::plano($p->nombre);
+            $this->provincias[$provinciaDe[$p->id]] ??= $p->id;
+        }
+
+        foreach (Localidad::all(['id', 'nombre', 'provincia_id']) as $l) {
+            if (! isset($provinciaDe[$l->provincia_id])) {
+                continue;
+            }
+
+            $clave = $provinciaDe[$l->provincia_id].'|'.CatalogoViejo::plano($l->nombre);
+            $this->localidades[$clave] ??= $l->id;
+            $pais = strstr($provinciaDe[$l->provincia_id], '|', true);
+            $this->localidadesDelPais[$pais.'|'.CatalogoViejo::plano($l->nombre)][$clave] = [$this->localidades[$clave], $l->provincia_id];
+        }
+
+        foreach (Rubro::all(['id', 'nombre']) as $r) {
+            $this->rubros[CatalogoViejo::plano($r->nombre)] ??= $r->id;
+        }
+    }
+
+    /** El id de lo que ya esta en el catalogo, o lo crea. En el informe no crea: cuenta. */
+    private function delCatalogo(array &$catalogo, string $clave, string $que, \Closure $crear): ?int
+    {
+        if (! array_key_exists($clave, $catalogo)) {
+            $catalogo[$clave] = $this->aplicar ? $crear() : null;
+            $this->contar($que);
+        }
+
+        return $catalogo[$clave];
+    }
+
+    /** Un codigo postal argentino (CPA): una letra, cuatro numeros y tres letras. */
+    private static function esCodigoPostal(?string $texto): bool
+    {
+        return (bool) preg_match('/^[A-Z]\d{4}[A-Z]{3}$/', CatalogoViejo::plano((string) $texto));
     }
 
     /**
-     * La provincia, colgada del pais que diga la ficha.
+     * Pais, provincia y localidad de la ficha, como los dejo la limpieza.
      *
-     * El sistema viejo guardaba el pais aparte y solo en el 14% de las fichas.
-     * Sin pais se asume Argentina, que es de donde es el 100% de las que si lo
-     * tienen cargado salvo un puñado.
+     *  · "B1646GEL" en el pais es un codigo postal cargado una columna
+     *    corrida: va al CP y el pais es Argentina.
+     *  · "BS. AS." es Buenos Aires; "-", "Sin determinar" o un CP no son una
+     *    provincia.
+     *  · La localidad sin provincia —281 en la muestra— no se cuelga mas de
+     *    una provincia "Sin determinar": si en el pais hay una sola localidad
+     *    con ese nombre es esa, y si no, el nombre queda escrito en la ficha
+     *    para elegirla a mano. La ficha no se inventa una provincia.
+     *
+     * @return array{0: ?int, 1: ?int, 2: ?int, 3: ?string, 4: ?string} pais, provincia, localidad, CP que estaba en el pais, nota
      */
-    private function pais(?string $cruda): \App\Models\Pais
+    private function ubicacion(array $e): array
     {
-        return \App\Models\Pais::firstOrCreate(
-            ['nombre' => $this->nombreDePais($cruda)],
-            ['activo' => true],
-        );
-    }
+        $paisCrudo = CatalogoViejo::texto($e['PAIS'] ?? null);
+        $cp = self::esCodigoPostal($paisCrudo) ? mb_strtoupper($paisCrudo) : null;
+        $planoPais = $cp ? '' : CatalogoViejo::plano((string) $paisCrudo);
+        $nombrePais = self::PAISES[$planoPais] ?? ucfirst(mb_strtolower((string) $paisCrudo));
+        $pais = CatalogoViejo::plano($nombrePais);
+        $paisId = $this->delCatalogo($this->paises, $pais, "pais nuevo: {$nombrePais}",
+            fn () => Pais::create(['nombre' => $nombrePais, 'activo' => true])->id);
 
-    private function provincia(string $nombre, \App\Models\Pais $pais): Provincia
-    {
-        return Provincia::firstOrCreate(
-            ['nombre' => $nombre, 'pais_id' => $pais->id],
-            ['activo' => true],
-        );
-    }
+        $provincia = null;
+        $provinciaId = null;
+        $crudaProvincia = CatalogoViejo::texto($e['PROVINCIA'] ?? null);
+        $planoProvincia = CatalogoViejo::plano((string) $crudaProvincia);
 
-    private function nombreDePais(?string $cruda): string
-    {
-        return match (mb_strtoupper(trim((string) $cruda))) {
-            '', 'ARG', 'ARGENTINA' => 'Argentina',
-            default => ucfirst(mb_strtolower(trim((string) $cruda))),
-        };
-    }
-
-    private function localidad(?string $nombre, Provincia $provincia): ?Localidad
-    {
-        if ($nombre === null) {
-            return null;
+        if ($planoProvincia !== '' && $planoProvincia !== 'SINDETERMINAR' && ! self::esCodigoPostal($crudaProvincia)) {
+            $nombreProvincia = self::PROVINCIAS[$planoProvincia] ?? $crudaProvincia;
+            $provincia = $pais.'|'.CatalogoViejo::plano($nombreProvincia);
+            $provinciaId = $this->delCatalogo($this->provincias, $provincia, 'provincias nuevas',
+                fn () => Provincia::create(['nombre' => $nombreProvincia, 'pais_id' => $paisId, 'activo' => true])->id);
         }
 
-        return Localidad::firstOrCreate(
-            ['nombre' => $nombre, 'provincia_id' => $provincia->id],
-            ['activo' => true],
-        );
+        $crudaLocalidad = CatalogoViejo::texto($e['LOCALIDAD'] ?? null);
+
+        if ($crudaLocalidad === null) {
+            return [$paisId, $provinciaId, null, $cp, null];
+        }
+
+        $planoLocalidad = CatalogoViejo::plano($crudaLocalidad);
+
+        if ($provincia !== null) {
+            $clave = $provincia.'|'.$planoLocalidad;
+            $localidadId = $this->delCatalogo($this->localidades, $clave, 'localidades nuevas',
+                fn () => Localidad::create(['nombre' => $crudaLocalidad, 'provincia_id' => $provinciaId, 'activo' => true])->id);
+            $this->localidadesDelPais[$pais.'|'.$planoLocalidad][$clave] = [$localidadId, $provinciaId];
+
+            return [$paisId, $provinciaId, $localidadId, $cp, null];
+        }
+
+        $candidatas = $this->localidadesDelPais[$pais.'|'.$planoLocalidad] ?? [];
+
+        if (count($candidatas) === 1) {
+            $this->contar('localidades sin provincia reconocidas');
+            [$localidadId, $provinciaId] = reset($candidatas);
+
+            return [$paisId, $provinciaId, $localidadId, $cp, null];
+        }
+
+        $this->contar('localidades sin provincia: quedan escritas en la ficha');
+
+        return [$paisId, null, null, $cp, "Localidad en el indice viejo: {$crudaLocalidad} (falta elegirla en Modificar)."];
+    }
+
+    /** El rubro, sin repetir uno que ya esta escrito de otra forma. "??" no es un rubro. */
+    private function rubro(?string $nombre): ?int
+    {
+        $plano = CatalogoViejo::plano((string) $nombre);
+
+        return $plano === '' ? null : $this->delCatalogo($this->rubros, $plano, 'rubros nuevos',
+            fn () => Rubro::create(['nombre' => $nombre, 'activo' => true])->id);
     }
 
     /**
@@ -580,7 +977,16 @@ class ImportarSistemaViejo extends Command
         $porCodigo = $aplicar ? Empresa::whereNotNull('codigo_indice')->pluck('id', 'codigo_indice') : collect();
         $porNombre = $aplicar ? Empresa::pluck('id', 'nombre') : collect();
         $monedas = $aplicar ? Moneda::pluck('id', 'nombre') : collect();
-        $unidades = $aplicar ? Unidad::pluck('id', 'codigo') : collect();
+        // Solo las vivas: C/U, M y TON se apagaron por repetidas y sus lineas
+        // pasaron a UN, MT y TN.
+        $unidades = $aplicar ? Unidad::where('activo', true)->pluck('id', 'codigo') : collect();
+
+        foreach (self::UNIDADES_REPETIDAS as $seFue => $queda) {
+            if (! isset($unidades[$seFue]) && isset($unidades[$queda])) {
+                $unidades[$seFue] = $unidades[$queda];
+            }
+        }
+
         $usuario = $aplicar ? User::orderBy('id')->first() : null;
 
         foreach ($this->leer("{$carpeta}/cotizaciones.csv") as $c) {
@@ -588,6 +994,20 @@ class ImportarSistemaViejo extends Command
             $fecha = CatalogoViejo::fecha($c['FECHA'] ?? null);
 
             if ($nombre === null) {
+                continue;
+            }
+
+            $codigo = trim((string) ($c['ID'] ?? '')) ?: null;
+
+            if ($codigo !== null && isset($this->conflictos[$codigo])) {
+                $this->contar('cotizaciones de esas fichas (no entran)');
+
+                continue;
+            }
+
+            [$huella] = $this->huella($c, $codigo, $fecha);
+
+            if ($this->sumar && ! $this->cotizacionNueva($c, $codigo, $fecha)) {
                 continue;
             }
 
@@ -612,6 +1032,13 @@ class ImportarSistemaViejo extends Command
             $this->contar('renglones sin precio guardados como nota', count($sueltos));
 
             if (! $aplicar) {
+                // El informe de la suma cuenta tambien las fichas que
+                // apareceran por una cotizacion de una letra que no vino.
+                if ($this->sumar && $codigo !== null && ! isset($this->yaEstaban[$codigo]) && ! isset($this->nuevas[$codigo])) {
+                    $this->nuevas[$codigo] = true;
+                    $this->contar('empresas creadas desde una cotizacion');
+                }
+
                 continue;
             }
 
@@ -621,7 +1048,6 @@ class ImportarSistemaViejo extends Command
               distintos. Antes se buscaba por nombre y los 66 nombres repetidos
               del indice colapsaban el historial en una sola ficha.
             */
-            $codigo = trim((string) ($c['ID'] ?? '')) ?: null;
             $empresaId = ($codigo !== null ? ($porCodigo[$codigo] ?? null) : null)
                 ?? ($porNombre[$nombre] ?? null);
 
@@ -634,6 +1060,11 @@ class ImportarSistemaViejo extends Command
                     'activa' => true,
                 ])->id;
                 $porNombre[$nombre] = $empresaId;
+
+                if ($codigo !== null) {
+                    $porCodigo[$codigo] = $empresaId;
+                }
+
                 $this->contar('empresas creadas desde una cotizacion');
             }
 
@@ -652,6 +1083,16 @@ class ImportarSistemaViejo extends Command
                 'moneda_id' => $monedas[$moneda] ?? null,
                 // El ID de la fila del Access: para poder volver al origen.
                 'id_sistema' => $codigo,
+                'origen_clave' => $huella,
+                /*
+                  Lo que salio, salio: sin esto la cotizacion historica queda
+                  como borrador editable y "Emitir" le daria un numero nuevo.
+                  Es lo que hicieron con las 8048 revisiones_de_la_cotizacion y
+                  hora_de_argentina. emitida_el es TIMESTAMP y no llega antes
+                  de 1970: la fecha imposible (1900-01-01) va al primer dia
+                  que entra.
+                */
+                'emitida_el' => $items === [] ? null : max($fecha ?? '1900-01-01', '1970-01-02'),
                 'tipo_cambio' => filled($c['DOLAR'] ?? null) && (float) $c['DOLAR'] > 0
                     ? (float) $c['DOLAR']
                     : null,
@@ -688,6 +1129,55 @@ class ImportarSistemaViejo extends Command
         }
     }
 
+    /**
+     * Si la cotizacion falta en el sistema.
+     *
+     * El Access no le da un numero propio a cada cotizacion: la reconoce
+     * quien, cuando y que se cotizo. Se compara con lo mismo que guardo la
+     * importacion —el ID de la empresa, la fecha como quedo guardada y los
+     * cinco renglones tal cual—, asi lo que ya entro se reconoce siempre.
+     *
+     * Si al Access le corrigieron el texto de una cotizacion vieja, ya no se
+     * reconoce y entraria otra vez: por eso el informe cuenta aparte las
+     * nuevas de empresas que ya estaban con fecha anterior a la ultima
+     * importada. Ese numero tiene que ser chico antes de aplicar.
+     */
+    private function cotizacionNueva(array $c, ?string $codigo, ?string $fecha): bool
+    {
+        [$clave, $guardada] = $this->huella($c, $codigo, $fecha);
+
+        if (isset($this->cotizacionesQueYaEstaban[$clave])) {
+            $this->contar('cotizaciones que ya estaban (o repetidas en el Access)');
+
+            return false;
+        }
+
+        $this->cotizacionesQueYaEstaban[$clave] = true;
+
+        if ($codigo !== null && isset($this->yaEstaban[$codigo])) {
+            $this->contar('cotizaciones nuevas de empresas que ya estaban');
+
+            if ($guardada <= $this->ultimaImportada) {
+                $this->contar('  de esas, con fecha anterior a la ultima importada (mirar)');
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * La huella de una fila del Access: empresa, fecha como se guarda y los
+     * cinco renglones. Es la misma la calcule quien la calcule.
+     *
+     * @return array{0: string, 1: string} huella, fecha guardada
+     */
+    private function huella(array $c, ?string $codigo, ?string $fecha): array
+    {
+        $guardada = ($fecha === null || CatalogoViejo::fechaDudosa($c['FECHA'] ?? null)) ? '1900-01-01' : $fecha;
+
+        return [md5($codigo.'|'.$guardada.'|'.md5((string) $this->textoOriginal($c))), $guardada];
+    }
+
     /** Los cinco renglones como los dejo el sistema anterior. */
     private function textoOriginal(array $c): ?string
     {
@@ -706,7 +1196,7 @@ class ImportarSistemaViejo extends Command
     /** @param list<string> $sueltos renglones sin precio: plazos, aclaraciones */
     private function notaHistorica(array $c, bool $monedaReconocida, array $sueltos = []): string
     {
-        $partes = ['Importada del sistema anterior.'];
+        $partes = [self::NOTA_IMPORTADA];
 
         // Lo que quedo despues del ultimo precio: plazo de entrega, condicion
         // de pago, aclaraciones. No son articulos pero tampoco se tiran.
@@ -739,24 +1229,35 @@ class ImportarSistemaViejo extends Command
         return implode("\n", $partes);
     }
 
-    /** @return array<int, array<string, string>> */
-    private function leer(string $ruta): array
+    /**
+     * Fila por fila, sin cargar el archivo entero: el indice completo son
+     * cientos de miles de cotizaciones.
+     *
+     * @return \Generator<int, array<string, string>>
+     */
+    private function leer(string $ruta): \Generator
     {
         $f = fopen($ruta, 'r');
         // Sin escape: el Access escribe las comillas duplicandolas, como manda
         // el formato. Los archivos no tienen una sola barra invertida.
         $cabecera = fgetcsv($f, 0, ',', '"', '');
-        $filas = [];
+        $malas = 0;
 
         while (($fila = fgetcsv($f, 0, ',', '"', '')) !== false) {
             if (count($fila) === count($cabecera)) {
-                $filas[] = array_combine($cabecera, $fila);
+                yield array_combine($cabecera, $fila);
+            } elseif ($fila !== [null]) {
+                $malas++;
             }
         }
 
         fclose($f);
 
-        return $filas;
+        // Que no se pierda callada. Se asigna y no se suma: la suma lee
+        // empresas.csv dos veces.
+        if ($malas > 0) {
+            $this->conteo['filas de '.basename($ruta).' que no se pudieron leer'] = $malas;
+        }
     }
 
     /**
@@ -776,8 +1277,19 @@ class ImportarSistemaViejo extends Command
         $this->table(['', 'filas'], collect($this->conteo)
             ->map(fn ($n, $q) => [$q, number_format($n, 0, ',', '.')])
             ->values()->all());
+
+        // Solo los ID, que no dicen nada de nadie: cada uno se busca en el
+        // sistema por "ID del indice" y se compara con el Access a mano.
+        if ($this->conflictos !== []) {
+            $ids = array_keys($this->conflictos);
+            $this->warn('Mismo ID y otro nombre: '.implode(', ', array_slice($ids, 0, 40))
+                .(count($ids) > 40 ? ' y '.(count($ids) - 40).' mas' : ''));
+        }
     }
 }
 
 /** Corta la transaccion del modo informe sin ensuciar la salida. */
 class SoloInforme extends \RuntimeException {}
+
+/** Los ID del Access nuevo no son los del que ya se importo: no se suma. */
+class IdsQueNoCoinciden extends \RuntimeException {}

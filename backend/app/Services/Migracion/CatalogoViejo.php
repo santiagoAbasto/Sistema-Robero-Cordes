@@ -70,6 +70,15 @@ class CatalogoViejo
     }
 
     /**
+     * El nombre sin lo que no lo distingue: "Ferrum S.A." y "FERRUM SA" son
+     * la misma ficha. Solo sirve para comparar, nunca para guardar.
+     */
+    public static function plano(string $nombre): string
+    {
+        return preg_replace('/[^A-Z0-9]+/', '', mb_strtoupper(\Illuminate\Support\Str::ascii($nombre)));
+    }
+
+    /**
      * El telefono, si es un telefono.
      *
      * En el Access TELEF1..5 eran Text(12) con mascara "NN-NNNN-NNNN", asi que

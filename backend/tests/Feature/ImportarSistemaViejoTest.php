@@ -11,11 +11,15 @@ use App\Models\Forma;
 use App\Models\Localidad;
 use App\Models\Material;
 use App\Models\MaterialAlias;
+use App\Models\Pais;
+use App\Models\Provincia;
 use App\Models\Unidad;
 use App\Models\User;
+use App\Services\Migracion\OriginalesDelAccess;
 use Database\Seeders\CalculadoraSeeder;
 use Database\Seeders\CatalogosSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -350,9 +354,13 @@ class ImportarSistemaViejoTest extends TestCase
 
         $ficha = Empresa::where('direccion', 'Ruta 8 Km 5')->first();
 
-        $this->assertSame('SANTIAGO', $ficha->localidad->nombre);
+        // En Chile no hay ninguna SANTIAGO cargada: no se adivina, queda
+        // escrita en la ficha. Ya no se cuelga de "Sin determinar", que la
+        // limpieza del 26-09 borro por no ser una provincia.
+        $this->assertNull($ficha->localidad_id);
         $this->assertNull($ficha->provincia_id, 'no se le inventa una provincia a la ficha');
-        $this->assertSame('Sin determinar', $ficha->localidad->provincia->nombre);
+        $this->assertStringContainsString('Localidad en el indice viejo: SANTIAGO', $ficha->observacion_general);
+        $this->assertSame(0, Provincia::where('nombre', 'Sin determinar')->count());
     }
 
     /**
@@ -516,5 +524,268 @@ class ImportarSistemaViejoTest extends TestCase
         $ficha = Empresa::where('direccion', 'Ruta 8 Km 5')->first();
 
         $this->assertSame('Sin contacto', Contacto::where('empresa_id', $ficha->id)->value('nombre'));
+    }
+
+    // ------------------------------------------------------------ la suma (--sumar)
+
+    private function sumar(string $carpeta, bool $aplicar = true)
+    {
+        return $this->artisan('importar:sistema-viejo', array_filter([
+            '--carpeta' => base_path("tests/Fixtures/{$carpeta}"),
+            '--sumar' => true,
+            '--aplicar' => $aplicar,
+        ]));
+    }
+
+    /** @return list<int> */
+    private function conteos(): array
+    {
+        return [Empresa::count(), Contacto::count(), ContactoMedio::count(), Consulta::count(), ConsultaLinea::count()];
+    }
+
+    /** Lo importado ya, mas una ficha y una cotizacion cargadas en el sistema nuevo. */
+    private function sistemaEnUso(): Consulta
+    {
+        $this->seedCatalogos();
+        $usuario = User::factory()->create();
+        $this->importar()->assertSuccessful();
+
+        $suya = Empresa::create(['nombre' => 'TALLERES SUR SA', 'activa' => true]);
+
+        return Consulta::create([
+            'empresa_id' => $suya->id,
+            'tipo' => 'Cotizacion',
+            'fecha' => '2026-10-26',
+            'estado' => 'Sin cotizar',
+            'usuario_id' => $usuario->id,
+            'texto' => 'Cargada en el sistema nuevo',
+            'validez_dias' => 0,
+        ]);
+    }
+
+    /** Correr la suma con lo mismo que ya entro no cambia nada: ni borra ni duplica. */
+    public function test_sumar_lo_mismo_no_cambia_nada(): void
+    {
+        $suya = $this->sistemaEnUso();
+        $antes = $this->conteos();
+
+        $this->sumar('migracion')->assertSuccessful();
+
+        $this->assertSame($antes, $this->conteos());
+        $this->assertNotNull($suya->fresh(), 'lo cargado en el sistema nuevo sigue');
+    }
+
+    public function test_sumar_agrega_solo_lo_que_falta(): void
+    {
+        $suya = $this->sistemaEnUso();
+        [$empresas, , , $cotizaciones] = $this->conteos();
+
+        $this->sumar('migracion-completa')->assertSuccessful();
+
+        // Entran ACME (104), Metales del Sur (106), Torneria Norte (107) y la
+        // que solo aparece en una cotizacion (777). La fila repetida del 104
+        // no, y Talleres Sur ya estaba: la cargaron ellos.
+        $this->assertSame($empresas + 4, Empresa::count());
+        $this->assertSame(1, Empresa::where('codigo_indice', '104')->count());
+        $this->assertSame('ACME METALES S.R.L.', Empresa::where('codigo_indice', '104')->value('nombre'));
+        $this->assertNotNull(Empresa::where('codigo_indice', '777')->first());
+
+        // Seis nuevas: la de octubre de Ferrum, la de ACME, la de Talleres Sur,
+        // la de la 777 y las dos de Metales del Sur. Las cinco que ya
+        // estaban, no.
+        $this->assertSame($cotizaciones + 6, Consulta::count());
+        $this->assertSame(1, Consulta::where('texto', 'like', 'BARRA INOX 304%')->count());
+    }
+
+    /** La ficha que crearon a mano se queda con el ID del indice, y no hay dos. */
+    public function test_sumar_reconoce_la_ficha_cargada_en_el_sistema_nuevo(): void
+    {
+        $suya = $this->sistemaEnUso();
+
+        $this->sumar('migracion-completa')->assertSuccessful();
+
+        $ficha = $suya->empresa->fresh();
+
+        $this->assertSame('105', $ficha->codigo_indice);
+        $this->assertSame('TALLERES SUR SA', $ficha->nombre, 'el nombre que pusieron ellos no se pisa');
+        $this->assertSame(1, Empresa::where('nombre', 'like', 'Talleres Sur%')->orWhere('nombre', 'TALLERES SUR SA')->count());
+        $this->assertSame(2, $ficha->consultas()->count(), 'la suya y la del Access, en la misma ficha');
+    }
+
+    public function test_sumar_dos_veces_no_duplica(): void
+    {
+        $this->sistemaEnUso();
+
+        $this->sumar('migracion-completa')->assertSuccessful();
+        $despues = $this->conteos();
+
+        $this->sumar('migracion-completa')->assertSuccessful();
+
+        $this->assertSame($despues, $this->conteos());
+    }
+
+    public function test_sumar_en_modo_informe_no_escribe_nada(): void
+    {
+        $this->sistemaEnUso();
+        $antes = $this->conteos();
+
+        $this->sumar('migracion-completa', aplicar: false)
+            ->expectsOutputToContain('empresas nuevas')
+            ->assertSuccessful();
+
+        $this->assertSame($antes, $this->conteos());
+        $this->assertNull(Empresa::where('nombre', 'TALLERES SUR SA')->value('codigo_indice'));
+    }
+
+    /**
+     * Si el Access nuevo se renumero, no se suma nada.
+     *
+     * El ID es por donde se reconoce todo. Si en el nuevo el 101 ya no es
+     * Ferrum, sumar colgaria las cotizaciones de una empresa en otra.
+     */
+    public function test_sumar_no_corre_si_el_access_se_renumero(): void
+    {
+        $this->sistemaEnUso();
+        $antes = $this->conteos();
+
+        $this->sumar('migracion-renumerada')->assertFailed();
+
+        $this->assertSame($antes, $this->conteos());
+    }
+
+    /**
+     * El indice completo entra con los catalogos como los dejo la limpieza.
+     *
+     * Sin esto volvian Buenos Aires escrita de otra forma, el codigo postal
+     * en el pais, el rubro "??" y la unidad C/U que se apago por repetida.
+     */
+    public function test_sumar_entra_con_los_catalogos_limpios(): void
+    {
+        $this->sistemaEnUso();
+        Unidad::where('codigo', 'C/U')->update(['activo' => false]);
+        $ferrum = Empresa::where('codigo_indice', '101')->first();
+
+        $this->sumar('migracion-completa')->assertSuccessful();
+
+        $metales = Empresa::where('codigo_indice', '106')->first();
+        $this->assertSame($ferrum->provincia_id, $metales->provincia_id, '"BS. AS." es la Buenos Aires que ya estaba');
+        $this->assertNull($metales->rubro_id, '"??" no es un rubro');
+
+        $torneria = Empresa::where('codigo_indice', '107')->first();
+        $this->assertSame('B1646GEL', $torneria->codigo_postal);
+        $this->assertSame('Argentina', $torneria->pais->nombre);
+        $this->assertSame($ferrum->localidad_id, $torneria->localidad_id, 'la unica AVELLANEDA del pais');
+        $this->assertSame($ferrum->provincia_id, $torneria->provincia_id);
+        $this->assertSame($ferrum->rubro_id, $torneria->rubro_id, '"sanitarios" es SANITARIOS');
+
+        $this->assertSame(0, Pais::where('nombre', 'like', 'B1646%')->count());
+        $this->assertSame(0, Provincia::where('nombre', 'Sin determinar')->count());
+
+        $linea = ConsultaLinea::where('descripcion', 'like', '%BRIDA SO%')->first();
+        $this->assertSame(Unidad::where('codigo', 'UN')->value('id'), $linea->unidad_venta_id);
+    }
+
+    /** Lo historico ya salio: no queda como borrador para editar y numerar. */
+    public function test_sumar_trae_las_cotizaciones_ya_emitidas(): void
+    {
+        $this->sistemaEnUso();
+
+        $this->sumar('migracion-completa')->assertSuccessful();
+
+        $cotizacion = Consulta::where('texto', 'like', 'BARRA INOX 304%')->first();
+        $this->assertTrue($cotizacion->estaEmitida());
+        $this->assertSame('2026-10-15', substr((string) $cotizacion->emitida_el, 0, 10));
+        $this->assertNotNull($cotizacion->origen_clave);
+
+        $observacion = Consulta::where('texto', 'INTERESADOS EN BRIDAS')->first();
+        $this->assertNull($observacion->emitida_el);
+    }
+
+    /**
+     * Una cotizacion corregida en el sistema nuevo no vuelve a entrar.
+     *
+     * Se la reconoce por la fila del Access, que no cambia, y no por como esta
+     * hoy: la propia importacion pide corregir a mano las fechas imposibles.
+     */
+    public function test_sumar_no_vuelve_a_traer_lo_que_corrigieron(): void
+    {
+        $this->sistemaEnUso();
+        $this->guardarOriginales('migracion');
+        // Como en el servidor: las 8048 entraron antes de que existiera la huella.
+        Consulta::query()->update(['origen_clave' => null]);
+
+        Consulta::where('texto', 'CHAPA 3MM   77')->update(['fecha' => '2024-01-10']);
+        Consulta::where('texto', 'like', 'FLETE AEREO%')->update(['nota' => DB::raw("CONCAT('Cliente pide recotizar. ', nota)")]);
+        $antes = $this->conteos();
+
+        $this->sumar('migracion')->assertSuccessful();
+        $this->assertSame($antes, $this->conteos());
+
+        // Y lo que entra con --sumar, aunque lo corrijan, tampoco.
+        $this->sumar('migracion-completa')->assertSuccessful();
+        Consulta::where('texto', 'like', 'BARRA INOX 304%')->update(['texto' => 'BARRA INOX 304 1 PULG (corregida)', 'fecha' => '2026-10-16']);
+        $despues = $this->conteos();
+
+        $this->sumar('migracion-completa')->assertSuccessful();
+        $this->assertSame($despues, $this->conteos());
+    }
+
+    /**
+     * Mismo ID, otra empresa: no se le cuelga a una ficha el historial de otra.
+     *
+     * Pasa si alguien tipeo mal el "ID del indice" de una ficha, o si el
+     * Access reuso un numero. Por debajo del umbral de renumeracion no frena
+     * todo: saltea esa ficha y sus cotizaciones, y lista el ID.
+     */
+    public function test_mismo_id_con_otro_nombre_no_se_mezcla(): void
+    {
+        $this->sistemaEnUso();
+
+        foreach (range(301, 306) as $id) {
+            Empresa::create(['nombre' => "CLIENTE {$id}", 'codigo_indice' => (string) $id, 'activa' => true]);
+        }
+
+        $ypf = Empresa::where('codigo_indice', '999')->first();
+        $suyas = $ypf->consultas()->count();
+
+        $carpeta = sys_get_temp_dir().'/indice-'.uniqid();
+        mkdir($carpeta);
+        $cabecera = 'EMPRESA,RESPONS,DIRECCION,LOCALIDAD,CODPOSTAL,PROVINCIA,PAIS,TELEF1,TELEF2,TELEF3,TELEF4,TELEF5,FAX,TELEX,TELEDISC,OBSERV,HORARIOS,RUBRO,RELAC,ID';
+        $filas = ['FERRUM S.A.,,,,,,,,,,,,,,,,,,,101', 'FEDERAL EXPRESS,,,,,,,,,,,,,,,,,,,102', 'FEDERAL EXPRESS,,,,,,,,,,,,,,,,,,,103'];
+
+        foreach (range(301, 306) as $id) {
+            $filas[] = "CLIENTE {$id},,,,,,,,,,,,,,,,,,,{$id}";
+        }
+
+        $filas[] = 'ABRASIVOS DEL PLATA,,,,,,,,,,,,,,,,,,,999';
+        file_put_contents("{$carpeta}/empresas.csv", $cabecera."\n".implode("\n", $filas)."\n");
+        file_put_contents("{$carpeta}/cotizaciones.csv",
+            "EMPRESA,CRESP,DOLAR,PE1,PE2,PE3,PE4,PE5,PR1,PR2,PR3,PR4,PR5,MON,FECHA,NOTA,NROFACT,ID\n"
+            ."ABRASIVOS DEL PLATA,,0,DISCO DE CORTE,,,,,10,0,0,0,0,PESOS,09/01/26,,0,999\n");
+
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true, '--aplicar' => true])
+            ->expectsOutputToContain('Mismo ID y otro nombre: 999')
+            ->assertSuccessful();
+
+        $this->assertSame($suyas, $ypf->consultas()->count(), 'el disco de corte no va a la ficha de YPF');
+        $this->assertSame(0, Consulta::where('texto', 'like', 'DISCO DE CORTE%')->count());
+        $this->assertSame(1, Empresa::where('codigo_indice', '999')->count());
+
+        array_map('unlink', glob("{$carpeta}/*"));
+        rmdir($carpeta);
+    }
+
+    /** Las filas del Access tal cual, en la base: como quedaron en el servidor. */
+    private function guardarOriginales(string $carpeta): void
+    {
+        foreach (['empresas.csv', 'cotizaciones.csv'] as $archivo) {
+            foreach (OriginalesDelAccess::delArchivo(base_path("tests/Fixtures/{$carpeta}/{$archivo}")) as $i => $fila) {
+                DB::table('migracion_originales')->insert([
+                    'archivo' => $archivo,
+                    'fila' => $i,
+                    'datos' => json_encode($fila, JSON_UNESCAPED_UNICODE),
+                ]);
+            }
+        }
     }
 }

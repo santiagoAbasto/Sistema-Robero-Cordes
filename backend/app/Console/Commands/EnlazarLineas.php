@@ -83,6 +83,9 @@ class EnlazarLineas extends Command
           completa solo si esta vacio: lo puesto a mano nunca se pisa.
         */
         ConsultaLinea::query()
+            // Solo las historicas. Una linea cargada en el sistema nuevo sin
+            // material lo dejo asi una persona: no se le deduce nada.
+            ->whereIn('consulta_id', DB::table('consultas')->where('nota', 'like', 'Importada del sistema anterior.%')->select('id'))
             ->select(['id', 'descripcion', 'material_id', 'forma_id',
                 'diametro_mm', 'espesor_mm', 'ancho_mm', 'largo_mm'])
             ->chunkById(500, function ($lineas) use (

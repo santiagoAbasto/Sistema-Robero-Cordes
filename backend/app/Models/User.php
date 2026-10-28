@@ -26,6 +26,22 @@ class User extends Authenticatable
     protected $appends = ['initials'];
 
     /**
+     * Con clave nueva, se cierran las sesiones que tenia abiertas.
+     *
+     * El token del navegador no vence solo: sin esto, el que quedo logueado con
+     * la clave vieja seguia entrando como si nada. (Al dado de baja ya lo
+     * frena AppServiceProvider.)
+     */
+    protected static function booted(): void
+    {
+        static::updated(function (User $usuario) {
+            if ($usuario->wasChanged('password')) {
+                $usuario->tokens()->delete();
+            }
+        });
+    }
+
+    /**
      * Initials derived from the user's name, e.g. "Juan Roberti" -> "JR".
      */
     public function getInitialsAttribute(): string
