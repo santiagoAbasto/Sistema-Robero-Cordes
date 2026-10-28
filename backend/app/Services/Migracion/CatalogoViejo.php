@@ -87,14 +87,20 @@ class CatalogoViejo
      * sistema viejo usaba como Ø. En el informe del 28-10 eran 2.412
      * cotizaciones de septiembre que no se reconocian por eso.
      *
-     * Solo se traduce el texto que muestra la marca: un caracter que el texto
-     * de verdad no tiene, o una "í" en un texto sin minusculas. Lo que ya esta
-     * bien escrito —corregido a mano en Windows— queda como esta.
+     * Sin $siempre solo se traduce el texto que muestra la marca: un caracter
+     * que el texto de verdad no tiene, o una "í" en un texto sin minusculas.
+     * Lo que ya esta bien escrito —corregido a mano en Windows— queda como
+     * esta. Con $siempre se traduce todo: es para la tabla que salio entera de
+     * la misma conversion, donde una "ú" suelta tambien era el "·" de DOS.
      */
-    public static function desdeDos(string $texto): string
+    public static function desdeDos(string $texto, bool $siempre = false): string
     {
-        if (! preg_match('/[\x{80}-\x{9F}\x{A0}-\x{A7}\x{AB}\x{AC}\x{B5}\x{D6}\x{E0}\x{F8}\x{2013}-\x{2122}]/u', $texto)
+        if (! $siempre && ! preg_match('/[\x{80}-\x{9F}\x{A0}-\x{A7}\x{AB}\x{AC}\x{B5}\x{D6}\x{E0}\x{F8}\x{2013}-\x{2122}]/u', $texto)
             && ! (str_contains($texto, 'í') && ! preg_match('/[a-z]/', $texto))) {
+            return $texto;
+        }
+
+        if (! preg_match('/[^\x00-\x7F]/', $texto)) {
             return $texto;
         }
 

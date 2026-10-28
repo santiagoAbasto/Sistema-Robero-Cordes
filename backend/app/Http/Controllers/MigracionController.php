@@ -143,8 +143,66 @@ class MigracionController extends Controller
             'cotizaciones' => 'cotizaciones.csv',
         };
 
+        $pagina = max(1, (int) ($datos['pagina'] ?? 1));
+        $porPagina = 20;
+        $buscar = trim($datos['buscar'] ?? '');
+
         /*
-          Se filtra y se pagina sobre el archivo, y recien despues se va a
+          En el servidor el "antes" esta en la base, y con el indice completo
+          son 165.000 filas: se filtran y se paginan alla, y se decodifican
+          solo las veinte de la pantalla. Leerlas todas en memoria, como con
+          las 8.048 de septiembre, ya no entra.
+        */
+        if (! is_file(OriginalesDelAccess::carpeta().'/'.$archivo)) {
+            $consulta = DB::table('migracion_originales')->where('archivo', $archivo);
+
+            if ($datos['que'] === 'cotizaciones' && ! empty($datos['cotizacion'])) {
+                $cual = Consulta::withTrashed()->find((int) $datos['cotizacion']);
+
+                // Las que se sumaron del indice completo se encuentran por su
+                // huella; las de septiembre, por su lugar en la lista.
+                if ($cual?->origen_clave) {
+                    $consulta->where('clave', $cual->origen_clave);
+                } else {
+                    $pos = $cual ? $this->deSeptiembre()->search($cual->id) : false;
+                    $consulta->whereNull('clave')->where('fila', $pos === false ? -1 : $pos);
+                }
+            }
+
+            if ($buscar !== '') {
+                // Tambien con el Ø puesto: nadie va a buscar escribiendo "Ý".
+                // MySQL pasa a minusculas los acentos y SQLite solo la a-z: van las dos.
+                $formas = collect([$buscar, str_replace('Ø', 'Ý', $buscar)])
+                    ->flatMap(fn ($b) => DB::getDriverName() === 'sqlite' ? [mb_strtolower($b), strtolower($b)] : [mb_strtolower($b)])
+                    ->unique();
+
+                $consulta->where(function ($q) use ($formas) {
+                    foreach ($formas as $forma) {
+                        $q->orWhereRaw('LOWER(datos) LIKE ?', ['%'.$forma.'%']);
+                    }
+                });
+            }
+
+            $total = (clone $consulta)->count();
+            $enPantalla = $consulta->orderBy('fila')->forPage($pagina, $porPagina)->get(['fila', 'clave', 'datos'])
+                ->map(fn ($f) => ['i' => (int) $f->fila, 'clave' => $f->clave, 'fila' => json_decode($f->datos, true) ?: []])
+                ->all();
+
+            return [
+                'total' => $total,
+                'pagina' => $pagina,
+                'paginas' => max(1, (int) ceil($total / $porPagina)),
+                'filas' => match ($datos['que']) {
+                    'materiales' => $this->compararMateriales($enPantalla),
+                    'empresas' => $this->compararEmpresas($enPantalla),
+                    'cotizaciones' => $this->compararCotizaciones($enPantalla),
+                },
+            ];
+        }
+
+        /*
+          En la maquina donde se importo, del archivo. Se filtra y se pagina
+          sobre el archivo, y recien despues se va a
           buscar a la base las veinte fichas de la pantalla. Armar las 8048
           comparaciones enteras para mostrar veinte se comia la memoria.
 
@@ -176,8 +234,6 @@ class MigracionController extends Controller
                 : array_values(array_filter($filas, fn (array $f) => $f['i'] === $pos));
         }
 
-        $buscar = trim($datos['buscar'] ?? '');
-
         if ($buscar !== '') {
             $filas = array_values(array_filter($filas, function (array $f) use ($buscar) {
                 $texto = implode(' ', $f['fila']);
@@ -187,8 +243,6 @@ class MigracionController extends Controller
             }));
         }
 
-        $pagina = max(1, (int) ($datos['pagina'] ?? 1));
-        $porPagina = 20;
         $enPantalla = array_slice($filas, ($pagina - 1) * $porPagina, $porPagina);
 
         return [
@@ -360,15 +414,22 @@ class MigracionController extends Controller
         // La lista de ids ordenada es liviana; las fichas se traen solo para
         // las veinte posiciones que se estan mirando. withTrashed para que la
         // posicion sea siempre la misma, haya o no borradores en la papelera.
-        $ids = Consulta::withTrashed()->orderBy('id')->pluck('id');
+        $ids = $this->deSeptiembre();
+
+        // Las sumadas del indice completo traen la huella de su cotizacion.
+        $porClave = Consulta::withTrashed()
+            ->whereIn('origen_clave', array_filter(array_map(fn ($f) => $f['clave'] ?? null, $enPantalla)))
+            ->pluck('id', 'origen_clave');
+
+        $idDe = fn (array $f) => ! empty($f['clave']) ? ($porClave[$f['clave']] ?? null) : $ids->get($f['i']);
 
         $enBase = Consulta::withTrashed()->with(['lineas.material', 'lineas.forma', 'empresa'])
-            ->whereIn('id', array_filter(array_map(fn ($f) => $ids->get($f['i']), $enPantalla)))
+            ->whereIn('id', array_filter(array_map($idDe, $enPantalla)))
             ->get()->keyBy('id');
 
-        return array_map(function (array $f) use ($ids, $enBase) {
+        return array_map(function (array $f) use ($idDe, $enBase) {
             $c = $f['fila'];
-            $consulta = $enBase->get($ids->get($f['i']));
+            $consulta = $enBase->get($idDe($f));
 
             $renglones = [];
 
@@ -439,6 +500,23 @@ class MigracionController extends Controller
                 ],
             ];
         }, $enPantalla);
+    }
+
+    /**
+     * Las cotizaciones de septiembre, en orden: la fila N del archivo es la N-esima.
+     *
+     * Solo hacen falta las primeras —tantas como filas de septiembre sin
+     * huella—: traer los ids de todas las cotizaciones del indice completo
+     * para emparejar veinte tardaba segundos.
+     */
+    private function deSeptiembre(): \Illuminate\Support\Collection
+    {
+        $cuantas = DB::table('migracion_originales')->where('archivo', 'cotizaciones.csv')->whereNull('clave')->count();
+
+        // Sin filas en la base (la maquina con los CSV), todas, como antes.
+        $ids = Consulta::withTrashed()->orderBy('id');
+
+        return ($cuantas > 0 ? $ids->limit($cuantas) : $ids)->pluck('id');
     }
 
     /**

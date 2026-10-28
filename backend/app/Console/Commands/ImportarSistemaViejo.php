@@ -148,6 +148,12 @@ class ImportarSistemaViejo extends Command
 
     private bool $desdeDos = false;
 
+    /** @var array<string, int> archivo => numero de la proxima fila original */
+    private array $proximaFila = [];
+
+    /** @var list<array<string, mixed>> filas originales esperando el insert */
+    private array $originalesNuevos = [];
+
     /** @var array<string, list<string>> ID|fecha => los renglones de septiembre de esa empresa ese dia */
     private array $deSeptiembre = [];
 
@@ -219,7 +225,7 @@ class ImportarSistemaViejo extends Command
         $this->conteo = $this->yaEstaban = $this->nuevas = $this->sinCodigo = $this->conflictos = [];
         $this->nombresDelArchivo = $this->nombresQueYaEstaban = $this->cotizacionesQueYaEstaban = [];
         $this->paises = $this->provincias = $this->localidades = $this->localidadesDelPais = $this->rubros = $this->sinReconocer = [];
-        $this->deSeptiembre = $this->caracteresDistintos = [];
+        $this->deSeptiembre = $this->caracteresDistintos = $this->proximaFila = $this->originalesNuevos = [];
         $this->ultimaImportada = '1900-01-01';
 
         $archivos = $this->sumar
@@ -596,9 +602,13 @@ class ImportarSistemaViejo extends Command
         */
         $originales = OriginalesDelAccess::deLaBase('cotizaciones.csv');
 
+        foreach (['empresas.csv', 'cotizaciones.csv'] as $archivo) {
+            $this->proximaFila[$archivo] = (int) DB::table('migracion_originales')->where('archivo', $archivo)->max('fila') + 1;
+        }
+
         // Si dice 0, no estan las filas de septiembre en la base: se reconoce
         // solo por como estan hoy las cotizaciones, y lo corregido entra de nuevo.
-        $this->conteo['cotizaciones de septiembre guardadas en la base (para reconocerlas)'] = count($originales);
+        $this->conteo['cotizaciones del Access guardadas en la base (para reconocer lo que ya entro)'] = count($originales);
 
         foreach ($originales as $fila) {
             $codigo = trim((string) ($fila['ID'] ?? '')) ?: null;
@@ -708,6 +718,7 @@ class ImportarSistemaViejo extends Command
         if ($suya !== null && ($this->nombresDelArchivo[$plano] ?? 0) === 1) {
             if ($aplicar && $codigo !== null) {
                 Empresa::find($suya)->update(['codigo_indice' => $codigo]);
+                $this->guardarOriginal('empresas.csv', $e);
             }
 
             unset($this->sinCodigo[$plano]);
@@ -809,6 +820,39 @@ class ImportarSistemaViejo extends Command
             }
 
             $this->contactoYTelefonos($empresa, $e, $tipoTelefono, $tipoFax);
+            $this->guardarOriginal('empresas.csv', $e);
+        }
+
+        $this->guardarOriginal(null);
+    }
+
+    /**
+     * La fila del Access que dio una ficha o una cotizacion, para "Antes y ahora".
+     *
+     * Las de septiembre las guardo migracion:guardar-originales. Las que entran
+     * con --sumar se guardan aca, tal como se leyeron, con la huella de la
+     * cotizacion para que la pantalla la encuentre sin depender del orden.
+     * Sin archivo, guarda lo que quedo pendiente.
+     */
+    private function guardarOriginal(?string $archivo, array $fila = [], ?string $clave = null): void
+    {
+        if (! $this->sumar || ! $this->aplicar) {
+            return;
+        }
+
+        if ($archivo !== null) {
+            $this->originalesNuevos[] = [
+                'archivo' => $archivo,
+                'fila' => $this->proximaFila[$archivo]++,
+                'clave' => $clave,
+                'datos' => json_encode($fila, JSON_UNESCAPED_UNICODE),
+            ];
+        }
+
+        // De a tandas: un insert con miles de filas se pasa del tamaño de consulta.
+        if ($this->originalesNuevos !== [] && ($archivo === null || count($this->originalesNuevos) >= 400)) {
+            DB::table('migracion_originales')->insert($this->originalesNuevos);
+            $this->originalesNuevos = [];
         }
     }
 
@@ -1361,6 +1405,8 @@ class ImportarSistemaViejo extends Command
                 'validez_dias' => 0,
             ]);
 
+            $this->guardarOriginal('cotizaciones.csv', $c, $huella);
+
             foreach ($items as $orden => $item) {
                 ConsultaLinea::create([
                     'consulta_id' => $consulta->id,
@@ -1383,6 +1429,8 @@ class ImportarSistemaViejo extends Command
                 }
             }
         }
+
+        $this->guardarOriginal(null);
     }
 
     /**
@@ -1542,9 +1590,17 @@ class ImportarSistemaViejo extends Command
         $cabecera = fgetcsv($f, 0, ',', '"', '');
         $malas = 0;
 
+        /*
+          Las cotizaciones del indice completo salieron enteras de la misma
+          conversion de DOS: se traducen todas. En las empresas hay paises ya
+          corregidos a mano ("ESPAÑA"): ahi solo lo que muestra la marca.
+        */
+        $siempre = basename($ruta) === 'cotizaciones.csv';
+        $traducir = fn (string $v) => CatalogoViejo::desdeDos($v, $siempre);
+
         while (($fila = fgetcsv($f, 0, ',', '"', '')) !== false) {
             if (count($fila) === count($cabecera)) {
-                yield array_combine($cabecera, $this->desdeDos ? array_map(CatalogoViejo::desdeDos(...), $fila) : $fila);
+                yield array_combine($cabecera, $this->desdeDos ? array_map($traducir, $fila) : $fila);
             } elseif ($fila !== [null]) {
                 $malas++;
             }
