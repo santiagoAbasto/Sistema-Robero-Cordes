@@ -167,6 +167,13 @@ class ImportarSistemaViejo extends Command
     private array $conflictos = [];
 
     /**
+     * ID que en septiembre llego solo en una cotizacion de otra empresa.
+     *
+     * @var array<string, array{0: string, 1: int, 2?: int}> ID => [nombre plano de esa ficha, su id, id de la empresa del Access]
+     */
+    private array $compartidos = [];
+
+    /**
      * Los catalogos por nombre plano: pais, pais|provincia,
      * pais|provincia|localidad y rubro. En el informe, lo que se crearia
      * queda con id null.
@@ -222,7 +229,7 @@ class ImportarSistemaViejo extends Command
         // proceso: sin esto, la segunda corrida arrastra lo que conto la primera.
         $this->aplicar = $aplicar;
         $this->desdeDos = (bool) $this->option('desde-dos');
-        $this->conteo = $this->yaEstaban = $this->nuevas = $this->sinCodigo = $this->conflictos = [];
+        $this->conteo = $this->yaEstaban = $this->nuevas = $this->sinCodigo = $this->conflictos = $this->compartidos = [];
         $this->nombresDelArchivo = $this->nombresQueYaEstaban = $this->cotizacionesQueYaEstaban = [];
         $this->paises = $this->provincias = $this->localidades = $this->localidadesDelPais = $this->rubros = $this->sinReconocer = [];
         $this->deSeptiembre = $this->caracteresDistintos = $this->proximaFila = $this->originalesNuevos = [];
@@ -576,8 +583,11 @@ class ImportarSistemaViejo extends Command
             }
         }
 
-        foreach (Empresa::whereNotNull('codigo_indice')->pluck('nombre', 'codigo_indice') as $codigo => $nombre) {
-            $this->yaEstaban[(string) $codigo] = $comoVino[(string) $codigo] ?? CatalogoViejo::plano($nombre);
+        $fichaDe = [];
+
+        foreach (Empresa::whereNotNull('codigo_indice')->get(['id', 'nombre', 'codigo_indice']) as $ficha) {
+            $this->yaEstaban[(string) $ficha->codigo_indice] = $comoVino[(string) $ficha->codigo_indice] ?? CatalogoViejo::plano($ficha->nombre);
+            $fichaDe[(string) $ficha->codigo_indice] = $ficha;
         }
 
         foreach (Empresa::pluck('nombre') as $nombre) {
@@ -658,6 +668,18 @@ class ImportarSistemaViejo extends Command
             if (isset($this->yaEstaban[$codigo])) {
                 if ($this->yaEstaban[$codigo] === $plano) {
                     $iguales++;
+                } elseif ($comoVino !== [] && ! isset($comoVino[$codigo])) {
+                    /*
+                      La ficha no vino del indice de septiembre: se creo de una
+                      cotizacion que en el sistema viejo tenia cargado este ID,
+                      y el ID es de la empresa del Access (una cotizacion de
+                      la empresa A cargada con el ID de la empresa B). La del
+                      Access entra como nueva, y cada cotizacion va a la que
+                      nombra.
+                    */
+                    $this->compartidos[$codigo] = [$this->yaEstaban[$codigo], $fichaDe[$codigo]->id];
+                    unset($this->yaEstaban[$codigo]);
+                    $this->contar('IDs que el sistema viejo uso tambien para otra empresa: se separan por el nombre');
                 } else {
                     $distintas++;
                     $this->conflictos[$codigo] = true;
@@ -821,6 +843,10 @@ class ImportarSistemaViejo extends Command
 
             $this->contactoYTelefonos($empresa, $e, $tipoTelefono, $tipoFax);
             $this->guardarOriginal('empresas.csv', $e);
+
+            if (isset($this->compartidos[$empresa->codigo_indice])) {
+                $this->compartidos[$empresa->codigo_indice][2] = $empresa->id;
+            }
         }
 
         $this->guardarOriginal(null);
@@ -1286,12 +1312,29 @@ class ImportarSistemaViejo extends Command
         foreach ($this->leer("{$carpeta}/cotizaciones.csv") as $c) {
             $nombre = CatalogoViejo::texto($c['EMPRESA'] ?? null);
             $fecha = CatalogoViejo::fecha($c['FECHA'] ?? null);
+            $codigo = trim((string) ($c['ID'] ?? '')) ?: null;
 
             if ($nombre === null) {
-                continue;
-            }
+                /*
+                  Sin nombre: la que no trae nada es un resto de la conversion a
+                  Access (en el indice completo, 4.337). La que trae texto o
+                  precio y el ID de su empresa se cuelga por el ID.
+                */
+                if ($codigo === null || ($this->textoOriginal($c) === null && blank($c['NOTA'] ?? null))) {
+                    $this->contar('filas vacias del Access (no entran)');
 
-            $codigo = trim((string) ($c['ID'] ?? '')) ?: null;
+                    continue;
+                }
+
+                if (! isset($this->yaEstaban[$codigo]) && ! isset($this->nuevas[$codigo]) && ! isset($this->compartidos[$codigo])
+                    && ! ($aplicar && isset($porCodigo[$codigo]))) {
+                    $this->contar('sin nombre y con un ID que no esta (no entran)');
+
+                    continue;
+                }
+
+                $this->contar('sin nombre de empresa: se cuelgan por el ID');
+            }
 
             if ($codigo !== null && isset($this->conflictos[$codigo])) {
                 $this->contar('cotizaciones de esas fichas (no entran)');
@@ -1350,6 +1393,20 @@ class ImportarSistemaViejo extends Command
             */
             $empresaId = ($codigo !== null ? ($porCodigo[$codigo] ?? null) : null)
                 ?? ($porNombre[$nombre] ?? null);
+
+            // El ID que el sistema viejo uso para dos empresas: va a la que nombra.
+            if ($codigo !== null && isset($this->compartidos[$codigo])) {
+                [$suNombre, $suFicha] = $this->compartidos[$codigo];
+                $empresaId = $nombre !== null && CatalogoViejo::plano($nombre) === $suNombre
+                    ? $suFicha
+                    : ($this->compartidos[$codigo][2] ?? $empresaId);
+            }
+
+            if ($empresaId === null && $nombre === null) {
+                $this->contar('sin nombre y con un ID que no esta (no entran)');
+
+                continue;
+            }
 
             if ($empresaId === null) {
                 // Esta en una letra del indice que no vino: se crea con lo que

@@ -987,4 +987,68 @@ class ImportarSistemaViejoTest extends TestCase
         $this->assertSame($antes, Consulta::count(), 'la BAR Ø de septiembre no vuelve a entrar');
         $this->assertSame('PEÑA HNOS', Empresa::where('codigo_indice', '420')->value('nombre'));
     }
+
+    /**
+     * El ID que el sistema viejo uso tambien para otra empresa.
+     *
+     * En septiembre YPF S.A. llego solo en una cotizacion con el ID 999, y se
+     * creo su ficha con ese ID. En el indice completo el 999 es ABRASIVOS DEL
+     * PLATA. No es otra numeracion: entra ABRASIVOS, y cada cotizacion va a
+     * la empresa que nombra.
+     */
+    public function test_el_id_que_el_sistema_viejo_uso_para_dos_empresas_se_separa(): void
+    {
+        $this->sistemaEnUso();
+        $this->guardarOriginales('migracion');
+        Consulta::query()->update(['origen_clave' => null]);
+        $ypf = Empresa::where('nombre', 'YPF S.A.')->first();
+        $deYpf = $ypf->consultas()->count();
+
+        $carpeta = $this->indice(['FERRUM S.A.,,,,101', 'ABRASIVOS DEL PLATA,,,,999'], []);
+        file_put_contents("{$carpeta}/cotizaciones.csv",
+            "EMPRESA,CRESP,DOLAR,PE1,PE2,PE3,PE4,PE5,PR1,PR2,PR3,PR4,PR5,MON,FECHA,NOTA,NROFACT,ID\n"
+            ."YPF S.A.,,0,CAÑO SCH 40,,,,,100,0,0,0,0,PESOS,20240315,,1234,999\n"
+            ."YPF S.A.,,0,BRIDA SO 4 PULG,,,,,300,0,0,0,0,PESOS,20240916,,0,999\n"
+            ."ABRASIVOS DEL PLATA,,0,DISCO DE CORTE,,,,,10,0,0,0,0,PESOS,20240901,,0,999\n");
+
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true, '--aplicar' => true])
+            ->doesntExpectOutputToContain('Mismo ID y otro nombre')
+            ->assertSuccessful();
+
+        $abrasivos = Empresa::where('nombre', 'ABRASIVOS DEL PLATA')->first();
+        $this->assertNotNull($abrasivos, 'la empresa del Access entra');
+        $this->assertSame('999', $abrasivos->codigo_indice);
+        $this->assertSame(['DISCO DE CORTE   10'], $abrasivos->consultas()->pluck('texto')->all());
+        $this->assertSame($deYpf + 1, $ypf->consultas()->count(), 'la brida es de YPF; el caño ya estaba');
+
+        // Y otra vez lo mismo no cambia nada.
+        $despues = $this->conteos();
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true, '--aplicar' => true])->assertSuccessful();
+        $this->assertSame($despues, $this->conteos());
+    }
+
+    /** La fila sin nombre que trae el ID de su empresa se cuelga por el ID; la vacia no entra. */
+    public function test_la_cotizacion_sin_nombre_se_cuelga_por_el_id(): void
+    {
+        $this->sistemaEnUso();
+        $ferrum = Empresa::where('codigo_indice', '101')->first();
+        $deFerrum = $ferrum->consultas()->count();
+        $antes = Consulta::count();
+
+        $carpeta = $this->indice(['FERRUM S.A.,,,,101'], []);
+        file_put_contents("{$carpeta}/cotizaciones.csv",
+            "EMPRESA,CRESP,DOLAR,PE1,PE2,PE3,PE4,PE5,PR1,PR2,PR3,PR4,PR5,MON,FECHA,NOTA,NROFACT,ID\n"
+            .",,0,TUBO SIN NOMBRE,,,,,45,0,0,0,0,PESOS,20240920,,0,101\n"
+            .",,,,,,,,,,,,,,,,,\n"
+            .",,0,DE UNA QUE NO ESTA,,,,,5,0,0,0,0,PESOS,20240920,,0,55555\n");
+
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true, '--aplicar' => true])
+            ->expectsOutputToContain('filas vacias del Access (no entran)')
+            ->expectsOutputToContain('sin nombre y con un ID que no esta (no entran)')
+            ->assertSuccessful();
+
+        $this->assertSame($deFerrum + 1, $ferrum->consultas()->count());
+        $this->assertSame($antes + 1, Consulta::count());
+        $this->assertSame(0, Empresa::whereNull('nombre')->orWhere('nombre', '')->count());
+    }
 }
