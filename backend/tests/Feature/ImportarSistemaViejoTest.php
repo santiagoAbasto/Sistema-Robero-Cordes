@@ -839,6 +839,9 @@ class ImportarSistemaViejoTest extends TestCase
             'NU,,BUENOS AIRES CAPITAL FEDERAL,,413',
             'XI,,SANTA CRUZ DE LA SIERRA,,414',
             'OMICRON,,PCIA. DE CORDOBA,SANTA ROSA,415',
+            'PI,,BUENSO AIRES,,416',
+            'RHO,,CHILE,SANTIAGO,417',
+            'SIGMA,,ARGENTINA,,418',
         ], []);
 
         $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true, '--aplicar' => true])
@@ -877,6 +880,12 @@ class ImportarSistemaViejoTest extends TestCase
         $this->assertSame('Córdoba', $ficha('415')->provincia->nombre);
         $this->assertSame('SANTA ROSA', $ficha('415')->localidad->nombre);
         $this->assertSame($ficha('415')->provincia_id, $ficha('415')->localidad->provincia_id);
+        $this->assertSame('Buenos Aires', $ficha('416')->provincia->nombre, 'una letra cambiada');
+        $this->assertStringContainsString('Provincia en el indice viejo: BUENSO AIRES', $ficha('416')->observacion_general);
+        $this->assertSame('Chile', $ficha('417')->pais->nombre, 'el pais escrito en la provincia');
+        $this->assertNotSame('Argentina', $ficha('417')->pais->nombre);
+        $this->assertNull($ficha('418')->provincia_id);
+        $this->assertNull($ficha('418')->observacion_general, '"ARGENTINA" en la provincia no es una provincia ni un error');
 
         $this->assertSame(0, Pais::whereIn('nombre', ['Oscar', 'OSCAR', 'B7608v', 'Cordoba'])->count());
         $this->assertSame(0, Provincia::whereIn('nombre', ['GRAN ROSARIO', 'SANTA CRUZ DE LA SIERRA', 'S.M. DE TUCUMAN', 'PCIA. DE CORDOBA'])->count());
@@ -921,5 +930,28 @@ class ImportarSistemaViejoTest extends TestCase
         $futuro = Consulta::where('texto', 'like', 'FUTURO%')->first();
         $this->assertSame('1900-01-01', substr((string) $futuro->fecha, 0, 10));
         $this->assertSame(md5('401|2099-12-31|'.md5('FUTURO   40')), $futuro->origen_clave);
+    }
+
+    /**
+     * La cotizacion de septiembre escrita distinto no se reconoce, y el
+     * informe dice en que caracteres se diferencia, sin mostrar el texto.
+     */
+    public function test_el_informe_dice_que_caracteres_cambiaron(): void
+    {
+        $this->sistemaEnUso();
+        $this->guardarOriginales('migracion');
+        Consulta::query()->update(['origen_clave' => null]);
+
+        $carpeta = $this->indice(['FERRUM S.A.,,,,101'], []);
+        file_put_contents("{$carpeta}/cotizaciones.csv",
+            "EMPRESA,CRESP,DOLAR,PE1,PE2,PE3,PE4,PE5,PR1,PR2,PR3,PR4,PR5,MON,FECHA,NOTA,NROFACT,ID\n"
+            .'FERRUM S.A.,Juan Perez,1000,NITINOL Nº5 ALAMBRE 2MM EN ROLLO RECOCIDO,RECTO COLOR OXIDO TEMP AF 85C,PEDIDO MINIMO 130 METROS X M,110 DIAS,,0,0,41.7,0,0,DOLAR BILLETE,20260724,Pedido por mail,0,101'."\n");
+
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true])
+            ->expectsOutputToContain('(mirar)')
+            ->expectsOutputToContain('º U+00BA (1)')
+            ->expectsOutputToContain('# U+0023 (1)')
+            ->doesntExpectOutputToContain('ALAMBRE')
+            ->assertSuccessful();
     }
 }

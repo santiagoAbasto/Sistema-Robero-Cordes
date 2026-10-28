@@ -95,8 +95,8 @@ class ImportarSistemaViejo extends Command
         'San Luis' => ['SANLUIS'],
         'Santa Cruz' => ['SANTACRUZ', 'STACRUZ'],
         'Santa Fe' => ['SANTAFE', 'STAFE', 'SANAFE', 'SANTAFED', 'SFE'],
-        'Santiago del Estero' => ['SANTIAGODELESTERO', 'SGODELESTERO', 'STGODELESTERO', 'SDELESTERO'],
-        'Tierra del Fuego' => ['TIERRADELFUEGO', 'TDELFUEGO', 'TFUEGO', 'FUEGO', 'TDF'],
+        'Santiago del Estero' => ['SANTIAGODELESTERO', 'SGODELESTERO', 'STGODELESTERO', 'SDELESTERO', 'SGOESTERO'],
+        'Tierra del Fuego' => ['TIERRADELFUEGO', 'TDELFUEGO', 'TFUEGO', 'FUEGO', 'TDF', 'TIERRADELF', 'TIERRAFUEGO'],
         'Tucumán' => ['TUCUMAN', 'TUC'],
     ];
 
@@ -144,6 +144,12 @@ class ImportarSistemaViejo extends Command
     private bool $sumar = false;
 
     private bool $aplicar = false;
+
+    /** @var array<string, list<string>> ID|fecha => los renglones de septiembre de esa empresa ese dia */
+    private array $deSeptiembre = [];
+
+    /** @var array<string, array<string, int>> 'nuevo'|'septiembre' => caracter que solo esta de ese lado => veces */
+    private array $caracteresDistintos = [];
 
     /** @var array<string, array<string, int>> 'pais'|'provincia' => texto que no se reconocio => veces */
     private array $sinReconocer = [];
@@ -209,6 +215,7 @@ class ImportarSistemaViejo extends Command
         $this->conteo = $this->yaEstaban = $this->nuevas = $this->sinCodigo = $this->conflictos = [];
         $this->nombresDelArchivo = $this->nombresQueYaEstaban = $this->cotizacionesQueYaEstaban = [];
         $this->paises = $this->provincias = $this->localidades = $this->localidadesDelPais = $this->rubros = $this->sinReconocer = [];
+        $this->deSeptiembre = $this->caracteresDistintos = [];
         $this->ultimaImportada = '1900-01-01';
 
         $archivos = $this->sumar
@@ -593,6 +600,7 @@ class ImportarSistemaViejo extends Command
             $codigo = trim((string) ($fila['ID'] ?? '')) ?: null;
             [$huella, $guardada] = $this->huella($fila, $codigo, CatalogoViejo::fecha($fila['FECHA'] ?? null));
             $this->cotizacionesQueYaEstaban[$huella] = true;
+            $this->deSeptiembre[$codigo.'|'.(CatalogoViejo::fecha($fila['FECHA'] ?? null) ?? '')][] = (string) $this->textoOriginal($fila);
             $this->ultimaImportada = max($this->ultimaImportada, $guardada);
         }
 
@@ -1033,6 +1041,24 @@ class ImportarSistemaViejo extends Command
             }
         }
 
+        // "BUENSO AIRES", "SNATA FE", "MENDONZA": una o dos letras cambiadas en
+        // un nombre largo, y una sola provincia a esa distancia.
+        if (strlen($plano) >= 6) {
+            $cerca = [];
+
+            foreach (self::PROVINCIAS_ARGENTINAS as $provincia => $formas) {
+                foreach ($formas as $forma) {
+                    if (strlen($forma) >= 6 && ($d = levenshtein($plano, $forma)) <= 2) {
+                        $cerca[$provincia] = min($cerca[$provincia] ?? 2, $d);
+                    }
+                }
+            }
+
+            if ($cerca !== [] && count(array_keys($cerca, min($cerca), true)) === 1) {
+                return [array_search(min($cerca), $cerca, true), false];
+            }
+        }
+
         return null;
     }
 
@@ -1054,6 +1080,17 @@ class ImportarSistemaViejo extends Command
     private function ubicacion(array $e): array
     {
         $paisCrudo = CatalogoViejo::texto($e['PAIS'] ?? null);
+        $crudaProvincia = CatalogoViejo::texto($e['PROVINCIA'] ?? null);
+
+        // "CHILE" en la provincia y nada en el pais: el pais, una columna corrida.
+        $paisEnLaProvincia = self::deLaLista(self::PAISES, CatalogoViejo::plano((string) $crudaProvincia));
+
+        if ($paisEnLaProvincia !== null && CatalogoViejo::plano((string) $paisCrudo) === '') {
+            [$paisCrudo, $crudaProvincia] = [$crudaProvincia, null];
+        } elseif ($paisEnLaProvincia === 'Argentina') {
+            $crudaProvincia = null;
+        }
+
         $cp = self::esCodigoPostal($paisCrudo) ? mb_strtoupper($paisCrudo) : null;
         [$nombrePais, $provinciaEnElPais, $notaPais] = $this->paisDe($paisCrudo);
         $notas = array_filter([$notaPais]);
@@ -1062,7 +1099,6 @@ class ImportarSistemaViejo extends Command
             fn () => Pais::create(['nombre' => $nombrePais, 'activo' => true])->id);
 
         // "-", "Sin determinar" o un codigo postal no son una provincia.
-        $crudaProvincia = CatalogoViejo::texto($e['PROVINCIA'] ?? null);
         $planoProvincia = CatalogoViejo::plano((string) $crudaProvincia);
 
         if (self::esCodigoPostal($crudaProvincia)) {
@@ -1375,10 +1411,43 @@ class ImportarSistemaViejo extends Command
 
             if ($guardada <= $this->ultimaImportada) {
                 $this->contar('  de esas, con fecha anterior a la ultima importada (mirar)');
+                $this->anotarDiferencia($c, $codigo, $fecha);
             }
         }
 
         return true;
+    }
+
+    /**
+     * En que se diferencia del de septiembre una cotizacion que no se reconocio.
+     *
+     * Si la empresa tiene una cotizacion de septiembre el mismo dia, es casi
+     * seguro la misma escrita distinto. Se anotan los caracteres que estan de
+     * un solo lado —un simbolo de diametro con otra codificacion, un espacio
+     * de mas—: sin mostrar el texto, dice que hay que emparejar.
+     */
+    private function anotarDiferencia(array $c, ?string $codigo, ?string $fecha): void
+    {
+        $candidatas = $this->deSeptiembre[$codigo.'|'.($fecha ?? '')] ?? [];
+
+        if ($candidatas === []) {
+            $this->contar('    (mirar) sin una de septiembre de la misma empresa y fecha');
+
+            return;
+        }
+
+        $nuevo = (string) $this->textoOriginal($c);
+        $parecida = collect($candidatas)->sortByDesc(fn ($t) => similar_text($t, $nuevo))->first();
+        $deUno = array_count_values(mb_str_split($nuevo));
+        $deOtro = array_count_values(mb_str_split($parecida));
+
+        foreach ([['nuevo', $deUno, $deOtro], ['septiembre', $deOtro, $deUno]] as [$lado, $estos, $aquellos]) {
+            foreach ($estos as $caracter => $veces) {
+                if ($veces > ($aquellos[$caracter] ?? 0)) {
+                    $this->caracteresDistintos[$lado][$caracter] = ($this->caracteresDistintos[$lado][$caracter] ?? 0) + 1;
+                }
+            }
+        }
     }
 
     /**
@@ -1511,6 +1580,15 @@ class ImportarSistemaViejo extends Command
                 arsort($cuales);
                 $this->warn(ucfirst($que).' sin reconocer ('.count($cuales).' distintos): '.collect(array_slice($cuales, 0, 30, true))
                     ->map(fn ($n, $t) => "{$t} ({$n})")->implode(', '));
+            }
+        }
+
+        // Los caracteres, no los textos: en cuantas "(mirar)" aparece cada uno de un solo lado.
+        foreach (['nuevo' => 'Access nuevo', 'septiembre' => 'el de septiembre'] as $lado => $nombre) {
+            if ($cuales = $this->caracteresDistintos[$lado] ?? []) {
+                arsort($cuales);
+                $this->warn("Caracteres que solo estan en {$nombre}: ".collect(array_slice($cuales, 0, 15, true))
+                    ->map(fn ($n, $ch) => ($ch === ' ' ? 'espacio' : $ch).sprintf(' U+%04X', mb_ord((string) $ch))." ({$n})")->implode(', '));
             }
         }
 
