@@ -63,31 +63,73 @@ class ImportarSistemaViejo extends Command
     protected $description = 'Importa los datos reales del sistema anterior';
 
     /**
-     * Como escribieron cada provincia, y cual es: la tabla de la limpieza del
-     * 26-09. Lo que no esta aca y no coincide sin acentos ni puntos con una
-     * que ya existe, entra como vino.
+     * Las 24 provincias argentinas y como las escribian, sin acentos ni puntos.
+     *
+     * Es una lista cerrada a proposito: el indice completo traia 126
+     * "provincias" nuevas —ciudades, barrios, abreviaturas— y crearlas era
+     * volver a ensuciar lo que la limpieza del 26-09 junto. Lo que no esta
+     * aca no se adivina: queda escrito en la ficha para elegirlo a mano.
      */
-    private const PROVINCIAS = [
-        'BSAS' => 'Buenos Aires',
-        'BSAIRES' => 'Buenos Aires',
-        'BAIRES' => 'Buenos Aires',
-        'BS' => 'Buenos Aires',
-        'PROVBSAS' => 'Buenos Aires',
-        'CAPFED' => 'Ciudad Autónoma de Buenos Aires',
-        'CAPITAL' => 'Ciudad Autónoma de Buenos Aires',
-        'CAPITALFEDE' => 'Ciudad Autónoma de Buenos Aires',
-        'CAPITALFEDERAL' => 'Ciudad Autónoma de Buenos Aires',
-        'CABA' => 'Ciudad Autónoma de Buenos Aires',
-        'SANAFE' => 'Santa Fe',
-        'SANTAFED' => 'Santa Fe',
+    private const PROVINCIAS_ARGENTINAS = [
+        'Buenos Aires' => ['BUENOSAIRES', 'BSAS', 'BSAIRES', 'BAIRES', 'BS', 'PROVBSAS', 'PCIABSAS', 'PCIADEBSAS',
+            'PROVDEBSAS', 'PROVBUENOSAIRES', 'PCIABUENOSAIRES', 'PROVINCIADEBUENOSAIRES', 'PCIADEBUENOSAIRES',
+            'PROVDEBUENOSAIRES', 'PROVINCIABUENOSAIRES', 'PROVINCIABSAS', 'PBA', 'GBA'],
+        'Ciudad Autónoma de Buenos Aires' => ['CIUDADAUTONOMADEBUENOSAIRES', 'CABA', 'CAPFED', 'CAPITAL', 'CAPITALFEDE',
+            'CAPITALFEDERAL', 'CAPFEDERAL', 'CAPITALFED', 'CFEDERAL', 'CF', 'CIUDADDEBUENOSAIRES', 'CIUDADDEBSAS', 'CDADDEBSAS'],
+        'Catamarca' => ['CATAMARCA'],
+        'Chaco' => ['CHACO'],
+        'Chubut' => ['CHUBUT'],
+        'Córdoba' => ['CORDOBA', 'CBA'],
+        'Corrientes' => ['CORRIENTES', 'CTES'],
+        'Entre Ríos' => ['ENTRERIOS', 'ERIOS'],
+        'Formosa' => ['FORMOSA'],
+        'Jujuy' => ['JUJUY'],
+        'La Pampa' => ['LAPAMPA'],
+        'La Rioja' => ['LARIOJA'],
+        'Mendoza' => ['MENDOZA', 'MZA'],
+        'Misiones' => ['MISIONES'],
+        'Neuquén' => ['NEUQUEN', 'NQN'],
+        'Río Negro' => ['RIONEGRO'],
+        'Salta' => ['SALTA'],
+        'San Juan' => ['SANJUAN'],
+        'San Luis' => ['SANLUIS'],
+        'Santa Cruz' => ['SANTACRUZ', 'STACRUZ'],
+        'Santa Fe' => ['SANTAFE', 'STAFE', 'SANAFE', 'SANTAFED', 'SFE'],
+        'Santiago del Estero' => ['SANTIAGODELESTERO', 'SGODELESTERO', 'STGODELESTERO', 'SDELESTERO'],
+        'Tierra del Fuego' => ['TIERRADELFUEGO', 'TDELFUEGO', 'TFUEGO', 'FUEGO', 'TDF'],
+        'Tucumán' => ['TUCUMAN', 'TUC'],
     ];
 
-    /** Los paises escritos de otra forma. Sin pais es Argentina. */
+    /**
+     * Los paises que aparecen en el indice, y como los escribian.
+     *
+     * Tambien es una lista cerrada: en la columna PAIS hay codigos postales,
+     * provincias, internos de telefono y nombres sueltos ("OSCAR", "24 y 25").
+     * Sin pais es Argentina, que es de donde son casi todas.
+     */
     private const PAISES = [
-        '' => 'Argentina',
-        'ARG' => 'Argentina',
-        'ARGENTINA' => 'Argentina',
-        'PARAGUAYA' => 'Paraguay',
+        'Argentina' => ['ARGENTINA', 'ARG', 'REPUBLICAARGENTINA', 'RA'],
+        'Alemania' => ['ALEMANIA'],
+        'Bolivia' => ['BOLIVIA'],
+        'Brasil' => ['BRASIL', 'BRAZIL'],
+        'Chile' => ['CHILE'],
+        'China' => ['CHINA'],
+        'Colombia' => ['COLOMBIA'],
+        'Ecuador' => ['ECUADOR'],
+        'España' => ['ESPANA', 'SPAIN'],
+        'Estados Unidos' => ['ESTADOSUNIDOS', 'EEUU', 'USA', 'US'],
+        'Francia' => ['FRANCIA'],
+        'Holanda' => ['HOLANDA', 'PAISESBAJOS'],
+        'Hungria' => ['HUNGRIA'],
+        'Inglaterra' => ['INGLATERRA', 'GBRETANA', 'GRANBRETANA', 'REINOUNIDO'],
+        'Italia' => ['ITALIA'],
+        'Mexico' => ['MEXICO'],
+        'Paraguay' => ['PARAGUAY', 'PARAGUAYA'],
+        'Peru' => ['PERU'],
+        'Portugal' => ['PORTUGAL'],
+        'Suiza' => ['SUIZA'],
+        'Uruguay' => ['URUGUAY'],
+        'Venezuela' => ['VENEZUELA'],
     ];
 
     /** Las que se apagaron el 26-09 por repetidas, y la que quedo. */
@@ -102,6 +144,9 @@ class ImportarSistemaViejo extends Command
     private bool $sumar = false;
 
     private bool $aplicar = false;
+
+    /** @var array<string, array<string, int>> 'pais'|'provincia' => texto que no se reconocio => veces */
+    private array $sinReconocer = [];
 
     /** @var array<string, true> ID que ya estaba y en el Access nuevo es otra empresa */
     private array $conflictos = [];
@@ -163,7 +208,7 @@ class ImportarSistemaViejo extends Command
         $this->aplicar = $aplicar;
         $this->conteo = $this->yaEstaban = $this->nuevas = $this->sinCodigo = $this->conflictos = [];
         $this->nombresDelArchivo = $this->nombresQueYaEstaban = $this->cotizacionesQueYaEstaban = [];
-        $this->paises = $this->provincias = $this->localidades = $this->localidadesDelPais = $this->rubros = [];
+        $this->paises = $this->provincias = $this->localidades = $this->localidadesDelPais = $this->rubros = $this->sinReconocer = [];
         $this->ultimaImportada = '1900-01-01';
 
         $archivos = $this->sumar
@@ -538,7 +583,13 @@ class ImportarSistemaViejo extends Command
           estan guardadas en la base; las que entran con --sumar llevan su
           huella en origen_clave.
         */
-        foreach (OriginalesDelAccess::deLaBase('cotizaciones.csv') as $fila) {
+        $originales = OriginalesDelAccess::deLaBase('cotizaciones.csv');
+
+        // Si dice 0, no estan las filas de septiembre en la base: se reconoce
+        // solo por como estan hoy las cotizaciones, y lo corregido entra de nuevo.
+        $this->conteo['cotizaciones de septiembre guardadas en la base (para reconocerlas)'] = count($originales);
+
+        foreach ($originales as $fila) {
             $codigo = trim((string) ($fila['ID'] ?? '')) ?: null;
             [$huella, $guardada] = $this->huella($fila, $codigo, CatalogoViejo::fecha($fila['FECHA'] ?? null));
             $this->cotizacionesQueYaEstaban[$huella] = true;
@@ -872,77 +923,236 @@ class ImportarSistemaViejo extends Command
         return $catalogo[$clave];
     }
 
-    /** Un codigo postal argentino (CPA): una letra, cuatro numeros y tres letras. */
+    /** Un codigo postal argentino: una letra, cuatro numeros y hasta tres letras (B1646GEL, B7608V). */
     private static function esCodigoPostal(?string $texto): bool
     {
-        return (bool) preg_match('/^[A-Z]\d{4}[A-Z]{3}$/', CatalogoViejo::plano((string) $texto));
+        return (bool) preg_match('/^[A-Z]\d{4}[A-Z]{0,3}$/', CatalogoViejo::plano((string) $texto));
+    }
+
+    /** El nombre de la lista cuya forma escrita coincide, o null. */
+    private static function deLaLista(array $lista, string $plano): ?string
+    {
+        foreach ($lista as $nombre => $formas) {
+            if (in_array($plano, $formas, true)) {
+                return $nombre;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * El pais, la provincia que estaba en el lugar del pais y la nota.
+     *
+     * "USA 07054" y "MEXICO 7" son el pais con un numero pegado. "CORDOBA" en
+     * el pais es la provincia cargada una columna corrida. Lo demas no se
+     * adivina: Argentina, con lo que decia escrito en la ficha.
+     *
+     * @return array{0: string, 1: ?string, 2: ?string} pais, provincia, nota
+     */
+    private function paisDe(?string $crudo): array
+    {
+        $plano = CatalogoViejo::plano((string) $crudo);
+
+        if ($plano === '' || self::esCodigoPostal($crudo)) {
+            return ['Argentina', null, null];
+        }
+
+        if ($pais = self::deLaLista(self::PAISES, $plano) ?? self::deLaLista(self::PAISES, (string) preg_replace('/\d+$/', '', $plano))) {
+            return [$pais, null, null];
+        }
+
+        if (self::provinciaArgentina($crudo) !== null) {
+            return ['Argentina', $crudo, null];
+        }
+
+        $this->sinReconocer['pais'][$crudo] = ($this->sinReconocer['pais'][$crudo] ?? 0) + 1;
+        $this->contar('paises que no son un pais: Argentina, con lo que decia escrito en la ficha');
+
+        return ['Argentina', null, "Pais en el indice viejo: {$crudo}."];
+    }
+
+    /** Lo que se escribe delante o detras del nombre sin cambiar de que provincia se habla. */
+    private const DELANTE_DE_LA_PROVINCIA = ['PROVINCIADE', 'PROVINCIA', 'PCIADE', 'PCIA', 'PROVDE', 'PROV'];
+
+    private const DETRAS_DE_LA_PROVINCIA = ['', 'ARGENTINA', 'RA', 'PROVINCIA', 'PCIA', 'PROV'];
+
+    /** "BUENOS AIRES CAPITAL FEDERAL" es la ciudad, no la provincia. */
+    private const ES_LA_CIUDAD = ['CAPITALFEDERAL', 'CAPITAL', 'CAPFED', 'CABA', 'CIUDAD', 'CF'];
+
+    /**
+     * La provincia argentina que nombra el texto, y si lo nombra sin dudas.
+     *
+     * Sin dudas: tal cual, con una abreviatura conocida o con "Pcia. de"
+     * delante. Con algo mas pegado —"CORDOBA CAPITAL", "BUENOS AIRES CAPITAL
+     * FEDERAL"— la provincia es esa, pero lo escrito queda en la nota porque
+     * dice mas. Cualquier otra cosa detras no es una provincia argentina:
+     * "SANTA CRUZ DE LA SIERRA" es Bolivia, "SAN LUIS POTOSI" es Mexico.
+     *
+     * @return array{0: string, 1: bool}|null provincia, sin dudas
+     */
+    private static function provinciaArgentina(?string $texto): ?array
+    {
+        $plano = CatalogoViejo::plano((string) $texto);
+
+        foreach (self::DELANTE_DE_LA_PROVINCIA as $delante) {
+            if (str_starts_with($plano, $delante) && strlen($plano) > strlen($delante)) {
+                $plano = substr($plano, strlen($delante));
+
+                break;
+            }
+        }
+
+        if ($plano === '') {
+            return null;
+        }
+
+        if ($provincia = self::deLaLista(self::PROVINCIAS_ARGENTINAS, $plano)) {
+            return [$provincia, true];
+        }
+
+        foreach (array_keys(self::PROVINCIAS_ARGENTINAS) as $provincia) {
+            $nombre = CatalogoViejo::plano($provincia);
+
+            if (! str_starts_with($plano, $nombre)) {
+                continue;
+            }
+
+            $resto = (string) preg_replace('/\d+$/', '', substr($plano, strlen($nombre)));
+
+            if ($provincia === 'Buenos Aires' && in_array($resto, self::ES_LA_CIUDAD, true)) {
+                return ['Ciudad Autónoma de Buenos Aires', false];
+            }
+
+            if (in_array($resto, self::DETRAS_DE_LA_PROVINCIA, true)) {
+                return [$provincia, true];
+            }
+
+            if (in_array($resto, ['CAPITAL', 'CIUDAD'], true)) {
+                return [$provincia, false];
+            }
+        }
+
+        return null;
     }
 
     /**
      * Pais, provincia y localidad de la ficha, como los dejo la limpieza.
      *
-     *  · "B1646GEL" en el pais es un codigo postal cargado una columna
-     *    corrida: va al CP y el pais es Argentina.
-     *  · "BS. AS." es Buenos Aires; "-", "Sin determinar" o un CP no son una
-     *    provincia.
-     *  · La localidad sin provincia —281 en la muestra— no se cuelga mas de
-     *    una provincia "Sin determinar": si en el pais hay una sola localidad
-     *    con ese nombre es esa, y si no, el nombre queda escrito en la ficha
-     *    para elegirla a mano. La ficha no se inventa una provincia.
+     *  · "B1646GEL" en el pais o en la provincia es un codigo postal cargado
+     *    una columna corrida: va al CP.
+     *  · En Argentina solo entran las 24 provincias. Lo que no se reconoce
+     *    no se adivina: queda escrito en la ficha, y la localidad tampoco se
+     *    deduce de otra provincia.
+     *  · Sin provincia escrita, "CAPITAL FEDERAL" o "CORDOBA" en la localidad
+     *    dicen la provincia. Si no, y en el pais hay una sola localidad con ese
+     *    nombre en el catalogo que ya estaba, es esa. Si no, el nombre queda
+     *    escrito en la ficha para elegirla a mano.
      *
-     * @return array{0: ?int, 1: ?int, 2: ?int, 3: ?string, 4: ?string} pais, provincia, localidad, CP que estaba en el pais, nota
+     * @return array{0: ?int, 1: ?int, 2: ?int, 3: ?string, 4: ?string} pais, provincia, localidad, CP, nota
      */
     private function ubicacion(array $e): array
     {
         $paisCrudo = CatalogoViejo::texto($e['PAIS'] ?? null);
         $cp = self::esCodigoPostal($paisCrudo) ? mb_strtoupper($paisCrudo) : null;
-        $planoPais = $cp ? '' : CatalogoViejo::plano((string) $paisCrudo);
-        $nombrePais = self::PAISES[$planoPais] ?? ucfirst(mb_strtolower((string) $paisCrudo));
+        [$nombrePais, $provinciaEnElPais, $notaPais] = $this->paisDe($paisCrudo);
+        $notas = array_filter([$notaPais]);
         $pais = CatalogoViejo::plano($nombrePais);
         $paisId = $this->delCatalogo($this->paises, $pais, "pais nuevo: {$nombrePais}",
             fn () => Pais::create(['nombre' => $nombrePais, 'activo' => true])->id);
 
-        $provincia = null;
-        $provinciaId = null;
+        // "-", "Sin determinar" o un codigo postal no son una provincia.
         $crudaProvincia = CatalogoViejo::texto($e['PROVINCIA'] ?? null);
         $planoProvincia = CatalogoViejo::plano((string) $crudaProvincia);
 
-        if ($planoProvincia !== '' && $planoProvincia !== 'SINDETERMINAR' && ! self::esCodigoPostal($crudaProvincia)) {
-            $nombreProvincia = self::PROVINCIAS[$planoProvincia] ?? $crudaProvincia;
+        if (self::esCodigoPostal($crudaProvincia)) {
+            $cp ??= mb_strtoupper($crudaProvincia);
+        }
+
+        $sinProvincia = $planoProvincia === '' || $planoProvincia === 'SINDETERMINAR' || self::esCodigoPostal($crudaProvincia);
+        $nombreProvincia = null;
+        $noSeReconocio = false;
+
+        if ($nombrePais !== 'Argentina') {
+            $nombreProvincia = $sinProvincia ? null : $crudaProvincia;
+        } else {
+            $deLaColumna = $sinProvincia ? null : self::provinciaArgentina($crudaProvincia);
+            $delPais = $provinciaEnElPais !== null ? self::provinciaArgentina($provinciaEnElPais) : null;
+
+            // "CAPITAL" a secas no le gana a la provincia escrita en el pais.
+            if ($deLaColumna && $delPais && $planoProvincia === 'CAPITAL') {
+                $deLaColumna = null;
+            }
+
+            $noSeReconocio = ! $sinProvincia && $deLaColumna === null;
+            [$nombreProvincia, $sinDudas] = $deLaColumna ?? $delPais ?? [null, true];
+
+            if ($noSeReconocio) {
+                $this->sinReconocer['provincia'][$crudaProvincia] = ($this->sinReconocer['provincia'][$crudaProvincia] ?? 0) + 1;
+                $this->contar('provincias que no se reconocen: quedan escritas en la ficha');
+                $notas[] = $nombreProvincia === null
+                    ? "Provincia en el indice viejo: {$crudaProvincia} (falta elegirla en Modificar)."
+                    : "Provincia en el indice viejo: {$crudaProvincia}.";
+            } elseif ($nombreProvincia !== null && ! $sinDudas) {
+                $notas[] = 'Provincia en el indice viejo: '.($deLaColumna ? $crudaProvincia : $provinciaEnElPais).'.';
+            }
+        }
+
+        $crudaLocalidad = CatalogoViejo::texto($e['LOCALIDAD'] ?? null);
+        $planoLocalidad = CatalogoViejo::plano((string) $crudaLocalidad);
+
+        // "CAPITAL FEDERAL" o "MENDOZA" en la localidad dicen la provincia.
+        // "BUENOS AIRES" no: puede ser la ciudad o la provincia.
+        if ($nombreProvincia === null && ! $noSeReconocio && $notaPais === null && $nombrePais === 'Argentina') {
+            $porLaLocalidad = self::deLaLista(self::PROVINCIAS_ARGENTINAS, $planoLocalidad);
+
+            if ($porLaLocalidad !== null && $porLaLocalidad !== 'Buenos Aires' && $planoLocalidad !== 'CAPITAL') {
+                $nombreProvincia = $porLaLocalidad;
+                $this->contar('provincias sacadas de la localidad (CAPITAL FEDERAL, MENDOZA...)');
+            }
+        }
+
+        $provincia = null;
+        $provinciaId = null;
+
+        if ($nombreProvincia !== null) {
             $provincia = $pais.'|'.CatalogoViejo::plano($nombreProvincia);
             $provinciaId = $this->delCatalogo($this->provincias, $provincia, 'provincias nuevas',
                 fn () => Provincia::create(['nombre' => $nombreProvincia, 'pais_id' => $paisId, 'activo' => true])->id);
         }
 
-        $crudaLocalidad = CatalogoViejo::texto($e['LOCALIDAD'] ?? null);
-
         if ($crudaLocalidad === null) {
-            return [$paisId, $provinciaId, null, $cp, null];
+            return [$paisId, $provinciaId, null, $cp, ($notas ? implode("\n", $notas) : null)];
         }
-
-        $planoLocalidad = CatalogoViejo::plano($crudaLocalidad);
 
         if ($provincia !== null) {
             $clave = $provincia.'|'.$planoLocalidad;
             $localidadId = $this->delCatalogo($this->localidades, $clave, 'localidades nuevas',
                 fn () => Localidad::create(['nombre' => $crudaLocalidad, 'provincia_id' => $provinciaId, 'activo' => true])->id);
-            $this->localidadesDelPais[$pais.'|'.$planoLocalidad][$clave] = [$localidadId, $provinciaId];
 
-            return [$paisId, $provinciaId, $localidadId, $cp, null];
+            return [$paisId, $provinciaId, $localidadId, $cp, ($notas ? implode("\n", $notas) : null)];
         }
 
-        $candidatas = $this->localidadesDelPais[$pais.'|'.$planoLocalidad] ?? [];
+        /*
+          Solo si la provincia vino vacia y el pais es de verdad. Con una
+          provincia escrita que no se reconocio, deducirla de la localidad
+          ponia otra: "PCIA. DE CBA" con SANTA ROSA terminaba en La Pampa. Las
+          candidatas salen del catalogo que habia al empezar, asi el resultado
+          no depende del orden de las filas.
+        */
+        $candidatas = $noSeReconocio || $notaPais !== null ? [] : ($this->localidadesDelPais[$pais.'|'.$planoLocalidad] ?? []);
 
         if (count($candidatas) === 1) {
             $this->contar('localidades sin provincia reconocidas');
             [$localidadId, $provinciaId] = reset($candidatas);
 
-            return [$paisId, $provinciaId, $localidadId, $cp, null];
+            return [$paisId, $provinciaId, $localidadId, $cp, ($notas ? implode("\n", $notas) : null)];
         }
 
         $this->contar('localidades sin provincia: quedan escritas en la ficha');
+        $notas[] = "Localidad en el indice viejo: {$crudaLocalidad} (falta elegirla en Modificar).";
 
-        return [$paisId, null, null, $cp, "Localidad en el indice viejo: {$crudaLocalidad} (falta elegirla en Modificar)."];
+        return [$paisId, null, null, $cp, ($notas ? implode("\n", $notas) : null)];
     }
 
     /** El rubro, sin repetir uno que ya esta escrito de otra forma. "??" no es un rubro. */
@@ -1012,6 +1222,12 @@ class ImportarSistemaViejo extends Command
             }
 
             ['items' => $items, 'sueltos' => $sueltos] = CatalogoViejo::renglones($c);
+
+            if (preg_match('/^\d{8}$/', trim((string) ($c['FECHA'] ?? ''))) && $fecha !== null) {
+                $this->contar(str_starts_with(trim($c['FECHA']), substr($fecha, 0, 4))
+                    ? 'fechas de 8 cifras leidas como año-mes-dia'
+                    : 'fechas de 8 cifras leidas como dia-mes-año');
+            }
 
             if ($fecha === null) {
                 $this->contar('filas sin fecha usable');
@@ -1175,7 +1391,13 @@ class ImportarSistemaViejo extends Command
     {
         $guardada = ($fecha === null || CatalogoViejo::fechaDudosa($c['FECHA'] ?? null)) ? '1900-01-01' : $fecha;
 
-        return [md5($codigo.'|'.$guardada.'|'.md5((string) $this->textoOriginal($c))), $guardada];
+        /*
+          La huella lleva la fecha como esta escrita, no como se guarda: una
+          fecha "del futuro" se guarda 1900-01-01 hoy y la suya mañana deja de
+          serlo. Con la guardada, la misma fila tendria otra huella segun el
+          dia en que se corre, y al volver a sumar entraria de nuevo.
+        */
+        return [md5($codigo.'|'.($fecha ?? '').'|'.md5((string) $this->textoOriginal($c))), $guardada];
     }
 
     /** Los cinco renglones como los dejo el sistema anterior. */
@@ -1207,6 +1429,10 @@ class ImportarSistemaViejo extends Command
         if (CatalogoViejo::fechaDudosa($c['FECHA'] ?? null)) {
             $partes[] = 'REVISAR LA FECHA: en el sistema anterior figura '
                 .trim($c['FECHA']).', que no puede ser.';
+        } elseif (filled($c['FECHA'] ?? null) && CatalogoViejo::fecha($c['FECHA']) === null) {
+            // Que no se pierda: "999999" no se puede leer, pero alguien lo escribio.
+            $partes[] = 'REVISAR LA FECHA: en el sistema anterior figura '
+                .trim($c['FECHA']).', que no se puede leer.';
         }
 
         if ($nota = CatalogoViejo::texto($c['NOTA'] ?? null)) {
@@ -1277,6 +1503,16 @@ class ImportarSistemaViejo extends Command
         $this->table(['', 'filas'], collect($this->conteo)
             ->map(fn ($n, $q) => [$q, number_format($n, 0, ',', '.')])
             ->values()->all());
+
+        // Los textos de pais y provincia que no se reconocieron, para sumar a
+        // la lista los que si eran (no dicen nada de nadie: son lugares).
+        foreach (['pais', 'provincia'] as $que) {
+            if ($cuales = $this->sinReconocer[$que] ?? []) {
+                arsort($cuales);
+                $this->warn(ucfirst($que).' sin reconocer ('.count($cuales).' distintos): '.collect(array_slice($cuales, 0, 30, true))
+                    ->map(fn ($n, $t) => "{$t} ({$n})")->implode(', '));
+            }
+        }
 
         // Solo los ID, que no dicen nada de nadie: cada uno se busca en el
         // sistema por "ID del indice" y se compara con el Access a mano.

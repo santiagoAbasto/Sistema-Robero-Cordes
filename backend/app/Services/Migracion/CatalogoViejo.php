@@ -175,6 +175,19 @@ class CatalogoViejo
                 : null;
         }
 
+        /*
+          Ocho cifras seguidas, como guardaba las fechas el sistema viejo: en el
+          indice completo son 145.330. Año-mes-dia ("20240315") o dia-mes-año
+          ("15032024"): con años de 1900 en adelante nunca valen las dos.
+        */
+        if (preg_match('#^(\d{4})(\d{2})(\d{2})$#', trim($valor), $o) && (int) $o[1] >= 1900 && checkdate((int) $o[2], (int) $o[3], (int) $o[1])) {
+            return "{$o[1]}-{$o[2]}-{$o[3]}";
+        }
+
+        if (preg_match('#^(\d{2})(\d{2})(\d{4})$#', trim($valor), $o) && (int) $o[3] >= 1900 && checkdate((int) $o[2], (int) $o[1], (int) $o[3])) {
+            return "{$o[3]}-{$o[2]}-{$o[1]}";
+        }
+
         if (! preg_match('#^(\d{1,2})/(\d{1,2})/(\d{2,4})#', trim($valor), $p)) {
             return null;
         }

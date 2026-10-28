@@ -788,4 +788,138 @@ class ImportarSistemaViejoTest extends TestCase
             }
         }
     }
+
+    /**
+     * Una carpeta con un empresas.csv y un cotizaciones.csv armados en la prueba.
+     *
+     * @param  list<string>  $empresas  filas con EMPRESA,PAIS,PROVINCIA,LOCALIDAD,ID
+     * @param  list<string>  $cotizaciones  filas con EMPRESA,PE1,PR1,FECHA,ID
+     */
+    private function indice(array $empresas, array $cotizaciones): string
+    {
+        $carpeta = sys_get_temp_dir().'/indice-'.uniqid();
+        mkdir($carpeta);
+        file_put_contents("{$carpeta}/empresas.csv", "EMPRESA,PAIS,PROVINCIA,LOCALIDAD,ID\n".implode("\n", $empresas)."\n");
+        file_put_contents("{$carpeta}/cotizaciones.csv", "EMPRESA,PE1,PR1,FECHA,ID\n".implode("\n", $cotizaciones)."\n");
+        $this->beforeApplicationDestroyed(function () use ($carpeta) {
+            array_map('unlink', glob("{$carpeta}/*"));
+            rmdir($carpeta);
+        });
+
+        return $carpeta;
+    }
+
+    /**
+     * La columna PAIS del indice completo tiene de todo: solo entran paises.
+     *
+     * Codigos postales, provincias, internos y nombres sueltos no se vuelven
+     * paises: el CP va al CP, la provincia a la provincia, y lo demas queda
+     * escrito en la ficha.
+     */
+    public function test_sumar_solo_crea_paises_y_provincias_que_existen(): void
+    {
+        $this->sistemaEnUso();
+        $provincias = Provincia::count();
+
+        $carpeta = $this->indice([
+            'ALFA,USA 07054,,,401',
+            'BETA,Cordoba,,,402',
+            'GAMA,OSCAR,,,403',
+            'DELTA,,PCIA. BS. AS.,,404',
+            'EPSILON,,ROSARIO,,405',
+            'ZETA,B7608v,,,406',
+            // Una provincia que no se reconoce no se deduce de la localidad:
+            // AVELLANEDA es de Buenos Aires, y no por eso GRAN ROSARIO lo es.
+            'ETA,,GRAN ROSARIO,AVELLANEDA,407',
+            'THETA,,,CAPITAL FEDERAL,408',
+            'IOTA,Cordoba,-,,409',
+            'KAPPA,Cordoba,X5000ABC,,410',
+            'LAMBDA,Tucuman,S.M. DE TUCUMAN,,411',
+            'MU,Cordoba,CAPITAL,,412',
+            'NU,,BUENOS AIRES CAPITAL FEDERAL,,413',
+            'XI,,SANTA CRUZ DE LA SIERRA,,414',
+            'OMICRON,,PCIA. DE CORDOBA,SANTA ROSA,415',
+        ], []);
+
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true, '--aplicar' => true])
+            ->expectsOutputToContain('Pais sin reconocer (1 distintos): OSCAR (1)')
+            ->assertSuccessful();
+
+        $ficha = fn (string $id) => Empresa::where('codigo_indice', $id)->first();
+
+        $this->assertSame('Estados Unidos', $ficha('401')->pais->nombre);
+        $this->assertSame('Argentina', $ficha('402')->pais->nombre);
+        $this->assertSame('Córdoba', $ficha('402')->provincia->nombre, 'la provincia cargada en el pais');
+        $this->assertSame('Argentina', $ficha('403')->pais->nombre);
+        $this->assertStringContainsString('Pais en el indice viejo: OSCAR', $ficha('403')->observacion_general);
+        $this->assertSame('Buenos Aires', $ficha('404')->provincia->nombre);
+        $this->assertNull($ficha('405')->provincia_id, 'ROSARIO no es una provincia');
+        $this->assertStringContainsString('Provincia en el indice viejo: ROSARIO', $ficha('405')->observacion_general);
+        $this->assertSame('B7608V', $ficha('406')->codigo_postal);
+
+        $this->assertNull($ficha('407')->provincia_id);
+        $this->assertNull($ficha('407')->localidad_id);
+        $this->assertStringContainsString('Provincia en el indice viejo: GRAN ROSARIO', $ficha('407')->observacion_general);
+        $this->assertStringContainsString('Localidad en el indice viejo: AVELLANEDA', $ficha('407')->observacion_general);
+
+        $caba = 'Ciudad Autónoma de Buenos Aires';
+        $this->assertSame($caba, $ficha('408')->provincia->nombre, 'CAPITAL FEDERAL es la ciudad, no la provincia');
+        $this->assertSame('Córdoba', $ficha('409')->provincia->nombre, 'el "-" no le gana a la provincia del pais');
+        $this->assertSame('Córdoba', $ficha('410')->provincia->nombre);
+        $this->assertSame('X5000ABC', $ficha('410')->codigo_postal);
+        $this->assertSame('Tucumán', $ficha('411')->provincia->nombre);
+        $this->assertStringContainsString('Provincia en el indice viejo: S.M. DE TUCUMAN', $ficha('411')->observacion_general);
+        $this->assertSame('Córdoba', $ficha('412')->provincia->nombre, '"CAPITAL" a secas no le gana a Cordoba');
+        $this->assertSame($caba, $ficha('413')->provincia->nombre);
+        $this->assertStringContainsString('Provincia en el indice viejo: BUENOS AIRES CAPITAL FEDERAL', $ficha('413')->observacion_general);
+        $this->assertNull($ficha('414')->provincia_id, 'Santa Cruz de la Sierra es Bolivia');
+        $this->assertStringContainsString('SANTA CRUZ DE LA SIERRA', $ficha('414')->observacion_general);
+        $this->assertSame('Córdoba', $ficha('415')->provincia->nombre);
+        $this->assertSame('SANTA ROSA', $ficha('415')->localidad->nombre);
+        $this->assertSame($ficha('415')->provincia_id, $ficha('415')->localidad->provincia_id);
+
+        $this->assertSame(0, Pais::whereIn('nombre', ['Oscar', 'OSCAR', 'B7608v', 'Cordoba'])->count());
+        $this->assertSame(0, Provincia::whereIn('nombre', ['GRAN ROSARIO', 'SANTA CRUZ DE LA SIERRA', 'S.M. DE TUCUMAN', 'PCIA. DE CORDOBA'])->count());
+        $this->assertSame(1, Provincia::where('nombre', $caba)->count());
+    }
+
+    /**
+     * Las fechas de ocho cifras del sistema viejo se leen, y lo que ya entro
+     * en septiembre con la fecha bien escrita se reconoce igual.
+     */
+    public function test_sumar_lee_las_fechas_de_ocho_cifras(): void
+    {
+        $this->sistemaEnUso();
+        $this->guardarOriginales('migracion');
+        Consulta::query()->update(['origen_clave' => null]);
+        $antes = Consulta::count();
+
+        $carpeta = $this->indice(['ALFA,,,,401'], []);
+
+        // Una de septiembre (07/24/26) que ahora viene como 20260724.
+        $nitinol = 'FERRUM S.A.,Juan Perez,1000,NITINOL #5 ALAMBRE 2MM EN ROLLO RECOCIDO,RECTO COLOR OXIDO TEMP AF 85C,PEDIDO MINIMO 130 METROS X M,110 DIAS,,0,0,41.7,0,0,DOLAR BILLETE,20260724,Pedido por mail,0,101';
+        file_put_contents("{$carpeta}/cotizaciones.csv",
+            "EMPRESA,CRESP,DOLAR,PE1,PE2,PE3,PE4,PE5,PR1,PR2,PR3,PR4,PR5,MON,FECHA,NOTA,NROFACT,ID\n"
+            ."ALFA,,0,BARRA OCHO CIFRAS,,,,,10,0,0,0,0,PESOS,20240315,,0,401\n"
+            ."ALFA,,0,CHAPA OCHO CIFRAS,,,,,20,0,0,0,0,PESOS,15032024,,0,401\n"
+            ."ALFA,,0,TUBO SEIS CIFRAS,,,,,30,0,0,0,0,PESOS,999999,,0,401\n"
+            ."ALFA,,0,FUTURO,,,,,40,0,0,0,0,PESOS,20991231,,0,401\n"
+            .$nitinol."\n");
+
+        $this->artisan('importar:sistema-viejo', ['--carpeta' => $carpeta, '--sumar' => true, '--aplicar' => true])
+            ->assertSuccessful();
+
+        $this->assertSame($antes + 4, Consulta::count(), 'el NITINOL de septiembre no vuelve a entrar');
+        $this->assertSame('2024-03-15', substr((string) Consulta::where('texto', 'like', 'BARRA OCHO%')->value('fecha'), 0, 10));
+        $this->assertSame('2024-03-15', substr((string) Consulta::where('texto', 'like', 'CHAPA OCHO%')->value('fecha'), 0, 10));
+        $tubo = Consulta::where('texto', 'like', 'TUBO SEIS%')->first();
+        $this->assertSame('1900-01-01', substr((string) $tubo->fecha, 0, 10));
+        $this->assertStringContainsString('figura 999999, que no se puede leer', $tubo->nota, 'lo que no se lee no se pierde');
+
+        // La huella lleva la fecha escrita y no la guardada (1900-01-01):
+        // no cambia segun el dia en que se corra la suma.
+        $futuro = Consulta::where('texto', 'like', 'FUTURO%')->first();
+        $this->assertSame('1900-01-01', substr((string) $futuro->fecha, 0, 10));
+        $this->assertSame(md5('401|2099-12-31|'.md5('FUTURO   40')), $futuro->origen_clave);
+    }
 }
