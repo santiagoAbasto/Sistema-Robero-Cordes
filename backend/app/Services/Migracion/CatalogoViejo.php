@@ -95,8 +95,10 @@ class CatalogoViejo
      */
     public static function desdeDos(string $texto, bool $siempre = false): string
     {
-        if (! $siempre && ! preg_match('/[\x{80}-\x{9F}\x{A0}-\x{A7}\x{AB}\x{AC}\x{B5}\x{D6}\x{E0}\x{F8}\x{2013}-\x{2122}]/u', $texto)
-            && ! (str_contains($texto, 'í') && ! preg_match('/[a-z]/', $texto))) {
+        // "GšEMES" (Ü) y "PERé" (Ú) tambien: una minuscula con acento en un
+        // texto sin ninguna otra minuscula. La ñ no: "ESPAñA" ya viene bien.
+        if (! $siempre && ! preg_match('/[\x{80}-\x{9F}\x{A0}-\x{A7}\x{AB}\x{AC}\x{B5}\x{D6}\x{E0}\x{F8}\x{152}\x{153}\x{160}\x{161}\x{178}\x{17D}\x{17E}\x{192}\x{2C6}\x{2DC}\x{2013}-\x{2122}]/u', $texto)
+            && ! (preg_match('/[à-ðò-ÿ]/u', $texto) && ! preg_match('/[a-z]/', $texto))) {
             return $texto;
         }
 
@@ -119,7 +121,18 @@ class CatalogoViejo
             }
         }
 
-        return mb_convert_encoding($bytes, 'UTF-8', 'CP850');
+        $traducido = mb_convert_encoding($bytes, 'UTF-8', 'CP850');
+
+        /*
+          Lo que ya estaba bien escrito en Windows, traducido, da caracteres
+          que en estos textos no existen: "CAÑO" daria "CAÐO" y "30°" daria
+          "30░". Si aparece alguno que no estaba, el texto se deja como vino.
+        */
+        if (preg_match('/[\x{2500}-\x{25FF}ÐËÏßÞþı]/u', $traducido) && ! preg_match('/[\x{2500}-\x{25FF}ÐËÏßÞþı]/u', $texto)) {
+            return $texto;
+        }
+
+        return $traducido;
     }
 
     /**

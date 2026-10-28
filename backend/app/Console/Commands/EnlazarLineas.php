@@ -30,6 +30,7 @@ class EnlazarLineas extends Command
 {
     protected $signature = 'lineas:enlazar
         {--aplicar : escribe en la base; sin esto solo informa}
+        {--solo-sumadas : solo las cotizaciones que entraron con --sumar, no las de septiembre}
         {--muestra=0 : imprime N enlaces al azar para revisarlos a mano}';
 
     protected $description = 'Reconoce el material y la forma dentro del texto de las lineas historicas';
@@ -85,7 +86,15 @@ class EnlazarLineas extends Command
         ConsultaLinea::query()
             // Solo las historicas. Una linea cargada en el sistema nuevo sin
             // material lo dejo asi una persona: no se le deduce nada.
-            ->whereIn('consulta_id', DB::table('consultas')->where('nota', 'like', 'Importada del sistema anterior.%')->select('id'))
+            ->whereIn('consulta_id', DB::table('consultas')->where('nota', 'like', 'Importada del sistema anterior.%')
+                /*
+                  Con --solo-sumadas, solo lo que trajo la suma: las de
+                  septiembre quedan como el cliente ya las vio, y las copias y
+                  revisiones —que heredan la nota— tienen lineas tipeadas por
+                  una persona.
+                */
+                ->when($this->option('solo-sumadas'), fn ($q) => $q->whereNotNull('origen_clave')->whereNull('copiada_de_id')->whereNull('revision_de_id'))
+                ->select('id'))
             ->select(['id', 'descripcion', 'material_id', 'forma_id',
                 'diametro_mm', 'espesor_mm', 'ancho_mm', 'largo_mm'])
             ->chunkById(500, function ($lineas) use (

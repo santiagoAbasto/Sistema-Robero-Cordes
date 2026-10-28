@@ -174,11 +174,20 @@ class MigracionController extends Controller
                 // MySQL pasa a minusculas los acentos y SQLite solo la a-z: van las dos.
                 $formas = collect([$buscar, str_replace('Ø', 'Ý', $buscar)])
                     ->flatMap(fn ($b) => DB::getDriverName() === 'sqlite' ? [mb_strtolower($b), strtolower($b)] : [mb_strtolower($b)])
-                    ->unique();
+                    ->unique()
+                    // "%" y "_" son letras para el que busca, no comodines.
+                    ->map(fn ($f) => '%'.addcslashes($f, '\\%_').'%');
 
+                /*
+                  Solo en los valores. Sobre el JSON entero, buscar "nota" o
+                  "empresa" traia todas las filas —son nombres de columna— y
+                  1/2" no encontraba nada, porque la comilla se guarda escapada.
+                */
                 $consulta->where(function ($q) use ($formas) {
                     foreach ($formas as $forma) {
-                        $q->orWhereRaw('LOWER(datos) LIKE ?', ['%'.$forma.'%']);
+                        DB::getDriverName() === 'mysql'
+                            ? $q->orWhereRaw("JSON_SEARCH(LOWER(datos), 'one', ?) IS NOT NULL", [$forma])
+                            : $q->orWhereRaw("EXISTS (SELECT 1 FROM json_each(datos) WHERE LOWER(json_each.value) LIKE ? ESCAPE '\\')", [$forma]);
                     }
                 });
             }
@@ -417,8 +426,11 @@ class MigracionController extends Controller
         $ids = $this->deSeptiembre();
 
         // Las sumadas del indice completo traen la huella de su cotizacion.
+        // Solo la que vino del Access: una revision o una copia no es el "ahora" de esa fila.
         $porClave = Consulta::withTrashed()
             ->whereIn('origen_clave', array_filter(array_map(fn ($f) => $f['clave'] ?? null, $enPantalla)))
+            ->whereNull('revision_de_id')->whereNull('copiada_de_id')
+            ->orderByDesc('id')
             ->pluck('id', 'origen_clave');
 
         $idDe = fn (array $f) => ! empty($f['clave']) ? ($porClave[$f['clave']] ?? null) : $ids->get($f['i']);

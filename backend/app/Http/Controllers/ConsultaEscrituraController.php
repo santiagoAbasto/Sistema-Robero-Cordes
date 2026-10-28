@@ -198,9 +198,11 @@ class ConsultaEscrituraController extends Controller
         $consulta->load('lineas', 'condiciones');
 
         $revision = DB::transaction(function () use ($consulta, $request) {
+            // La huella de la importacion es de la cotizacion que vino del
+            // Access, no de sus revisiones: "Antes y ahora" la busca por ahi.
             $nueva = $consulta->replicate([
                 'id', 'numero', 'revision', 'emitida_el', 'emitida_por',
-                'created_at', 'updated_at', 'copiada_de_id',
+                'created_at', 'updated_at', 'copiada_de_id', 'origen_clave',
             ]);
             $nueva->revision_de_id = $consulta->raizId();
             $nueva->usuario_id = $request->user()->id;

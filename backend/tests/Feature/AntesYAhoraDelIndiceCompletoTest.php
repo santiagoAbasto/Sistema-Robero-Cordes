@@ -146,4 +146,35 @@ class AntesYAhoraDelIndiceCompletoTest extends TestCase
         $r->assertJsonPath('total', 1);
         $r->assertJsonPath('filas.0.ahora.Empresa', 'ACME METALES S.R.L.');
     }
+
+    /**
+     * Una revision de una cotizacion del indice no le roba el lugar en "Antes y ahora".
+     *
+     * La R1 se copiaba con la huella de la importacion y la pantalla mostraba
+     * la revision —con la fecha de hoy y las lineas cambiadas— al lado de la
+     * fila del Access, como si la importacion las hubiera cambiado.
+     */
+    public function test_la_revision_no_reemplaza_a_la_original(): void
+    {
+        $this->servidorConSeptiembre();
+        $sumada = Consulta::where('texto', 'like', 'BARRA INOX 304%')->first();
+
+        $this->postJson("/api/consultas/{$sumada->id}/revision")->assertSuccessful();
+        $revision = Consulta::where('revision_de_id', $sumada->id)->first();
+        $this->assertNull($revision->origen_clave, 'la revision no hereda la huella');
+
+        $r = $this->getJson("/api/migracion/comparacion?que=cotizaciones&cotizacion={$sumada->id}")->assertOk();
+        $r->assertJsonPath('total', 1);
+        $r->assertJsonPath('filas.0.ahora.Fecha', '15-10-2026');
+    }
+
+    /** El buscador mira los valores, no los nombres de las columnas. */
+    public function test_el_buscador_no_encuentra_los_nombres_de_las_columnas(): void
+    {
+        $this->servidorConSeptiembre();
+
+        $this->getJson('/api/migracion/comparacion?que=cotizaciones&buscar=fecha')->assertOk()->assertJsonPath('total', 0);
+        $this->getJson('/api/migracion/comparacion?que=empresas&buscar=telef')->assertOk()->assertJsonPath('total', 0);
+        $this->getJson('/api/migracion/comparacion?que=cotizaciones&buscar=flete')->assertOk()->assertJsonPath('total', 1);
+    }
 }

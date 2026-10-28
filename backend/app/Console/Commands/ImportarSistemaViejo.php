@@ -652,6 +652,7 @@ class ImportarSistemaViejo extends Command
 
         $iguales = 0;
         $distintas = 0;
+        $vistos = [];
 
         foreach ($this->leer("{$carpeta}/empresas.csv") as $e) {
             $nombre = CatalogoViejo::texto($e['EMPRESA'] ?? null);
@@ -664,6 +665,14 @@ class ImportarSistemaViejo extends Command
             $this->nombresDelArchivo[$plano] = ($this->nombresDelArchivo[$plano] ?? 0) + 1;
 
             $codigo = trim((string) ($e['ID'] ?? ''));
+
+            // El ID repetido en el Access se compara una vez: la segunda fila
+            // ya se cuenta como repetida, no como otra empresa.
+            if (isset($vistos[$codigo])) {
+                continue;
+            }
+
+            $vistos[$codigo] = true;
 
             if (isset($this->yaEstaban[$codigo])) {
                 if ($this->yaEstaban[$codigo] === $plano) {
@@ -1653,7 +1662,18 @@ class ImportarSistemaViejo extends Command
           corregidos a mano ("ESPAÑA"): ahi solo lo que muestra la marca.
         */
         $siempre = basename($ruta) === 'cotizaciones.csv';
-        $traducir = fn (string $v) => CatalogoViejo::desdeDos($v, $siempre);
+        $sinTraducir = 0;
+        $traducir = function (string $v) use ($siempre, &$sinTraducir) {
+            $t = CatalogoViejo::desdeDos($v, $siempre);
+
+            // En la tabla que se traduce entera, lo que queda igual ya venia
+            // bien escrito: se cuenta para verlo en el informe.
+            if ($siempre && $t === $v && preg_match('/[^\x00-\x7F]/', $v)) {
+                $sinTraducir++;
+            }
+
+            return $t;
+        };
 
         while (($fila = fgetcsv($f, 0, ',', '"', '')) !== false) {
             if (count($fila) === count($cabecera)) {
@@ -1669,6 +1689,10 @@ class ImportarSistemaViejo extends Command
         // empresas.csv dos veces.
         if ($malas > 0) {
             $this->conteo['filas de '.basename($ruta).' que no se pudieron leer'] = $malas;
+        }
+
+        if ($sinTraducir > 0) {
+            $this->conteo['textos de '.basename($ruta).' que ya venian bien escritos (no se traducen)'] = $sinTraducir;
         }
     }
 

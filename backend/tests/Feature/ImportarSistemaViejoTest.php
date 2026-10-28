@@ -1051,4 +1051,32 @@ class ImportarSistemaViejoTest extends TestCase
         $this->assertSame($antes + 1, Consulta::count());
         $this->assertSame(0, Empresa::whereNull('nombre')->orWhere('nombre', '')->count());
     }
+
+    /** Despues de cargar, el control no confunde un ID repetido del Access con otra empresa. */
+    public function test_el_control_despues_de_cargar_no_ve_el_id_repetido_como_otra_empresa(): void
+    {
+        $this->sistemaEnUso();
+        $this->sumar('migracion-completa')->assertSuccessful();
+
+        $this->sumar('migracion-completa', aplicar: false)
+            ->doesntExpectOutputToContain('Mismo ID y otro nombre')
+            ->doesntExpectOutputToContain('no se suma nada de ellas')
+            ->assertSuccessful();
+    }
+
+    /** La traduccion de DOS: lo que vino mal se arregla y lo que vino bien no se toca. */
+    public function test_la_traduccion_de_dos_no_toca_lo_que_ya_estaba_bien(): void
+    {
+        $dos = fn (string $t, bool $siempre = false) => \App\Services\Migracion\CatalogoViejo::desdeDos($t, $siempre);
+
+        $this->assertSame('GENERAL GÜEMES', $dos('GENERAL GšEMES'));
+        $this->assertSame('PERÚ', $dos('PERé'));
+        $this->assertSame('PEÑA', $dos('PE¥A'));
+        $this->assertSame('BAR Ý 1.6', $dos('BAR í 1.6'));
+        $this->assertSame('ESPAñA', $dos('ESPAñA'), 'corregido a mano en Windows');
+        $this->assertSame('Avenida Güemes', $dos('Avenida Güemes'));
+        $this->assertSame('CAÑO 1/2"', $dos('CAÑO 1/2"', true), 'traducido daria CAÐO');
+        $this->assertSame('30°', $dos('30°', true), 'traducido daria 30░');
+        $this->assertSame('CAÑO', $dos('CA¥O', true));
+    }
 }
