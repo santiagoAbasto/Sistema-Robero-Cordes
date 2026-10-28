@@ -95,10 +95,15 @@ class CatalogoViejo
      */
     public static function desdeDos(string $texto, bool $siempre = false): string
     {
-        // "GšEMES" (Ü) y "PERé" (Ú) tambien: una minuscula con acento en un
-        // texto sin ninguna otra minuscula. La ñ no: "ESPAñA" ya viene bien.
+        /*
+          "GšEMES" (Ü) tambien: la š no aparece en un texto bien escrito. Una
+          minuscula con acento en un texto en mayusculas no alcanza como marca:
+          en las empresas hay "PERú" y "ESPAñA" ya corregidos a mano, y
+          traducidos darian "PER·" y "ESPA±A". Solo la "í", que en el indice
+          es la Ø del sistema viejo.
+        */
         if (! $siempre && ! preg_match('/[\x{80}-\x{9F}\x{A0}-\x{A7}\x{AB}\x{AC}\x{B5}\x{D6}\x{E0}\x{F8}\x{152}\x{153}\x{160}\x{161}\x{178}\x{17D}\x{17E}\x{192}\x{2C6}\x{2DC}\x{2013}-\x{2122}]/u', $texto)
-            && ! (preg_match('/[à-ðò-ÿ]/u', $texto) && ! preg_match('/[a-z]/', $texto))) {
+            && ! (str_contains($texto, 'í') && ! preg_match('/[a-z]/', $texto))) {
             return $texto;
         }
 

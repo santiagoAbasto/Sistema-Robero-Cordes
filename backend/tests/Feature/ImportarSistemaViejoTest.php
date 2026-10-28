@@ -1070,7 +1070,7 @@ class ImportarSistemaViejoTest extends TestCase
         $dos = fn (string $t, bool $siempre = false) => \App\Services\Migracion\CatalogoViejo::desdeDos($t, $siempre);
 
         $this->assertSame('GENERAL GÜEMES', $dos('GENERAL GšEMES'));
-        $this->assertSame('PERÚ', $dos('PERé'));
+        $this->assertSame('PERú', $dos('PERú'), 'corregido a mano: traducido daria PER·');
         $this->assertSame('PEÑA', $dos('PE¥A'));
         $this->assertSame('BAR Ý 1.6', $dos('BAR í 1.6'));
         $this->assertSame('ESPAñA', $dos('ESPAñA'), 'corregido a mano en Windows');
