@@ -214,7 +214,7 @@ class CatalogosSeeder extends Seeder
 
         $condiciones = [
             'Plazo de entrega: segun disponibilidad',
-            'Precios en Dolares Estadounidenses, mas IVA',
+            'Precios en Dolares Estadounidenses',
             'Mercaderia sujeta a venta previa',
         ];
 

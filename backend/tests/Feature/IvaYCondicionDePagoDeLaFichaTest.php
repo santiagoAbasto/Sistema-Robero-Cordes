@@ -127,7 +127,7 @@ class IvaYCondicionDePagoDeLaFichaTest extends TestCase
         $this->assertStringNotContainsString('1.318,05', $html);
     }
 
-    public function test_manda_la_razon_social_elegida_y_sin_condicion_queda_como_siempre(): void
+    public function test_manda_la_razon_social_elegida_y_sin_condicion_sale_como_al_inscripto(): void
     {
         $empresa = Empresa::create(['nombre' => 'CLIENTE', 'condicion_iva' => 'Consumidor Final']);
         $consulta = $this->cotizacion($empresa);
@@ -136,8 +136,10 @@ class IvaYCondicionDePagoDeLaFichaTest extends TestCase
 
         $this->assertStringContainsString('Total (no incluye IVA)', $this->hoja($consulta));
 
+        // Pedido del cliente: sin condicion cargada, como al inscripto.
         $sinCondicion = $this->hoja($this->cotizacion(Empresa::create(['nombre' => 'OTRO'])));
-        $this->assertStringNotContainsString('IVA', $sinCondicion);
+        $this->assertStringContainsString('Total (no incluye IVA)', $sinCondicion);
+        $this->assertStringNotContainsString('121,00', $sinCondicion);
     }
 
     public function test_aproximado_e_iva_van_juntos_en_el_total(): void
@@ -146,6 +148,19 @@ class IvaYCondicionDePagoDeLaFichaTest extends TestCase
         $consulta->lineas()->update(['aprox' => true]);
 
         $this->assertStringContainsString('Total (aproximado, no incluye IVA)', $this->hoja($consulta));
+    }
+
+    /** Las condiciones que decian "mas IVA" ya no lo dicen: el total lo aclara segun el cliente. */
+    public function test_las_condiciones_ya_no_dicen_mas_iva(): void
+    {
+        $migracion = require database_path('migrations/2026_10_29_000300_condiciones_sin_mas_iva.php');
+        $vieja = \App\Models\CondicionHabitual::create(['texto' => 'Precios en Dolares Estadounidenses, mas IVA']);
+        $reescrita = \App\Models\CondicionHabitual::create(['texto' => 'Precios mas IVA, a convenir']);
+
+        $migracion->up();
+
+        $this->assertSame('Precios en Dolares Estadounidenses', $vieja->fresh()->texto);
+        $this->assertSame('Precios mas IVA, a convenir', $reescrita->fresh()->texto, 'la que reescribio la empresa no se toca');
     }
 
     public function test_al_copiar_a_otra_empresa_trae_su_condicion_de_pago(): void

@@ -151,7 +151,8 @@ class Consulta extends Model
      *  - exportacion y Tierra del Fuego (liberado) van con factura E, tasa
      *    cero: "Total (sin IVA)".
      * Manda la de la razon social elegida; si no tiene, la de la ficha. Sin
-     * condicion cargada la hoja sale como siempre.
+     * condicion cargada sale como al inscripto (lo pidio el cliente): las
+     * condiciones ya no dicen "mas IVA", y el total tiene que decirlo.
      *
      * Los precios se guardan sin IVA: esto cambia solo lo que se imprime.
      *
@@ -165,7 +166,7 @@ class Consulta extends Model
             'Responsable Inscripto', 'Resp. Inscripto', 'Monotributo' => [1.0, 'no incluye IVA'],
             'Consumidor Final', 'Exento' => [1 + self::ALICUOTA_IVA, 'IVA incluido'],
             'Liberado', 'Exportación' => [1.0, 'sin IVA'],
-            default => [1.0, null],
+            default => [1.0, 'no incluye IVA'],
         };
     }
 

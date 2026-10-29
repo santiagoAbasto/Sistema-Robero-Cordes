@@ -100,7 +100,7 @@ class CondicionesSeeder extends Seeder
             [
                 'Precios',
                 'Los importes están expresados en Dólares Estadounidenses "billete", y se '
-                .'entienden más IVA por material entregado en nuestras oficinas en la '
+                .'entienden por material entregado en nuestras oficinas en la '
                 .'Ciudad de Bs. As.',
             ],
             [

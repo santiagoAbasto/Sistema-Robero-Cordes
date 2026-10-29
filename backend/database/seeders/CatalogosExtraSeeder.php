@@ -82,7 +82,7 @@ class CatalogosExtraSeeder extends Seeder
         // --- condiciones que se repiten en las cotizaciones ---
         $condiciones = [
             'Plazo de entrega: segun disponibilidad',
-            'Precios en Dolares Estadounidenses, mas IVA',
+            'Precios en Dolares Estadounidenses',
             'Mercaderia sujeta a venta previa',
             'Precios no incluyen flete',
             'Entrega en nuestro deposito de Palpa 3551',
