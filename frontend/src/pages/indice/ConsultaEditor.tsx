@@ -516,6 +516,10 @@ export default function ConsultaEditor() {
   }, [hayCambios])
   const [guardando, setGuardando] = useState(false)
   const [bajando, setBajando] = useState(false)
+  // A quién mandársela cuando el contacto no tiene mail o teléfono cargado.
+  const [pidiendo, setPidiendo] = useState<'WhatsApp' | 'Correo' | null>(null)
+  const [destinoEscrito, setDestinoEscrito] = useState('')
+  const [destinoMal, setDestinoMal] = useState<string | null>(null)
   // El texto que acompaña la hoja y si el correo sale desde el servidor.
   const { datos: envios } = useCarga(traerEnvios, [])
   const { user } = useAuth()
@@ -854,25 +858,34 @@ export default function ConsultaEditor() {
   /**
    * Manda la hoja por WhatsApp o por correo, al contacto de la ficha.
    *
-   * Sin teléfono o sin mail cargado no se abre una ventana vacía: se va a la
-   * pantalla de envío, que es donde se elige a quién y con qué datos sale.
+   * Sin teléfono o sin mail cargado no se abre una ventana vacía: se pide
+   * ahí mismo a quién mandársela.
    */
-  async function mandarla(via: 'WhatsApp' | 'Correo') {
+  async function mandarla(via: 'WhatsApp' | 'Correo', escrito?: string) {
     const contacto =
       (empresaActual?.contactos ?? []).find((c) => c.id === Number(cabecera.contacto_id)) ??
       (empresaActual?.contactos ?? []).find((c) => c.principal) ??
       (empresaActual?.contactos ?? [])[0]
 
     const destino =
-      via === 'WhatsApp' ? contacto?.telefonos?.[0]?.valor : contacto?.mails?.[0]?.valor
+      escrito ?? (via === 'WhatsApp' ? contacto?.telefonos?.[0]?.valor : contacto?.mails?.[0]?.valor)
 
+    /*
+      Sin mail o sin teléfono cargado se pide ahí mismo. Antes llevaba a la
+      pantalla de Imprimir y se perdía de vista la cotización: "si clickeás
+      enviar por mail y no tenía el mail cargado, se va a otra página; que
+      te pida un mail" (cliente, 29-10-2026).
+    */
     if (!destino) {
-      navigate(`/imprimir?empresa=${idFicha}&consulta=${consultaId}`)
+      setPidiendo(via)
+      setDestinoEscrito('')
 
       return
     }
 
     if (!envios) return
+
+    setPidiendo(null)
 
     const nombre = existente
       ? nombreDeLaHoja(existente, empresaActual!.nombre)
@@ -1339,6 +1352,56 @@ export default function ConsultaEditor() {
               ? 'Por correo sale con la hoja adjunta. Por WhatsApp se baja sola para que la adjuntes.'
               : 'La hoja se baja sola para que la adjuntes.'}
           </span>
+          {pidiendo && (
+            <form
+              noValidate
+              className="flex w-full flex-wrap items-end gap-2.5 border-t border-brand-200 pt-2.5"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const valor = destinoEscrito.trim()
+                const bien =
+                  pidiendo === 'Correo' ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor) : valor.replace(/\D/g, '').length >= 8
+                if (!bien) {
+                  setDestinoMal(
+                    pidiendo === 'Correo'
+                      ? 'Escribí el mail completo, por ejemplo nombre@empresa.com.'
+                      : 'Escribí el número con la característica, por ejemplo 11 4496 5568.',
+                  )
+                  return
+                }
+                setDestinoMal(null)
+                mandarla(pidiendo, valor)
+              }}
+            >
+              <Texto
+                className="min-w-[260px] flex-1"
+                etiqueta={
+                  pidiendo === 'Correo'
+                    ? 'El contacto no tiene mail cargado. ¿A qué mail se la mandamos?'
+                    : 'El contacto no tiene teléfono cargado. ¿A qué WhatsApp se la mandamos?'
+                }
+                type={pidiendo === 'Correo' ? 'email' : 'tel'}
+                placeholder={pidiendo === 'Correo' ? 'nombre@empresa.com' : '11 4496 5568'}
+                autoFocus
+                value={destinoEscrito}
+                onChange={(e) => setDestinoEscrito(e.target.value)}
+                error={destinoMal ?? undefined}
+              />
+              <Boton variante="primario" type="submit" disabled={bajando}>
+                {bajando ? 'Mandando…' : 'Mandar'}
+              </Boton>
+              <Boton
+                variante="suave"
+                type="button"
+                onClick={() => {
+                  setPidiendo(null)
+                  setDestinoMal(null)
+                }}
+              >
+                Cancelar
+              </Boton>
+            </form>
+          )}
         </div>
       )}
 

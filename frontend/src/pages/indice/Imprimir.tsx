@@ -13,7 +13,7 @@ import {
   PageHeader,
   SinResultados,
 } from '../../components/ui'
-import { Casilla, Guardado, Lista } from '../../components/ui/form'
+import { Casilla, Guardado, Lista, Texto } from '../../components/ui/form'
 import api from '../../lib/api'
 import {
   buscarEmpresas,
@@ -179,7 +179,7 @@ function ElegirImpresion({
 
     if (!descargar && porElServidor) {
       if (!mail) {
-        setAviso('Elegí a qué mail va: falta en los datos de contacto.')
+        setAviso('Escribí o elegí a qué mail va, en los datos de contacto (paso 2).')
 
         return
       }
@@ -356,20 +356,41 @@ function ElegirImpresion({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <Lista
-                etiqueta="Telefono"
-                vacio="Sin telefono"
-                value={telefono}
-                onChange={(e) => setTelefono(e.target.value)}
-                opciones={opcionesTelefono}
-              />
-              <Lista
-                etiqueta="Mail"
-                vacio="Sin mail"
-                value={mail}
-                onChange={(e) => setMail(e.target.value)}
-                opciones={opcionesMail}
-              />
+              {/* Sin ninguno cargado se escribe acá: si no, no había a dónde mandarla. */}
+              {opcionesTelefono.length > 0 ? (
+                <Lista
+                  etiqueta="Telefono"
+                  vacio="Sin telefono"
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  opciones={opcionesTelefono}
+                />
+              ) : (
+                <Texto
+                  etiqueta="Telefono"
+                  type="tel"
+                  placeholder="No tiene cargado: escribilo acá"
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                />
+              )}
+              {opcionesMail.length > 0 ? (
+                <Lista
+                  etiqueta="Mail"
+                  vacio="Sin mail"
+                  value={mail}
+                  onChange={(e) => setMail(e.target.value)}
+                  opciones={opcionesMail}
+                />
+              ) : (
+                <Texto
+                  etiqueta="Mail"
+                  type="email"
+                  placeholder="No tiene cargado: escribilo acá"
+                  value={mail}
+                  onChange={(e) => setMail(e.target.value)}
+                />
+              )}
             </div>
 
             <Aviso tono="ambar">
