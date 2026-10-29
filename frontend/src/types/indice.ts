@@ -318,6 +318,8 @@ export interface Empresa {
   codigo_postal: string | null
   rubro: string | null
   rubro_id: number | null
+  condicion_iva?: string | null
+  condicion_pago?: string | null
   activa: boolean
   visible_para: string
   relaciones: { id: number; relacion: Relacion; desde: string | null; activa: boolean }[]

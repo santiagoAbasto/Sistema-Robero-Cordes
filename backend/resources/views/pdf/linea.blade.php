@@ -13,27 +13,27 @@
 @php
     // Lo pone la hoja; sin ella (una linea suelta) no hay columnas de facturacion.
     $conFacturacion ??= false;
+    $conIva ??= fn ($monto) => $monto;
+    $factorIva ??= 1.0;
     $cantidad = fn ($v) => $v ? rtrim(rtrim(number_format((float) $v, 2, ',', '.'), '0'), ',') : '';
     $metros = fn ($mm) => number_format((float) $mm / 1000, 2, ',', '.');
 @endphp
 <tr class="{{ $esAlternativa ? 'linea alternativa' : 'linea' }}">
     <td class="item">{{ $numero }}</td>
-    <td>{{ $cantidad($linea->cantidad) }}</td>
+    <td>@if ($linea->aprox && $linea->cantidad)<span class="aprox">Aprox.</span>@endif{{ $cantidad($linea->cantidad) }}</td>
     <td>{{ $linea->unidadVenta?->codigo }}</td>
     <td>
         {{--
-            La alternativa lleva "Alternativa" como titulo, con su via y su
-            plazo, y la descripcion abajo, alineada con la de la linea. La via
-            de una linea comun va como un renglon chico arriba de la descripcion.
+            La alternativa lleva "Alternativa" como titulo y la descripcion
+            abajo, alineada con la de la linea. El transporte y el plazo van al
+            final del item (ver abajo).
         --}}
         @php
-            $entrega = $linea->plazo_dias ? 'entrega aprox. '.$linea->plazo_dias.' dias' : '';
+            $entrega = $linea->plazo_dias ? 'entrega aprox. '.$linea->plazo_dias.' días' : '';
             $via = trim($linea->transporte.($linea->transporte && $entrega ? ' · ' : '').$entrega);
         @endphp
         @if ($esAlternativa)
-            <div class="alt-titulo">Alternativa{{ $via !== '' ? ' · '.$via : '' }}</div>
-        @elseif ($via !== '')
-            <div class="via">{{ $via }}</div>
+            <div class="alt-titulo">Alternativa</div>
         @endif
         {{-- El item del cliente va adelante: es como el compara su
              requerimiento contra la oferta, renglon por renglon. --}}
@@ -46,15 +46,11 @@
         @if ($linea->caracteristicas && ! str_contains(mb_strtoupper($linea->descripcion), mb_strtoupper($linea->caracteristicas)))
             {{ $linea->caracteristicas }}
         @endif
-        @if ($linea->aprox)<span class="aprox">(aprox.)</span>@endif
         {{-- Un item que no se cotiza queda en la hoja, sin precio. Debajo del
              material va solo el motivo: "no se cotiza" ya lo dice la columna
              del importe (lista del cliente, 14-10-2026). --}}
         @if ($linea->no_cotizada && $linea->motivo_no_cotiza)
             <div class="no-cotiza">{{ $linea->motivo_no_cotiza }}</div>
-        @endif
-        @if (! $esAlternativa && ! $linea->transporte && $linea->plazo_dias)
-            <div class="nota-linea">Entrega aprox. {{ $linea->plazo_dias }} dias</div>
         @endif
         @if ($linea->codigo_cliente)
             <div class="dato-cliente">Cod. cliente: {{ $linea->codigo_cliente }}</div>
@@ -89,6 +85,14 @@
                 @endif
             </div>
         @endif
+        {{--
+            El transporte y el plazo, como ultimo renglon del item y empezando
+            con "Para este ítem" (pedido del cliente, 29-10-2026). Antes iban
+            arriba de la descripcion, y el plazo solo salia dos veces.
+        --}}
+        @if ($via !== '')
+            <div class="via">Para este ítem: {{ $via }}</div>
+        @endif
     </td>
     {{--
         La cantidad y la unidad en que se factura, y el precio de esa unidad:
@@ -100,15 +104,15 @@
         $factura = $conFacturacion && $linea->cambiaDeUnidad() && $linea->cantidad_facturar;
     @endphp
     @if ($conFacturacion)
-        <td>{{ $linea->no_cotizada ? '' : $cantidad($factura ? $linea->cantidad_facturar : $linea->cantidad) }}</td>
+        <td>@if ($linea->aprox && ! $linea->no_cotizada)<span class="aprox">Aprox.</span>@endif{{ $linea->no_cotizada ? '' : $cantidad($factura ? $linea->cantidad_facturar : $linea->cantidad) }}</td>
         <td>{{ $linea->no_cotizada ? '' : ($factura ? $linea->unidadFactura?->codigo : $linea->unidadVenta?->codigo) }}</td>
     @endif
     @if ($incluyeImportes)
         @if ($linea->no_cotizada)
             <td colspan="2" class="no-cotiza-importe">no se cotiza</td>
         @else
-            <td>@include('pdf.plata', ['monto' => $factura && $linea->precio_por_kilo ? $linea->precio_por_kilo : $linea->precio_unitario])</td>
-            <td>@include('pdf.plata', ['monto' => $linea->importe])</td>
+            <td>@include('pdf.plata', ['monto' => $conIva($factura && $linea->precio_por_kilo ? $linea->precio_por_kilo : $linea->precio_unitario)])</td>
+            <td>@include('pdf.plata', ['monto' => $linea->importeEnLaHoja($factorIva, $conFacturacion)])</td>
         @endif
     @endif
 </tr>

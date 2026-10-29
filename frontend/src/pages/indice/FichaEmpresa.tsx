@@ -429,6 +429,11 @@ function DatosDeLaEmpresa({
         <Campo etiqueta="Pais" valor={empresa.pais} />
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Campo etiqueta="Condición frente al IVA" valor={empresa.condicion_iva ?? null} />
+        <Campo etiqueta="Condición de pago habitual" valor={empresa.condicion_pago ?? null} />
+      </div>
+
       {children}
 
       {/* Lo que hay que saber antes de atenderla: siempre a la vista. */}

@@ -136,6 +136,35 @@ class Consulta extends Model
      * se mando: si se pudiera editar, la hoja que tiene el cliente y la que
      * esta en el sistema dejarian de coincidir sin que nadie lo note.
      */
+    /** El IVA general, el del acero. */
+    public const ALICUOTA_IVA = 0.21;
+
+    /**
+     * Como salen los precios en la hoja segun la condicion frente al IVA.
+     *
+     * Pedido del cliente (29-10-2026): al inscripto se le cotiza mas IVA
+     * ("Total (no incluye IVA)") y al consumidor final con el IVA incluido,
+     * que lo suma el sistema ("Total (IVA incluido)"). Monotributo y exento
+     * reciben factura B: tambien con el IVA incluido. Liberado y exportacion
+     * no llevan IVA. Manda la de la razon social elegida; si no tiene, la de
+     * la ficha. Sin condicion cargada la hoja sale como siempre.
+     *
+     * Los precios se guardan sin IVA: esto cambia solo lo que se imprime.
+     *
+     * @return array{0: float, 1: ?string} por cuanto se multiplican los precios y la leyenda del total
+     */
+    public function ivaDeLaHoja(): array
+    {
+        $condicion = $this->razonSocial?->condicion_iva ?: $this->empresa?->condicion_iva;
+
+        return match ($condicion) {
+            'Responsable Inscripto', 'Resp. Inscripto' => [1.0, 'no incluye IVA'],
+            'Consumidor Final', 'Monotributo', 'Exento' => [1 + self::ALICUOTA_IVA, 'IVA incluido'],
+            'Liberado', 'Exportación' => [1.0, 'sin IVA'],
+            default => [1.0, null],
+        };
+    }
+
     public function estaEmitida(): bool
     {
         return $this->emitida_el !== null;

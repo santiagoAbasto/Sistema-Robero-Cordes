@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Mail\CotizacionPorCorreo;
 use App\Models\Ajuste;
 use App\Models\Consulta;
+use App\Models\ConsultaLinea;
 use App\Models\Impresion;
 use App\Services\Correo;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -23,8 +24,8 @@ use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
  */
 class PdfController extends Controller
 {
-    /** El mismo isotipo que se ve al entrar al sistema. */
-    private const MARCA = 'images/cordes-mark.svg';
+    /** El logo de la empresa, el que mandaron ellos (29-10-2026): el de antes no era el suyo. */
+    private const MARCA = 'images/cordes-logo.jpg';
 
     /**
      * La marca, embebida en la hoja.
@@ -42,7 +43,7 @@ class PdfController extends Controller
             return null;
         }
 
-        return 'data:image/svg+xml;base64,'.base64_encode((string) file_get_contents($archivo));
+        return 'data:image/jpeg;base64,'.base64_encode((string) file_get_contents($archivo));
     }
 
     public function cotizacion(Request $request, Consulta $consulta)
@@ -104,6 +105,8 @@ class PdfController extends Controller
             default => 'Cotizacion',
         };
 
+        [$factorIva, $leyendaIva] = $consulta->ivaDeLaHoja();
+
         $pdf = Pdf::loadView('pdf.cotizacion', [
             'consulta' => $consulta,
             'lineas' => $lineas,
@@ -112,7 +115,11 @@ class PdfController extends Controller
             // comerciales.
             'condiciones' => $consulta->condiciones->where('imprime', true),
             // Las alternativas se ofrecen para elegir: no suman.
-            'total' => (float) $lineas->filter(fn ($l) => $l->cuentaParaElTotal())->sum('importe'),
+            // El total es la suma de los importes tal como se leen en la hoja (con IVA, si va incluido).
+            'total' => (float) $lineas->filter(fn ($l) => $l->cuentaParaElTotal())
+                ->sum(fn ($l) => $l->importeEnLaHoja($factorIva, ConsultaLinea::hojaConFacturacion($lineas))),
+            'factorIva' => $factorIva,
+            'leyendaIva' => $leyendaIva,
             'titulo' => $titulo,
             'marca' => $this->marca(),
             'simbolo' => $consulta->moneda?->simbolo() ?? '',

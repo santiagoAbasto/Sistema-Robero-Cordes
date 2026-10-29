@@ -16,7 +16,8 @@
         .membrete { width: 100%; border-bottom: 1.4pt solid #0f172a; padding-bottom: 6pt; }
         .membrete td { vertical-align: top; }
         /* La marca es el mismo SVG que se ve al entrar al sistema. */
-        .marca { width: 34pt; height: 34pt; }
+        /* Cuadrado, con "cordes" abajo: mas chico no se lee la palabra. */
+        .marca { width: 46pt; height: 46pt; }
         .razon { font-size: 12pt; font-weight: bold; letter-spacing: .2pt; }
         .datos-casa { font-size: 6.8pt; color: #5b6b7b; }
         .doc { text-align: right; }
@@ -43,7 +44,7 @@
         .lineas tr.alternativa td.item { color: #64748b; padding-left: 6pt; }
         /* "Alternativa" como titulo del renglon; la via de una linea comun. */
         .lineas .alt-titulo { font-weight: bold; color: #0a2e45; font-size: 7.8pt; padding-bottom: 1.5pt; }
-        .lineas .via { font-weight: bold; color: #0a6ca6; font-size: 7.4pt; padding-bottom: 1pt; }
+        .lineas .via { font-weight: bold; color: #0a6ca6; font-size: 7.4pt; padding-top: 1.5pt; }
         .total-nota { font-weight: normal; font-size: 7.5pt; color: #64748b; }
         .lineas .etiqueta {
             display: inline-block; background: #f1f5f9; color: #0a2e45;
@@ -59,7 +60,8 @@
         .dato-cliente { font-size: 7.2pt; color: #5b6b7b; padding-top: 1pt; }
         .nota-linea { font-size: 7.6pt; color: #334155; padding-top: 1pt; }
         .pedido { font-size: 7pt; color: #9a6207; padding-top: 1pt; }
-        .aprox { font-size: 7.4pt; color: #5b6b7b; margin-left: 3pt; }
+        /* "Aprox. 6": delante de la cantidad (pedido del cliente, 29-10-2026). */
+        .aprox { font-size: 7.4pt; color: #5b6b7b; margin-right: 2pt; }
         /* Un item que no se cotiza: se ve, con su motivo, pero sin precio. */
         .no-cotiza { font-size: 7pt; font-weight: bold; color: #b4472a; padding-top: 1pt; }
         .no-cotiza-importe { text-align: center; font-size: 7pt; font-style: italic; color: #b4472a; }
@@ -97,7 +99,7 @@
 
 <table class="membrete">
     <tr>
-        <td style="width:40pt">@if ($marca)<img class="marca" src="{{ $marca }}" alt="CORDES">@endif</td>
+        <td style="width:54pt">@if ($marca)<img class="marca" src="{{ $marca }}" alt="CORDES">@endif</td>
         <td>
             <div class="razon">ROBERTO CORDES S.A.</div>
             <div class="datos-casa">
@@ -163,17 +165,25 @@
     ninguna cambia de unidad, la tabla queda como siempre.
 --}}
 @php
-    $conFacturacion = $lineas->contains(fn ($l) => $l->cambiaDeUnidad() && $l->cantidad_facturar);
+    $conFacturacion = \App\Models\ConsultaLinea::hojaConFacturacion($lineas);
+    // Medida y peso aproximados: "Aprox." va delante de la cantidad, que necesita mas lugar.
+    $hayAprox = $lineas->contains(fn ($l) => (bool) $l->aprox);
+    $totalAprox = $lineas->contains(fn ($l) => $l->aprox && $l->cuentaParaElTotal());
+    // Al consumidor final los precios salen con el IVA incluido (Consulta::ivaDeLaHoja).
+    $factorIva ??= 1.0;
+    $leyendaIva ??= null;
+    $conIva = fn ($monto) => $monto === null ? null : round((float) $monto * $factorIva, 2);
+    $leyendasDelTotal = array_filter([$totalAprox ? 'aproximado' : null, $leyendaIva]);
 @endphp
 <table class="lineas">
     <thead>
         <tr>
             <th style="width:26pt">Item</th>
-            <th style="width:38pt">Cant.</th>
+            <th style="width:{{ $hayAprox ? 58 : 38 }}pt">Cant.</th>
             <th style="width:40pt">Unidad</th>
             <th>Descripcion</th>
             @if ($conFacturacion)
-                <th style="width:44pt">Cant. fact.</th>
+                <th style="width:{{ $hayAprox ? 62 : 44 }}pt">Cant. fact.</th>
                 <th style="width:40pt">Unid. fact.</th>
             @endif
             @if ($incluyeImportes)
@@ -204,7 +214,7 @@
 @if ($incluyeImportes)
     <table class="total">
         <tr>
-            <td>Total @if ($hayAlternativas)<span class="total-nota">(sin considerar las alternativas)</span>@endif</td>
+            <td>Total{{ $leyendasDelTotal ? ' ('.implode(', ', $leyendasDelTotal).')' : '' }} @if ($hayAlternativas)<span class="total-nota">(sin considerar las alternativas)</span>@endif</td>
             <td style="width:80pt">@include('pdf.plata', ['monto' => $total])</td>
         </tr>
     </table>

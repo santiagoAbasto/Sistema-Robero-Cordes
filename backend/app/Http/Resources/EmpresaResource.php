@@ -29,6 +29,8 @@ class EmpresaResource extends JsonResource
             'codigo_postal' => $this->codigo_postal,
             'rubro' => $this->rubro?->nombre,
             'rubro_id' => $this->rubro_id,
+            'condicion_iva' => $this->condicion_iva,
+            'condicion_pago' => $this->condicion_pago,
             'activa' => $this->activa,
             'visible_para' => $this->visible_para,
 

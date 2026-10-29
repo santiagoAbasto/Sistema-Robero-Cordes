@@ -87,7 +87,7 @@ export default function CalculadoraDePeso({
    *
    * El material real nunca sale exacto: una barra de Ø127 puede venir con
    * décimas de más o de menos, y el peso se corre. Marcado, la hoja dice
-   * "(aprox.)" al lado de la descripción.
+   * "Aprox." delante de la cantidad.
    */
   aprox?: boolean
   onAprox?: (v: boolean) => void
@@ -370,7 +370,7 @@ export default function CalculadoraDePeso({
                   onChange={(e) => onAprox(e.target.checked)}
                   className="h-3.5 w-3.5 accent-[var(--brand)]"
                 />
-                Es aproximado — sale “(aprox.)” en la hoja
+                Es aproximado — sale “Aprox.” delante de la cantidad en la hoja
               </label>
             )}
 

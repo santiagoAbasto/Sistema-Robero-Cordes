@@ -14,6 +14,11 @@ class Empresa extends Model
 
     protected $table = 'empresas';
 
+    /** Frente al IVA. De esto depende si la hoja sale mas IVA o con el IVA incluido. */
+    public const CONDICIONES_IVA = [
+        'Responsable Inscripto', 'Consumidor Final', 'Monotributo', 'Exento', 'Liberado', 'Exportación',
+    ];
+
     protected $guarded = [];
 
     protected $casts = [

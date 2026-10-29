@@ -578,6 +578,8 @@ class EmpresaEscrituraController extends Controller
             'pais_id' => ['nullable', 'exists:paises,id'],
             'codigo_postal' => ['nullable', 'string', 'max:12'],
             'rubro_id' => ['nullable', 'exists:rubros,id'],
+            'condicion_iva' => ['nullable', Rule::in(Empresa::CONDICIONES_IVA)],
+            'condicion_pago' => ['nullable', 'string', 'max:80'],
             'observacion_general' => ['nullable', 'string'],
             'visible_para' => ['nullable', Rule::in(['Todos', 'Solo los dueños', 'Un grupo'])],
         ], [

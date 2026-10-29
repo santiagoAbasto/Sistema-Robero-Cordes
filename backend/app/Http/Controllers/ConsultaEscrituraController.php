@@ -310,7 +310,7 @@ class ConsultaEscrituraController extends Controller
                     'moneda_id' => $consulta->moneda_id,
                     'tipo_cambio' => $consulta->tipo_cambio,
                     'condicion_pago' => $misma ? $consulta->condicion_pago
-                        : $destino->campos->firstWhere('titulo', 'Tipo de pago')?->valor,
+                        : ($destino->condicion_pago ?: $destino->campos->firstWhere('titulo', 'Tipo de pago')?->valor),
                     'lista_precios' => $misma ? $consulta->lista_precios
                         : $destino->campos->firstWhere('titulo', 'Lista de precios')?->valor,
                     'estado' => 'Borrador',
@@ -597,6 +597,25 @@ class ConsultaEscrituraController extends Controller
         $observacion->delete();
 
         return response()->json(['mensaje' => 'Observacion quitada.']);
+    }
+
+    /**
+     * Corregir una observacion mientras la cotizacion es borrador.
+     *
+     * Pedido del cliente (29-10-2026): las notas internas de una cotizacion
+     * guardada pero no emitida no se podian modificar, solo agregar. Emitida,
+     * el hilo queda como estaba: se agrega otra observacion. Cada cambio queda
+     * en el control de cambios.
+     */
+    public function editarObservacion(Request $request, Observacion $observacion)
+    {
+        $this->soloSiPuedeModificar($request);
+        $this->soloSiNoEstaEmitida($observacion->consulta);
+
+        $datos = $request->validate(['texto' => ['required', 'string']]);
+        $observacion->update(['texto' => $datos['texto']]);
+
+        return response()->json(['mensaje' => 'Observacion corregida.']);
     }
 
     // --------------------------------------------------------------- imprimir

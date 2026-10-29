@@ -496,6 +496,8 @@ export interface DatosEmpresa {
   pais_id?: number | null
   codigo_postal?: string | null
   rubro_id?: number | null
+  condicion_iva?: string | null
+  condicion_pago?: string | null
   observacion_general?: string | null
   relaciones?: string[]
   /** Su primer contacto: se guarda junto con la empresa y nace principal. */
@@ -621,7 +623,7 @@ export interface DatosLinea {
    */
   largo_min_mm?: number | null
   largo_max_mm?: number | null
-  /** Medida y peso con tolerancia: sale "(aprox.)" en la hoja. */
+  /** Medida y peso con tolerancia: sale "Aprox." delante de la cantidad en la hoja. */
   aprox?: boolean
   /** "idem al anterior": se imprime asi en vez de repetir la descripcion. */
   idem?: boolean
@@ -809,7 +811,8 @@ export async function versionesDe(id: number) {
 }
 
 export async function copiarConsulta(id: number, empresas: number[], conPrecios = true) {
-  const { data } = await api.post<{ mensaje: string; borradores: { data: Consulta[] } }>(
+  // El servidor manda los borradores como lista, sin envolver en "data".
+  const { data } = await api.post<{ mensaje: string; borradores: Consulta[] }>(
     `/consultas/${id}/copiar`,
     { empresas, con_precios: conPrecios },
   )
@@ -826,7 +829,7 @@ export async function copiarConsulta(id: number, empresas: number[], conPrecios 
 export async function usarComoBorrador(id: number, empresaId: number): Promise<number> {
   const { borradores } = await copiarConsulta(id, [empresaId], true)
 
-  return borradores.data[0].id
+  return borradores[0].id
 }
 
 export async function agregarObservacion(consultaId: number, texto: string) {
@@ -837,6 +840,10 @@ export async function agregarObservacion(consultaId: number, texto: string) {
 
 export async function borrarObservacion(id: number) {
   await api.delete(`/observaciones/${id}`)
+}
+
+export async function editarObservacion(id: number, texto: string) {
+  await api.put(`/observaciones/${id}`, { texto })
 }
 
 export interface DatosImpresion {
@@ -881,11 +888,22 @@ export async function traerHistorial(
 
 /** Saca el mensaje de error que devolvió la API, para mostrarlo tal cual. */
 export function mensajeDeError(err: unknown, porDefecto = 'No pudimos guardar. Probá de nuevo.'): string {
-  const e = err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } }
+  const e = err as {
+    isAxiosError?: boolean
+    response?: { data?: { message?: string; errors?: Record<string, string[]> } }
+  }
+
+  // Un error de la pantalla misma no es "no hay servidor": decirlo así mandaba
+  // a revisar el servidor cuando la falla era otra (29-10-2026, al usar una
+  // cotización como borrador). Queda en la consola para encontrarla.
+  if (!e?.isAxiosError) {
+    console.error(err)
+    return 'Algo falló en la pantalla. Recargá la página y probá de nuevo; si sigue, avisá qué estabas haciendo.'
+  }
 
   // Sin respuesta no hubo rechazo: no llegamos al servidor. Decirlo aparte
   // evita ponerse a revisar la pantalla cuando lo que falta es el backend.
-  if (!e?.response) {
+  if (!e.response) {
     return 'No se pudo conectar con el servidor. Fijate que este levantado y probá de nuevo.'
   }
 

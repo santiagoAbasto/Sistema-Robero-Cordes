@@ -17,6 +17,8 @@ import { AreaTexto, Casilla, Combo, Etiqueta, Guardado, Lista, Texto } from '../
 import {
   actualizarConsulta,
   agregarObservacion,
+  borrarObservacion,
+  editarObservacion,
   cantidad as fmtCantidad,
   crearConsulta,
   emitirConsulta,
@@ -526,6 +528,8 @@ export default function ConsultaEditor() {
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(alGuardar?.aviso ?? null)
   const [nuevaObs, setNuevaObs] = useState('')
+  // La observacion que se esta corrigiendo: solo en un borrador.
+  const [corrigiendo, setCorrigiendo] = useState<{ id: number; texto: string } | null>(null)
   const [precargando, setPrecargando] = useState(false)
 
   // Al abrir una existente, se cargan sus datos. La moneda viene por nombre,
@@ -575,7 +579,8 @@ export default function ConsultaEditor() {
     setCabecera((c) => ({
       ...c,
       contacto_id: (empresa.contactos ?? []).find((x) => x.principal)?.id ?? '',
-      condicion_pago: traer('Tipo de pago'),
+      // La de la ficha; si no tiene, el dato "Tipo de pago" de antes.
+      condicion_pago: empresa.condicion_pago || traer('Tipo de pago'),
       lista_precios: traer('Lista de precios'),
     }))
   }, [esNueva, empresa])
@@ -1117,6 +1122,31 @@ export default function ConsultaEditor() {
       await agregarObservacion(Number(consultaId), nuevaObs)
       setNuevaObs('')
       setAviso('Observación agregada. Es de uso interno: no se imprime.')
+      recargar()
+    } catch (err) {
+      setError(mensajeDeError(err))
+    }
+  }
+
+  async function guardarCorreccion() {
+    if (!corrigiendo?.texto.trim()) return
+
+    try {
+      await editarObservacion(corrigiendo.id, corrigiendo.texto)
+      setCorrigiendo(null)
+      setAviso('Observación corregida.')
+      recargar()
+    } catch (err) {
+      setError(mensajeDeError(err))
+    }
+  }
+
+  async function quitarObservacion(id: number, numero: number) {
+    if (!window.confirm(`¿Quitamos la observación ${numero}? No se puede deshacer.`)) return
+
+    try {
+      await borrarObservacion(id)
+      setAviso('Observación quitada.')
       recargar()
     } catch (err) {
       setError(mensajeDeError(err))
@@ -1701,10 +1731,40 @@ export default function ConsultaEditor() {
                   <span className="text-[11.5px] text-muted">{o.fecha}</span>
                   <span className="text-[11px] text-[#c3cdd6]">·</span>
                   <span className="text-[11.5px] text-muted">Quien lo escribio  {o.quien}</span>
+                  {/* Mientras es borrador se corrige; emitida, queda el hilo como estaba. */}
+                  {!emitida && corrigiendo?.id !== o.id && (
+                    <span className="ml-auto flex gap-2">
+                      <Boton variante="texto" onClick={() => setCorrigiendo({ id: o.id, texto: o.texto })}>
+                        Modificar
+                      </Boton>
+                      <Boton variante="texto" onClick={() => quitarObservacion(o.id, o.numero)}>
+                        Quitar
+                      </Boton>
+                    </span>
+                  )}
                 </div>
-                <div className="rounded-lg border border-[#e4dcf7] bg-[#fbfafe] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-slate-700">
-                  {o.texto}
-                </div>
+                {corrigiendo?.id === o.id ? (
+                  <div className="flex flex-wrap items-end gap-2.5">
+                    <AreaTexto
+                      className="min-w-[280px] flex-1"
+                      aria-label={`Observacion ${o.numero}`}
+                      filas={2}
+                      autoFocus
+                      value={corrigiendo.texto}
+                      onChange={(e) => setCorrigiendo({ id: o.id, texto: e.target.value })}
+                    />
+                    <Boton variante="primario" onClick={guardarCorreccion} disabled={!corrigiendo.texto.trim()}>
+                      Guardar
+                    </Boton>
+                    <Boton variante="suave" onClick={() => setCorrigiendo(null)}>
+                      Cancelar
+                    </Boton>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-[#e4dcf7] bg-[#fbfafe] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-slate-700">
+                    {o.texto}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

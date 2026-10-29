@@ -237,6 +237,41 @@ class ConsultaLinea extends Model
      * kilos: cantidad × factor = kilos, y kilos × precio por kilo = importe.
      * Si no hay cambio de unidad, es cantidad × precio unitario, como siempre.
      */
+    /** Si la hoja suma las columnas de facturacion: alguna linea se factura en otra unidad. */
+    public static function hojaConFacturacion(iterable $lineas): bool
+    {
+        return collect($lineas)->contains(fn (self $l) => $l->cambiaDeUnidad() && $l->cantidad_facturar);
+    }
+
+    /**
+     * El importe como se lee en la hoja.
+     *
+     * Sin IVA que sumar, el guardado. Con el IVA incluido (consumidor final),
+     * el precio con IVA de la fila por su cantidad: asi el renglon cierra
+     * —6 x 219,68 = 1.318,08— y el total es la suma de lo que se lee. Si la
+     * linea no tiene precio o cantidad (las historicas), el importe con IVA.
+     */
+    public function importeEnLaHoja(float $factorIva, bool $conFacturacion): ?float
+    {
+        if ($this->importe === null) {
+            return null;
+        }
+
+        if ($factorIva == 1.0) {
+            return (float) $this->importe;
+        }
+
+        $factura = $conFacturacion && $this->cambiaDeUnidad() && $this->cantidad_facturar;
+        $precio = $factura && $this->precio_por_kilo ? $this->precio_por_kilo : $this->precio_unitario;
+        $cantidad = $factura ? $this->cantidad_facturar : $this->cantidad;
+
+        if ($precio === null || $cantidad === null) {
+            return round((float) $this->importe * $factorIva, 2);
+        }
+
+        return round(round((float) $precio * $factorIva, 2) * (float) $cantidad, 2);
+    }
+
     public function recalcular(): void
     {
         if ($this->cambiaDeUnidad() && $this->factor_conversion) {

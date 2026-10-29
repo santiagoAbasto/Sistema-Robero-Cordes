@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Aviso } from '../../components/ui'
-import { AreaTexto, Casilla, Etiqueta, Lista, Texto } from '../../components/ui/form'
+import { AreaTexto, Casilla, Combo, Etiqueta, Lista, Texto } from '../../components/ui/form'
 import { olvidarCatalogos, useCatalogos } from '../../lib/indice'
 import BuscadorDireccion from '../../components/BuscadorDireccion'
 import type { DireccionElegida } from '../../components/BuscadorDireccion'
@@ -8,6 +8,9 @@ import type { DatosEmpresa } from '../../lib/indice'
 import type { Empresa, Relacion } from '../../types/indice'
 
 const RELACIONES: Relacion[] = ['Cliente', 'Proveedor', 'Servicio', 'Empleado', 'Agenda general']
+
+/* Las mismas que acepta el servidor (Empresa::CONDICIONES_IVA). */
+const CONDICIONES_IVA = ['Responsable Inscripto', 'Consumidor Final', 'Monotributo', 'Exento', 'Liberado', 'Exportación']
 
 export interface EstadoEmpresaForm extends DatosEmpresa {
   relaciones: string[]
@@ -25,6 +28,8 @@ export function estadoInicial(empresa?: Empresa | null): EstadoEmpresaForm {
     codigo_postal: empresa?.codigo_postal ?? '',
     pais_id: empresa?.pais_id ?? null,
     rubro_id: empresa?.rubro_id ?? null,
+    condicion_iva: empresa?.condicion_iva ?? '',
+    condicion_pago: empresa?.condicion_pago ?? '',
     observacion_general: empresa?.observacion_general ?? '',
     relaciones: empresa?.relaciones.filter((r) => r.activa).map((r) => r.relacion) ?? [],
   }
@@ -168,6 +173,30 @@ export default function EmpresaForm({
           value={valores.codigo_indice ?? ''}
           onChange={(e) => set('codigo_indice', e.target.value)}
           placeholder="7402"
+        />
+      </div>
+
+      {/*
+        Pedido del cliente (29-10-2026). Según el IVA, la hoja sale más IVA
+        (inscripto) o con el IVA incluido (consumidor final). La condición de
+        pago la trae sola cada cotización nueva de esta empresa.
+      */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Lista
+          etiqueta="Condición frente al IVA"
+          ayuda="decide si la cotización sale más IVA o con IVA incluido"
+          value={valores.condicion_iva ?? ''}
+          onChange={(e) => set('condicion_iva', e.target.value)}
+          opciones={CONDICIONES_IVA.map((c) => ({ valor: c, texto: c }))}
+        />
+        <Combo
+          id="condicion-pago-de-la-empresa"
+          etiqueta="Condición de pago habitual"
+          ayuda="la trae sola cada cotización nueva"
+          value={valores.condicion_pago ?? ''}
+          onChange={(e) => set('condicion_pago', e.target.value)}
+          placeholder="Elegí una o escribí la que usan"
+          opciones={(catalogos?.condiciones_pago ?? []).map((x) => x.nombre)}
         />
       </div>
 

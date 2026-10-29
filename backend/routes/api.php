@@ -163,6 +163,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/consultas/{consulta}/estado', [ConsultaEscrituraController::class, 'cambiarEstado']);
     Route::post('/consultas/{consulta}/observaciones', [ConsultaEscrituraController::class, 'agregarObservacion']);
     Route::delete('/observaciones/{observacion}', [ConsultaEscrituraController::class, 'borrarObservacion']);
+    Route::put('/observaciones/{observacion}', [ConsultaEscrituraController::class, 'editarObservacion']);
     Route::post('/consultas/{consulta}/impresiones', [ConsultaEscrituraController::class, 'registrarImpresion']);
 
     // Quien ve que
