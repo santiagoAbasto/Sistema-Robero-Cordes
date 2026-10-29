@@ -81,6 +81,11 @@
         .condiciones .condicion { font-size: 8.2pt; margin: 3pt 0; text-align: justify; }
         .condiciones .condicion-tit { font-weight: bold; }
 
+        /* El cierre: un renglon libre despues de las condiciones y otro antes del nombre. */
+        .saludo { margin-top: 11pt; font-size: 9pt; }
+        .saludo p { margin: 0; }
+        .saludo .firma { margin-top: 11pt; }
+
         .pie {
             position: fixed; bottom: -8mm; left: 0; right: 0;
             font-size: 6.8pt; color: #90a0ae;
@@ -238,6 +243,17 @@
         <div style="font-size:8.2pt; margin-top:3pt">{{ $consulta->nota }}</div>
     </div>
 @endif
+
+{{--
+    Pedido del cliente (29-10-2026): la hoja cierra con el saludo y el nombre
+    de quien cotizo, como una carta.
+--}}
+<div class="saludo">
+    <p>Saludos cordiales,</p>
+    @if ($consulta->usuario?->name)
+        <p class="firma">{{ $consulta->usuario->name }}</p>
+    @endif
+</div>
 
 <div class="pie">
     Cotizo: {{ $consulta->usuario?->initials }}
