@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Aviso, Boton, Card, CardHeader, Cargando, PageHeader } from '../../components/ui'
-import { AreaTexto, Casilla, Guardado, Texto } from '../../components/ui/form'
+import { AreaTexto, CampoClave, Casilla, Guardado, Texto } from '../../components/ui/form'
 import { completarTexto, mensajeDeError, useCarga } from '../../lib/indice'
 import { useAuth } from '../../lib/auth'
 import { guardarEnvios, probarCasilla, traerEnvios, type EnviosAGuardar } from '../../lib/configuracion'
@@ -221,7 +221,7 @@ export default function EnvioDeCotizaciones() {
         <Card className="overflow-hidden">
           <CardHeader
             titulo="Casilla de correo de la empresa"
-            ayuda="Desde acá sale el correo con la hoja adjunta. La respuesta del cliente le llega a quien la mandó, que recibe una copia. Los datos los da quien les maneja el correo."
+            ayuda="Desde acá sale el correo con la hoja adjunta. La respuesta del cliente le llega a quien la mandó, que recibe una copia. Los datos los da quien les maneja el correo: el puerto casi siempre es 587, y «Sale desde» es la dirección que ve el cliente."
           />
           <div className="flex flex-col gap-4 border-t border-[#eef2f6] p-4">
             <Aviso tono={listo ? 'verde' : 'info'}>
@@ -229,7 +229,7 @@ export default function EnvioDeCotizaciones() {
                 ? 'Cargada: el botón Correo manda la hoja adjunta desde esta casilla.'
                 : 'Sin cargar: el botón Correo baja la hoja y abre el mail para adjuntarla a mano, como hasta ahora.'}
             </Aviso>
-            <div className="grid gap-4 md:grid-cols-[1fr_140px]">
+            <div className="grid items-end gap-4 md:grid-cols-[1fr_140px]">
               <Texto
                 etiqueta="Servidor de salida (SMTP)"
                 placeholder="smtp.ejemplo.com"
@@ -238,17 +238,15 @@ export default function EnvioDeCotizaciones() {
               />
               <Texto
                 etiqueta="Puerto"
-                ayuda="Casi siempre 587; algunos usan 465."
                 inputMode="numeric"
                 value={form.puerto}
                 onChange={cambiar('puerto')}
               />
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid items-end gap-4 md:grid-cols-2">
               <Texto etiqueta="Usuario" autoComplete="off" value={form.usuario} onChange={cambiar('usuario')} />
-              <Texto
+              <CampoClave
                 etiqueta="Clave"
-                type="password"
                 autoComplete="new-password"
                 placeholder={tieneClave ? 'Guardada. Dejala vacía para no cambiarla' : ''}
                 value={form.clave}
@@ -262,10 +260,9 @@ export default function EnvioDeCotizaciones() {
                 </Casilla>
               </div>
             )}
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid items-end gap-4 md:grid-cols-2">
               <Texto
                 etiqueta="Sale desde"
-                ayuda="La dirección que ve el cliente como remitente."
                 type="email"
                 placeholder="ventas@empresa.com"
                 value={form.remitente}

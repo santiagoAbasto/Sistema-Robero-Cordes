@@ -181,7 +181,7 @@ export default function EmpresaForm({
         (inscripto) o con el IVA incluido (consumidor final). La condición de
         pago la trae sola cada cotización nueva de esta empresa.
       */}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid items-end gap-3 sm:grid-cols-2">
         <Lista
           etiqueta="Condición frente al IVA"
           ayuda="decide si la cotización sale más IVA o con IVA incluido"

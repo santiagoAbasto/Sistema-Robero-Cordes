@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, ShieldCheck, UserMinus, UserPlus } from 'lucide-react'
 import { Accion, Aviso, Card, CardHeader, Chip, NotaPie, Tabla, Td, Th } from '../../components/ui'
-import { Guardado, Lista, Modal, Texto } from '../../components/ui/form'
+import { CampoClave, Guardado, Lista, Modal, Texto } from '../../components/ui/form'
 import api from '../../lib/api'
 import { mensajeDeError, useCarga } from '../../lib/indice'
 
@@ -230,7 +230,7 @@ function ModalUsuario({
       <div className="flex flex-col gap-3">
         {error && <Aviso tono="ambar">{error}</Aviso>}
 
-        <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
+        <div className="grid items-end gap-3 sm:grid-cols-[1fr_110px]">
           <Texto
             etiqueta="Nombre y apellido"
             value={nombre}
@@ -246,7 +246,7 @@ function ModalUsuario({
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-[1fr_170px]">
+        <div className="grid items-end gap-3 sm:grid-cols-[1fr_170px]">
           <Texto
             etiqueta="Correo"
             ayuda="es con lo que entra"
@@ -263,10 +263,9 @@ function ModalUsuario({
           />
         </div>
 
-        <Texto
+        <CampoClave
           etiqueta={usuario ? 'Clave nueva' : 'Clave'}
-          ayuda="al menos diez caracteres"
-          type="password"
+          ayuda="al menos diez caracteres; con el ojito se ve lo que escribís"
           autoComplete="new-password"
           value={clave}
           onChange={(e) => setClave(e.target.value)}

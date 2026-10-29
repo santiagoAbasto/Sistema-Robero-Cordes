@@ -20,6 +20,14 @@ return Application::configure(basePath: dirname(__DIR__))
           ("Route [login] not defined") en vez de mandar a la pantalla de entrada.
         */
         $middleware->redirectGuestsTo('/');
+
+        /*
+          La clave que pone un administrador en Usuarios llega como "clave", y
+          Laravel le sacaba los espacios de los costados: se guardaba distinta
+          de como se escribio y despues no entraba. La de entrar ("password")
+          ya no se recortaba.
+        */
+        $middleware->trimStrings(except: ['clave']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

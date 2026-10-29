@@ -85,8 +85,9 @@ function DatosDeLaVenta({
         Se van completando a medida que pasan: el pedido, el remito y, cuando se factura, la factura con su tipo de
         cambio.
       </p>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Texto etiqueta="N° de pedido interno" ayuda="el del Access" placeholder="12345" {...campo('nro_pedido_interno')} />
+      {/* Etiquetas de un renglón y casillas alineadas abajo: todo a la misma altura. */}
+      <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Texto etiqueta="N° de pedido (Access)" placeholder="12345" {...campo('nro_pedido_interno')} />
         <Texto etiqueta="N° de remito" placeholder="0001-00004321" {...campo('nro_remito')} />
         <Texto etiqueta="N° de factura" placeholder="0001-00001234" {...campo('nro_factura')} />
         <Texto
@@ -218,7 +219,7 @@ export default function ComoSiguio({
 
       {elegido && (
         <div className="flex flex-col gap-3 border-t border-line pt-2.5">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid items-end gap-3 sm:grid-cols-2">
             <Texto etiqueta="¿Cuándo?" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
           </div>
           <AreaTexto

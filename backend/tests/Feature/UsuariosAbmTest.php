@@ -90,6 +90,23 @@ class UsuariosAbmTest extends TestCase
     }
 
     /**
+     * La clave queda tal cual se escribio (29-10-2026): con un espacio al
+     * final, Laravel la recortaba al guardarla y despues no entraba.
+     */
+    public function test_la_clave_queda_tal_cual_se_escribio(): void
+    {
+        $this->admin();
+        $otro = User::factory()->create(['role' => 'Ventas', 'activo' => true]);
+
+        $this->putJson("/api/usuarios/{$otro->id}", [
+            'nombre' => $otro->name, 'email' => $otro->email, 'rol' => 'Ventas',
+            'clave' => 'ClaveNueva2026 ',
+        ])->assertOk();
+
+        $this->assertTrue(Hash::check('ClaveNueva2026 ', $otro->fresh()->password));
+    }
+
+    /**
      * La baja desactiva, no borra.
      *
      * Un usuario es el autor de sus cotizaciones y de cada linea del

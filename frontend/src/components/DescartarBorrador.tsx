@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
-import { Modal, Texto } from './ui/form'
+import { CampoClave, Modal } from './ui/form'
 import { descartarConsulta, mensajeDeError } from '../lib/indice'
 
 /* ---------------------------------------------------------------------------
@@ -70,9 +70,14 @@ export default function DescartarBorrador({
           <span>Para descartar hace falta tu clave de administrador. A los tres intentos fallidos hay que esperar una hora.</span>
         </div>
 
-        <Texto
+        {/*
+          La escribe la persona: si Chrome pone sola una clave guardada vieja,
+          da "Clave incorrecta" sin que se vea por que. Con el ojito se ve.
+        */}
+        <CampoClave
           etiqueta="Tu clave"
-          type="password"
+          ayuda="la misma con la que entrás"
+          autoComplete="off"
           autoFocus
           value={clave}
           error={error ?? undefined}

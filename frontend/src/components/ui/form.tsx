@@ -1,8 +1,8 @@
 import type { ReactNode, InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes } from 'react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
-import { Check, X } from 'lucide-react'
+import { Check, Eye, EyeOff, X } from 'lucide-react'
 import { cx, Boton } from './index'
 
 /* ---------------------------------------------------------------------------
@@ -61,6 +61,50 @@ export function Texto({
         </Etiqueta>
       )}
       <input className={cx(BASE_CAMPO, 'h-[36px]', error && 'border-danger')} {...rest} />
+      {error && <span className="mt-1 text-[10.5px] text-danger">{error}</span>}
+    </div>
+  )
+}
+
+/**
+ * Un campo de clave con ojito para ver lo que se escribe.
+ *
+ * Pedido del 29-10-2026: cambiaban claves y despues no podian entrar, y no
+ * habia forma de saber que habia quedado escrito (ni si Chrome habia puesto
+ * sola una clave vieja guardada). Con el ojito se ve.
+ */
+export function CampoClave({
+  etiqueta,
+  ayuda,
+  error,
+  className,
+  ...rest
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & {
+  etiqueta?: string
+  ayuda?: string
+  error?: string
+}) {
+  const [ver, setVer] = useState(false)
+
+  return (
+    <div className={cx('flex min-w-0 flex-col', className)}>
+      {etiqueta && <Etiqueta ayuda={ayuda}>{etiqueta}</Etiqueta>}
+      <div className="relative">
+        <input
+          type={ver ? 'text' : 'password'}
+          className={cx(BASE_CAMPO, 'h-[36px] w-full pr-10', error && 'border-danger')}
+          {...rest}
+        />
+        <button
+          type="button"
+          onClick={() => setVer((v) => !v)}
+          className="absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-md text-faint hover:text-muted"
+          aria-label={ver ? 'Ocultar la clave' : 'Ver la clave'}
+          title={ver ? 'Ocultar la clave' : 'Ver la clave'}
+        >
+          {ver ? <EyeOff size={15} strokeWidth={2} /> : <Eye size={15} strokeWidth={2} />}
+        </button>
+      </div>
       {error && <span className="mt-1 text-[10.5px] text-danger">{error}</span>}
     </div>
   )
