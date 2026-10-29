@@ -316,6 +316,7 @@ export default function CopiarCotizacion() {
               conPrecios ? 'Los precios unitarios' : 'Sin precios: los importes van en blanco',
               'Las condiciones tecnicas',
               'La moneda de la cotizacion',
+              'La NOTA: de dónde sale el material, el stock, el proveedor',
             ]} />
 
             <Bloque titulo="Se ajusta a cada empresa" tono="info" items={[
@@ -326,7 +327,6 @@ export default function CopiarCotizacion() {
             ]} />
 
             <Bloque titulo="No se copia" tono="ambar" items={[
-              'La NOTA de la original',
               'Las observaciones de la original',
               'El Nro. de Factura',
             ]} />

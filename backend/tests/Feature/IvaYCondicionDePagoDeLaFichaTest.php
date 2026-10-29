@@ -163,6 +163,20 @@ class IvaYCondicionDePagoDeLaFichaTest extends TestCase
         $this->assertSame('Precios mas IVA, a convenir', $reescrita->fresh()->texto, 'la que reescribio la empresa no se toca');
     }
 
+    /** La NOTA (de donde sale el material, el proveedor) se copia tambien a otra empresa (29-10-2026). */
+    public function test_al_copiar_a_otra_empresa_la_nota_va_con_la_cotizacion(): void
+    {
+        $origen = $this->cotizacion(Empresa::create(['nombre' => 'CLIENTE']));
+        $origen->update(['nota' => 'De stock. Proveedor: el de siempre.', 'solicitud_texto' => 'Lo que pidio este cliente']);
+        $destino = Empresa::create(['nombre' => 'OTRA']);
+
+        $r = $this->postJson("/api/consultas/{$origen->id}/copiar", ['empresas' => [$destino->id]])->assertCreated();
+
+        $copia = Consulta::find($r->json('borradores.0.id'));
+        $this->assertSame('De stock. Proveedor: el de siempre.', $copia->nota);
+        $this->assertNull($copia->solicitud_texto, 'lo que pidio el cliente sigue siendo de esa empresa');
+    }
+
     public function test_al_copiar_a_otra_empresa_trae_su_condicion_de_pago(): void
     {
         $origen = $this->cotizacion(Empresa::create(['nombre' => 'CLIENTE']));

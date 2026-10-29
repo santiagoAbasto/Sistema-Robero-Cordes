@@ -1614,7 +1614,7 @@ export default function ConsultaEditor() {
             filas={5}
             value={cabecera.texto}
             onChange={(e) => setCabecera({ ...cabecera, texto: e.target.value })}
-            placeholder="Llamó por el pedido de níquel. Pasar a verlo el mes que viene."
+            placeholder="Por ejemplo: llamó por el pedido de níquel, pasar a verlo el mes que viene."
           />
         </Card>
       ) : (
@@ -1789,7 +1789,7 @@ export default function ConsultaEditor() {
               filas={2}
               value={nuevaObs}
               onChange={(e) => setNuevaObs(e.target.value)}
-              placeholder="Quedó en confirmar la semana que viene."
+              placeholder="Por ejemplo: quedó en confirmar la semana que viene."
             />
             <Boton variante="suave" onClick={sumarObservacion} disabled={!nuevaObs.trim()}>
               <Plus size={15} strokeWidth={2.4} />
@@ -1882,7 +1882,7 @@ function Solicitud({
             onPrecargar(imagen)
           }
         }}
-        placeholder={'Hola Roberto, necesito cotizar:\n6 UN HASTELLOY C-276 BAR RED 38.1 X 145MM\n4 un AISI 316TI barra DIA 65 X 145MM'}
+        placeholder={'Por ejemplo:\nHola Roberto, necesito cotizar:\n6 UN HASTELLOY C-276 BAR RED 38.1 X 145MM\n4 un AISI 316TI barra DIA 65 X 145MM'}
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -4075,7 +4075,7 @@ function LineaFila({
           rows={2}
           value={linea.nota ?? ''}
           onChange={(e) => onCambio({ nota: e.target.value || null })}
-          placeholder="Plano SUO1413884/1 posicion 21."
+          placeholder="Por ejemplo: plano SUO1413884/1, posición 21."
         />
       </div>
 
@@ -4413,7 +4413,8 @@ function Condiciones({
           filas={4}
           value={nota}
           onChange={(e) => onNota(e.target.value)}
-          placeholder="(stock) bn — Dos proveedores. Pagina 1 de 3."
+          // Una indicación y no un ejemplo: "(stock) bn — proveedor…" parecía una nota escrita (29-10-2026).
+          placeholder="Escribí acá lo interno: de dónde sale el material, el stock, el proveedor."
         />
 
         <p className="text-[11.5px] leading-relaxed text-warning-ink">

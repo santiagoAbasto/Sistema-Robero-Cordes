@@ -316,8 +316,10 @@ class ConsultaEscrituraController extends Controller
                     'estado' => 'Borrador',
                     'juego_condiciones' => $consulta->juego_condiciones,
                     'copiada_de_id' => $consulta->id,
-                    // Lo que pidio el cliente y la NOTA son de esa empresa.
-                    'nota' => $misma ? $consulta->nota : null,
+                    // Lo que pidio el cliente es de esa empresa. La NOTA se copia:
+                    // es de donde sale el material, el stock, el proveedor, y sirve
+                    // igual para otro cliente (pedido del cliente, 29-10-2026).
+                    'nota' => $consulta->nota,
                     'solicitud_texto' => $misma ? $consulta->solicitud_texto : null,
                     'solicitud_via' => $misma ? $consulta->solicitud_via : null,
                     'solicitud_fecha' => $misma ? $consulta->solicitud_fecha : null,
