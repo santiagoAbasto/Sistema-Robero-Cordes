@@ -220,6 +220,10 @@ export function ConsultasPorFecha() {
     material_id: '',
     usuario_id: '',
     tipo: '',
+    // "No veo los borradores en consultas por fecha" (cliente, 29-10-2026):
+    // se esconden para no sumar al importe; con la casilla aparecen, y el
+    // administrador los puede descartar desde la lista.
+    borradores: false,
   })
 
   const { datos, cargando, recargar } = useCarga(
@@ -230,12 +234,14 @@ export function ConsultasPorFecha() {
         material_id: f.material_id ? Number(f.material_id) : '',
         usuario_id: f.usuario_id ? Number(f.usuario_id) : '',
         tipo: f.tipo,
+        incluir_borradores: f.borradores,
       }),
-    [f.desde, f.hasta, f.material_id, f.usuario_id, f.tipo],
+    [f.desde, f.hasta, f.material_id, f.usuario_id, f.tipo, f.borradores],
   )
 
   const consultas = datos?.data ?? []
-  const total = consultas.reduce((s, c) => s + c.total, 0)
+  // Un borrador todavía no se mandó: no suma al importe del período.
+  const total = consultas.filter((c) => c.estado !== 'Borrador').reduce((s, c) => s + c.total, 0)
   const vendidas = consultas.filter((c) => c.estado === 'Vendida').length
   const set = (k: keyof typeof f, v: string) => setF({ ...f, [k]: v })
 
@@ -269,6 +275,11 @@ export function ConsultasPorFecha() {
             opciones={(catalogos?.tipos_consulta ?? []).map((t) => ({ valor: t, texto: t }))}
           />
         </div>
+        <div>
+          <Casilla marcada={f.borradores} onChange={(v) => setF({ ...f, borradores: v })}>
+            Mostrar también los borradores (sin emitir)
+          </Casilla>
+        </div>
       </Card>
 
       <div className="grid gap-[14px] sm:grid-cols-2 xl:grid-cols-4">
@@ -276,7 +287,7 @@ export function ConsultasPorFecha() {
         <Kpi valor={plata(total)} etiqueta="Importe total" />
         <Kpi valor={String(vendidas)} etiqueta="Terminaron en venta" tono="text-success-ink" />
         <Kpi
-          valor={String(consultas.filter((c) => c.esta_vencida && c.estado !== 'Vendida').length)}
+          valor={String(consultas.filter((c) => c.esta_vencida && !['Vendida', 'Borrador'].includes(c.estado)).length)}
           etiqueta="Vencidas sin respuesta"
           tono="text-warning-ink"
         />

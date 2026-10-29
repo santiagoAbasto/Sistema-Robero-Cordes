@@ -124,4 +124,15 @@ class ArreglosDeLaHojaYObservacionesTest extends TestCase
         $this->putJson("/api/observaciones/{$observacion->id}", ['texto' => 'Otra cosa'])->assertStatus(422);
         $this->assertSame('Quedo en confirmar el martes', $observacion->fresh()->texto);
     }
+
+    /** "No veo los borradores en consultas por fecha": se esconden, salvo que se pidan. */
+    public function test_los_borradores_se_ven_solo_si_se_piden(): void
+    {
+        Sanctum::actingAs($this->usuario);
+
+        $ids = fn ($r) => collect($r->json('data'))->pluck('id')->all();
+
+        $this->assertNotContains($this->consulta->id, $ids($this->getJson('/api/consultas?desde=2026-10-01&hasta=2026-10-31')->assertOk()));
+        $this->assertContains($this->consulta->id, $ids($this->getJson('/api/consultas?desde=2026-10-01&hasta=2026-10-31&incluir_borradores=true')->assertOk()));
+    }
 }

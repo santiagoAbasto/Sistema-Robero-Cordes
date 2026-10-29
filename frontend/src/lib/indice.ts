@@ -76,6 +76,8 @@ export interface FiltrosConsultas {
   por_vencer?: number | ''
   /** Solo las que terminaron: declinadas o vencidas. */
   cerradas?: boolean
+  /** Los borradores se esconden salvo que se pidan. */
+  incluir_borradores?: boolean
 }
 
 export async function buscarConsultas(filtros: FiltrosConsultas) {
