@@ -86,6 +86,25 @@ class IvaYCondicionDePagoDeLaFichaTest extends TestCase
         $this->assertStringNotContainsString('121,00', $html);
     }
 
+    /** Al monotributista se le factura A con el IVA discriminado (RG 5003/2021). */
+    public function test_al_monotributista_tambien_se_le_cotiza_mas_iva(): void
+    {
+        $html = $this->hoja($this->cotizacion(Empresa::create(['nombre' => 'CLIENTE', 'condicion_iva' => 'Monotributo'])));
+
+        $this->assertStringContainsString('Total (no incluye IVA)', $html);
+        $this->assertStringNotContainsString('121,00', $html);
+    }
+
+    public function test_exportacion_y_liberado_salen_sin_iva(): void
+    {
+        foreach (['Exportación', 'Liberado'] as $condicion) {
+            $html = $this->hoja($this->cotizacion(Empresa::create(['nombre' => $condicion, 'condicion_iva' => $condicion])));
+
+            $this->assertStringContainsString('Total (sin IVA)', $html);
+            $this->assertStringNotContainsString('121,00', $html);
+        }
+    }
+
     public function test_al_consumidor_final_el_sistema_le_suma_el_iva(): void
     {
         $html = $this->hoja($this->cotizacion(Empresa::create(['nombre' => 'CLIENTE', 'condicion_iva' => 'Consumidor Final'])));

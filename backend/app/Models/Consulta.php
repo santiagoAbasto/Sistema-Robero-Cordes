@@ -142,12 +142,16 @@ class Consulta extends Model
     /**
      * Como salen los precios en la hoja segun la condicion frente al IVA.
      *
-     * Pedido del cliente (29-10-2026): al inscripto se le cotiza mas IVA
-     * ("Total (no incluye IVA)") y al consumidor final con el IVA incluido,
-     * que lo suma el sistema ("Total (IVA incluido)"). Monotributo y exento
-     * reciben factura B: tambien con el IVA incluido. Liberado y exportacion
-     * no llevan IVA. Manda la de la razon social elegida; si no tiene, la de
-     * la ficha. Sin condicion cargada la hoja sale como siempre.
+     * Pedido del cliente (29-10-2026), segun como factura ARCA:
+     *  - inscripto y monotributista reciben factura A con el IVA discriminado
+     *    (al monotributista desde la RG 5003/2021): se les cotiza mas IVA,
+     *    "Total (no incluye IVA)";
+     *  - consumidor final y exento reciben factura B, sin discriminar el IVA
+     *    (RG 1415, anexo II): el sistema lo suma, "Total (IVA incluido)";
+     *  - exportacion y Tierra del Fuego (liberado) van con factura E, tasa
+     *    cero: "Total (sin IVA)".
+     * Manda la de la razon social elegida; si no tiene, la de la ficha. Sin
+     * condicion cargada la hoja sale como siempre.
      *
      * Los precios se guardan sin IVA: esto cambia solo lo que se imprime.
      *
@@ -158,8 +162,8 @@ class Consulta extends Model
         $condicion = $this->razonSocial?->condicion_iva ?: $this->empresa?->condicion_iva;
 
         return match ($condicion) {
-            'Responsable Inscripto', 'Resp. Inscripto' => [1.0, 'no incluye IVA'],
-            'Consumidor Final', 'Monotributo', 'Exento' => [1 + self::ALICUOTA_IVA, 'IVA incluido'],
+            'Responsable Inscripto', 'Resp. Inscripto', 'Monotributo' => [1.0, 'no incluye IVA'],
+            'Consumidor Final', 'Exento' => [1 + self::ALICUOTA_IVA, 'IVA incluido'],
             'Liberado', 'Exportación' => [1.0, 'sin IVA'],
             default => [1.0, null],
         };
