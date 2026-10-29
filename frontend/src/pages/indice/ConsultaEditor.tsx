@@ -46,6 +46,7 @@ import { JUEGOS_DE_CONDICIONES } from '../../types/indice'
 import type { CampoDeForma, CanoEstandar, JuegoDeCondiciones } from '../../types/indice'
 import { traerLaHoja } from '../../lib/indice'
 import { traerEnvios } from '../../lib/configuracion'
+import ComoSiguio from './ComoSiguio'
 import { useAuth } from '../../lib/auth'
 import type { DatosLinea } from '../../lib/indice'
 
@@ -1433,6 +1434,18 @@ export default function ConsultaEditor() {
             </form>
           )}
         </div>
+      )}
+
+      {/* Después de mandarla: vendida, cerrada o vencida. */}
+      {emitida && tipo !== 'Observacion' && existente && (
+        <ComoSiguio
+          consulta={existente}
+          onListo={(m) => {
+            setAviso(m)
+            recargar()
+          }}
+          onError={setError}
+        />
       )}
 
       {/* R0, R1, R2: las versiones de esta cotización, como solapas. */}

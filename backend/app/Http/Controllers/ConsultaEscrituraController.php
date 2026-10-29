@@ -532,14 +532,27 @@ class ConsultaEscrituraController extends Controller
             // Por defecto hoy, pero se puede fechar cuando paso de verdad: el
             // cliente avisa el lunes algo que decidio el viernes.
             'fecha' => ['nullable', 'date'],
+            // "La compro": la factura, si ya la tienen. Una emitida no se
+            // edita, asi que es el unico lugar donde se puede cargar.
+            'nro_factura' => ['nullable', 'string', 'max:20'],
         ], [
             'comentario.required' => 'Para cerrar una cotizacion hay que decir por que.',
         ]);
 
         $anterior = $consulta->estado;
 
+        // La factura queda tambien en el hilo, con la fecha en que se vendio.
+        if ($datos['estado'] === 'Vendida' && filled($datos['nro_factura'] ?? null)) {
+            $datos['comentario'] = trim('Factura '.$datos['nro_factura'].'. '.($datos['comentario'] ?? ''));
+        }
+
         DB::transaction(function () use ($consulta, $datos, $anterior, $request) {
             $consulta->estado = $datos['estado'];
+
+            if ($datos['estado'] === 'Vendida' && filled($datos['nro_factura'] ?? null)) {
+                $consulta->nro_factura = $datos['nro_factura'];
+            }
+
             $consulta->save();
 
             /*

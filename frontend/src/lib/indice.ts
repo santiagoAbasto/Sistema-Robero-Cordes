@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import api from './api'
-import type { Catalogos, Consulta, Empresa, EmpresaLista, Paginado } from '../types/indice'
+import type { Catalogos, Consulta, Empresa, EmpresaLista, EstadoConsulta, Paginado } from '../types/indice'
 
 /* ---------------------------------------------------------------------------
    Acceso a los datos del Índice Telefónico.
@@ -840,6 +840,15 @@ export async function agregarObservacion(consultaId: number, texto: string) {
 
 export async function borrarObservacion(id: number) {
   await api.delete(`/observaciones/${id}`)
+}
+
+/** "¿Cómo siguió?": vendida, cerrada o vencida. Al cerrar, el servidor pide el motivo. */
+export async function cambiarEstadoConsulta(
+  id: number,
+  datos: { estado: EstadoConsulta; comentario?: string; fecha?: string; nro_factura?: string },
+): Promise<string> {
+  const { data } = await api.post<{ mensaje: string }>(`/consultas/${id}/estado`, datos)
+  return data.mensaje
 }
 
 export async function editarObservacion(id: number, texto: string) {

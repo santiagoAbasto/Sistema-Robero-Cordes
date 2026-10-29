@@ -151,4 +151,33 @@ class EstadoYSeguimientoTest extends TestCase
 
         $this->assertSame([1, 2], $numeros);
     }
+
+    /**
+     * "¿Como siguio?" (29-10-2026): "La compro" guarda la factura aunque la
+     * cotizacion este emitida, y la deja en el hilo con la fecha en que se vendio.
+     */
+    public function test_vendida_guarda_la_factura_y_la_anota_en_el_hilo(): void
+    {
+        $this->consulta->forceFill(['emitida_el' => now(), 'numero' => '2026-0001', 'estado' => 'Confirmada'])->save();
+
+        $this->cambiar(['estado' => 'Vendida', 'nro_factura' => '0001-00001234', 'fecha' => '2026-10-28'])->assertOk();
+
+        $this->consulta->refresh();
+        $this->assertSame('Vendida', $this->consulta->estado);
+        $this->assertSame('0001-00001234', $this->consulta->nro_factura);
+
+        $nota = $this->consulta->observaciones()->latest('id')->first();
+        $this->assertStringContainsString('Confirmada -> Vendida. Factura 0001-00001234.', $nota->texto);
+        $this->assertSame('2026-10-28', $nota->fecha->toDateString());
+    }
+
+    public function test_vendida_sin_factura_no_pide_nada_mas(): void
+    {
+        $this->consulta->forceFill(['emitida_el' => now(), 'numero' => '2026-0001', 'estado' => 'Confirmada'])->save();
+
+        $this->cambiar(['estado' => 'Vendida'])->assertOk();
+
+        $this->assertSame('Vendida', $this->consulta->fresh()->estado);
+        $this->assertNull($this->consulta->fresh()->nro_factura);
+    }
 }
