@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Boton, Chip } from '../../components/ui'
 import { AreaTexto, Texto } from '../../components/ui/form'
-import { cambiarEstadoConsulta, guardarDatosDeLaVenta, hoy, mensajeDeError } from '../../lib/indice'
+import { cambiarEstadoConsulta, guardarDatosDeLaVenta, hoy, mensajeDeError, numeroComoSeEscribe } from '../../lib/indice'
+import type { DatosDeLaVenta as Datos } from '../../lib/indice'
 import type { EstadoConsulta } from '../../types/indice'
 
 /*
@@ -45,6 +46,25 @@ type ConsultaQueSigue = {
   mercaderia con remito; con la conformidad se factura, con su tipo de cambio.
   Se completa de a uno y se puede corregir.
 */
+const SIN_DATOS: Datos = { nro_pedido_interno: '', nro_remito: '', nro_factura: '', tipo_cambio_factura: '' }
+
+/** Los cuatro datos de la venta, en una fila: los mismos al marcarla y al completarla despues. */
+function CamposDeLaVenta({ datos, onCambio }: { datos: Datos; onCambio: (d: Datos) => void }) {
+  const campo = (clave: keyof Datos) => ({
+    value: datos[clave],
+    onChange: (e: { target: { value: string } }) => onCambio({ ...datos, [clave]: e.target.value }),
+  })
+
+  return (
+    <>
+      <Texto etiqueta="N° de pedido (Access)" placeholder="12345" {...campo('nro_pedido_interno')} />
+      <Texto etiqueta="N° de remito" placeholder="0001-00004321" {...campo('nro_remito')} />
+      <Texto etiqueta="N° de factura" placeholder="0001-00001234" {...campo('nro_factura')} />
+      <Texto etiqueta="Tipo de cambio factura" inputMode="decimal" placeholder="1050,50" {...campo('tipo_cambio_factura')} />
+    </>
+  )
+}
+
 function DatosDeLaVenta({
   consulta,
   onListo,
@@ -63,10 +83,6 @@ function DatosDeLaVenta({
   const [datos, setDatos] = useState(inicial)
   const [guardando, setGuardando] = useState(false)
   const cambio = JSON.stringify(datos) !== JSON.stringify(inicial)
-  const campo = (clave: keyof typeof datos) => ({
-    value: datos[clave],
-    onChange: (e: { target: { value: string } }) => setDatos({ ...datos, [clave]: e.target.value }),
-  })
 
   async function guardar() {
     setGuardando(true)
@@ -87,15 +103,7 @@ function DatosDeLaVenta({
       </p>
       {/* Etiquetas de un renglón y casillas alineadas abajo: todo a la misma altura. */}
       <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Texto etiqueta="N° de pedido (Access)" placeholder="12345" {...campo('nro_pedido_interno')} />
-        <Texto etiqueta="N° de remito" placeholder="0001-00004321" {...campo('nro_remito')} />
-        <Texto etiqueta="N° de factura" placeholder="0001-00001234" {...campo('nro_factura')} />
-        <Texto
-          etiqueta="Tipo de cambio de la factura"
-          inputMode="decimal"
-          placeholder="1050,50"
-          {...campo('tipo_cambio_factura')}
-        />
+        <CamposDeLaVenta datos={datos} onCambio={setDatos} />
       </div>
       <div>
         <Boton variante="primario" onClick={guardar} disabled={guardando || !cambio}>
@@ -120,6 +128,8 @@ export default function ComoSiguio({
   const [elegido, setElegido] = useState<EstadoConsulta | null>(null)
   const [comentario, setComentario] = useState('')
   const [fecha, setFecha] = useState(hoy())
+  // "La compró": lo que ya se sepa de la venta va en el mismo paso.
+  const [datosVenta, setDatosVenta] = useState<Datos>(SIN_DATOS)
   const [guardando, setGuardando] = useState(false)
   // El aviso del motivo recién cuando intentan guardar, no apenas se abre.
   const [intentado, setIntentado] = useState(false)
@@ -131,6 +141,12 @@ export default function ComoSiguio({
     setElegido(estado)
     setComentario('')
     setFecha(hoy())
+    setDatosVenta({
+      nro_pedido_interno: consulta.nro_pedido_interno ?? '',
+      nro_remito: consulta.nro_remito ?? '',
+      nro_factura: consulta.nro_factura ?? '',
+      tipo_cambio_factura: consulta.tipo_cambio_factura == null ? '' : String(consulta.tipo_cambio_factura).replace('.', ','),
+    })
     setIntentado(false)
   }
 
@@ -150,15 +166,24 @@ export default function ComoSiguio({
     try {
       // Siempre queda un renglon en las observaciones, con la fecha y quien lo cargo.
       const nota = comentario.trim() || (elegido === 'Vendida' ? 'La compró.' : 'Se corrigió: sigue abierta.')
+      const vendida = elegido === 'Vendida'
       await cambiarEstadoConsulta(consulta.id, {
         estado: elegido,
         comentario: nota,
         fecha,
+        ...(vendida
+          ? {
+              nro_pedido_interno: datosVenta.nro_pedido_interno.trim() || undefined,
+              nro_remito: datosVenta.nro_remito.trim() || undefined,
+              nro_factura: datosVenta.nro_factura.trim() || undefined,
+              tipo_cambio_factura: numeroComoSeEscribe(datosVenta.tipo_cambio_factura),
+            }
+          : {}),
       })
       cancelar()
       onListo(
-        elegido === 'Vendida'
-          ? 'Listo: quedó como Vendida. Abajo podés ir cargando el pedido, el remito y la factura.'
+        vendida
+          ? 'Listo: quedó como Vendida. Lo que falte del pedido, el remito o la factura se completa abajo cuando llegue.'
           : `Listo: quedó como "${opcion?.titulo ?? 'Sigue abierta'}". Está anotado en las observaciones.`,
       )
     } catch (err) {
@@ -219,8 +244,10 @@ export default function ComoSiguio({
 
       {elegido && (
         <div className="flex flex-col gap-3 border-t border-line pt-2.5">
-          <div className="grid items-end gap-3 sm:grid-cols-2">
+          {/* Todo en una fila y a la misma altura; la fecha no ocupa media pantalla. */}
+          <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Texto etiqueta="¿Cuándo?" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            {elegido === 'Vendida' && <CamposDeLaVenta datos={datosVenta} onCambio={setDatosVenta} />}
           </div>
           <AreaTexto
             etiqueta={opcion?.pide ?? 'Comentario (si hace falta)'}

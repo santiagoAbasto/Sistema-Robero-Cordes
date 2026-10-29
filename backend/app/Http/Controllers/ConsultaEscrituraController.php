@@ -534,9 +534,12 @@ class ConsultaEscrituraController extends Controller
             // Por defecto hoy, pero se puede fechar cuando paso de verdad: el
             // cliente avisa el lunes algo que decidio el viernes.
             'fecha' => ['nullable', 'date'],
-            // "La compro": la factura, si ya la tienen. Una emitida no se
-            // edita, asi que es el unico lugar donde se puede cargar.
+            // "La compro": lo que ya se sepa de la venta, en el mismo paso.
+            // Una emitida no se edita: despues se completa con datosDeLaVenta.
             'nro_factura' => ['nullable', 'string', 'max:20'],
+            'nro_pedido_interno' => ['nullable', 'string', 'max:20'],
+            'nro_remito' => ['nullable', 'string', 'max:30'],
+            'tipo_cambio_factura' => ['nullable', 'numeric', 'min:0'],
         ], [
             'comentario.required' => 'Para cerrar una cotizacion hay que decir por que.',
         ]);
@@ -551,8 +554,12 @@ class ConsultaEscrituraController extends Controller
         DB::transaction(function () use ($consulta, $datos, $anterior, $request) {
             $consulta->estado = $datos['estado'];
 
-            if ($datos['estado'] === 'Vendida' && filled($datos['nro_factura'] ?? null)) {
-                $consulta->nro_factura = $datos['nro_factura'];
+            if ($datos['estado'] === 'Vendida') {
+                foreach (['nro_factura', 'nro_pedido_interno', 'nro_remito', 'tipo_cambio_factura'] as $campo) {
+                    if (filled($datos[$campo] ?? null)) {
+                        $consulta->{$campo} = $datos[$campo];
+                    }
+                }
             }
 
             $consulta->save();

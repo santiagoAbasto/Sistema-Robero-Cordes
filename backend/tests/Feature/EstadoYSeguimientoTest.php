@@ -216,4 +216,22 @@ class EstadoYSeguimientoTest extends TestCase
 
         $this->putJson("/api/consultas/{$id}/venta", ['tipo_cambio_factura' => 'mil'])->assertStatus(422);
     }
+
+    /** "La compro" con lo que ya se sepa de la venta, en un solo paso (29-10-2026). */
+    public function test_la_compro_guarda_los_datos_de_la_venta_en_el_mismo_paso(): void
+    {
+        $this->consulta->forceFill(['emitida_el' => now(), 'numero' => '2026-0001', 'estado' => 'Confirmada'])->save();
+
+        $this->cambiar([
+            'estado' => 'Vendida', 'comentario' => 'La compro.', 'nro_pedido_interno' => '88231',
+            'nro_remito' => '0001-00004321', 'tipo_cambio_factura' => '1050.5',
+        ])->assertOk();
+
+        $c = $this->consulta->fresh();
+        $this->assertSame('Vendida', $c->estado);
+        $this->assertSame('88231', $c->nro_pedido_interno);
+        $this->assertSame('0001-00004321', $c->nro_remito);
+        $this->assertEquals(1050.5, (float) $c->tipo_cambio_factura);
+        $this->assertNull($c->nro_factura, 'lo que no se escribio queda vacio');
+    }
 }

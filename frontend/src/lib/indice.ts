@@ -847,7 +847,15 @@ export async function borrarObservacion(id: number) {
 /** "¿Cómo siguió?": vendida, cerrada o vencida. Al cerrar, el servidor pide el motivo. */
 export async function cambiarEstadoConsulta(
   id: number,
-  datos: { estado: EstadoConsulta; comentario?: string; fecha?: string; nro_factura?: string },
+  datos: {
+    estado: EstadoConsulta
+    comentario?: string
+    fecha?: string
+    nro_factura?: string
+    nro_pedido_interno?: string
+    nro_remito?: string
+    tipo_cambio_factura?: string | null
+  },
 ): Promise<string> {
   const { data } = await api.post<{ mensaje: string }>(`/consultas/${id}/estado`, datos)
   return data.mensaje
@@ -860,17 +868,18 @@ export interface DatosDeLaVenta {
   tipo_cambio_factura: string
 }
 
+/** Como se escribe aca: "1.050,50". Con coma, los puntos son de miles. */
+export function numeroComoSeEscribe(texto: string): string | null {
+  const t = texto.trim()
+  if (t === '') return null
+  return t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
+}
+
 /** Pedido interno, remito, factura y tipo de cambio: se van completando. */
 export async function guardarDatosDeLaVenta(id: number, datos: DatosDeLaVenta): Promise<string> {
   const { data } = await api.put<{ mensaje: string }>(`/consultas/${id}/venta`, {
     ...datos,
-    // Como se escribe aca: "1.050,50". Con coma, los puntos son de miles.
-    tipo_cambio_factura:
-      datos.tipo_cambio_factura.trim() === ''
-        ? null
-        : datos.tipo_cambio_factura.includes(',')
-          ? datos.tipo_cambio_factura.replace(/\./g, '').replace(',', '.')
-          : datos.tipo_cambio_factura,
+    tipo_cambio_factura: numeroComoSeEscribe(datos.tipo_cambio_factura),
   })
   return data.mensaje
 }
