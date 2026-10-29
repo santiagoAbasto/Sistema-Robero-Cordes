@@ -26,6 +26,7 @@ class Consulta extends Model
         'vence_el' => 'date',
         'solicitud_fecha' => 'date',
         'tipo_cambio' => 'decimal:4',
+        'tipo_cambio_factura' => 'decimal:4',
         'ajuste_dif_cambio' => 'boolean',
         'revision' => 'integer',
         'emitida_el' => 'datetime',

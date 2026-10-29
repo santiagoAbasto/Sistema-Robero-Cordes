@@ -180,4 +180,40 @@ class EstadoYSeguimientoTest extends TestCase
         $this->assertSame('Vendida', $this->consulta->fresh()->estado);
         $this->assertNull($this->consulta->fresh()->nro_factura);
     }
+
+    /**
+     * Los datos de la venta se van completando (29-10-2026): primero el pedido
+     * interno, despues el remito, al final la factura con su tipo de cambio.
+     */
+    public function test_los_datos_de_la_venta_se_van_completando_y_corrigiendo(): void
+    {
+        $this->consulta->forceFill(['emitida_el' => now(), 'numero' => '2026-0001', 'estado' => 'Confirmada'])->save();
+        $id = $this->consulta->id;
+
+        // Sin vender, no.
+        $this->putJson("/api/consultas/{$id}/venta", ['nro_pedido_interno' => '12345'])->assertStatus(422);
+
+        $this->cambiar(['estado' => 'Vendida'])->assertOk();
+
+        $this->putJson("/api/consultas/{$id}/venta", ['nro_pedido_interno' => '12345'])->assertOk();
+        $this->putJson("/api/consultas/{$id}/venta", [
+            'nro_pedido_interno' => '12345', 'nro_remito' => '0001-00004321',
+            'nro_factura' => '0001-00001234', 'tipo_cambio_factura' => '1050.50',
+        ])->assertOk();
+
+        $r = $this->getJson("/api/consultas/{$id}")->assertOk();
+        $r->assertJsonPath('data.nro_pedido_interno', '12345');
+        $r->assertJsonPath('data.nro_remito', '0001-00004321');
+        $r->assertJsonPath('data.nro_factura', '0001-00001234');
+        $this->assertEquals(1050.5, $r->json('data.tipo_cambio_factura'));
+
+        // Se corrige: el remito estaba mal.
+        $this->putJson("/api/consultas/{$id}/venta", [
+            'nro_pedido_interno' => '12345', 'nro_remito' => '0001-00004322',
+            'nro_factura' => '0001-00001234', 'tipo_cambio_factura' => '1050.50',
+        ])->assertOk();
+        $this->assertSame('0001-00004322', $this->consulta->fresh()->nro_remito);
+
+        $this->putJson("/api/consultas/{$id}/venta", ['tipo_cambio_factura' => 'mil'])->assertStatus(422);
+    }
 }

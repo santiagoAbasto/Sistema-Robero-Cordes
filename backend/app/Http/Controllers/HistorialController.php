@@ -145,7 +145,7 @@ class HistorialController extends Controller
         $partes = [];
 
         if ($campos->isNotEmpty()) {
-            $nombres = $campos->pluck('campo')->unique()->values();
+            $nombres = $campos->pluck('campo')->unique()->map(fn ($campo) => $this->nombre($campo))->values();
             $cuantas = $campos->where('tabla', 'consulta_lineas')->pluck('registro_id')->unique()->count();
 
             $que = $nombres->take(3)->implode(', ').($nombres->count() > 3 ? ' y '.($nombres->count() - 3).' mas' : '');
@@ -178,6 +178,30 @@ class HistorialController extends Controller
 
         $donde = $tablas[$c->tabla] ?? $c->tabla;
 
-        return $c->campo ? "{$donde} · {$c->campo}" : $donde;
+        return $c->campo ? "{$donde} · ".$this->nombre($c->campo) : $donde;
+    }
+
+    /**
+     * Como se lee un campo en el control de cambios (29-10-2026): lo leen
+     * personas que no tienen por que saber que "tipo_cambio_factura" es el
+     * tipo de cambio de la factura. Los que no estan aca, al menos sin guion bajo.
+     */
+    private const NOMBRES = [
+        'nro_factura' => 'N° de factura',
+        'nro_pedido_interno' => 'N° de pedido interno',
+        'nro_remito' => 'N° de remito',
+        'tipo_cambio' => 'tipo de cambio',
+        'tipo_cambio_factura' => 'tipo de cambio de la factura',
+        'condicion_iva' => 'condición frente al IVA',
+        'condicion_pago' => 'condición de pago',
+        'precio_unitario' => 'precio unitario',
+        'precio_por_kilo' => 'precio por kilo',
+        'validez_dias' => 'validez',
+        'emitida_el' => 'emisión',
+    ];
+
+    private function nombre(string $campo): string
+    {
+        return self::NOMBRES[$campo] ?? str_replace('_', ' ', $campo);
     }
 }

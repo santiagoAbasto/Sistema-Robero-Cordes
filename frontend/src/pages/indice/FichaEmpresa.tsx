@@ -936,8 +936,18 @@ function EntradaHistorial({
           {consulta.total > 0 && (
             <span className="text-[12px] font-semibold text-ink">{plata(consulta.total)}</span>
           )}
-          {consulta.estado === 'Vendida' && consulta.nro_factura && (
-            <Chip tono="verde">Vendida  ·  Factura {consulta.nro_factura}</Chip>
+          {/* Lo que se va sabiendo de la venta: pedido, remito, factura. */}
+          {consulta.estado === 'Vendida' && (consulta.nro_pedido_interno || consulta.nro_remito || consulta.nro_factura) && (
+            <Chip tono="verde">
+              {[
+                'Vendida',
+                consulta.nro_pedido_interno && `Pedido ${consulta.nro_pedido_interno}`,
+                consulta.nro_remito && `Remito ${consulta.nro_remito}`,
+                consulta.nro_factura && `Factura ${consulta.nro_factura}`,
+              ]
+                .filter(Boolean)
+                .join('  ·  ')}
+            </Chip>
           )}
           {consulta.esta_vencida && consulta.estado !== 'Vendida' && (
             <Chip tono="ambar">Vencida el {fecha(consulta.vence_el)}</Chip>

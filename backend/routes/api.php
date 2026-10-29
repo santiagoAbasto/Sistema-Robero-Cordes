@@ -161,6 +161,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/consultas/{consulta}/revision', [ConsultaEscrituraController::class, 'nuevaRevision']);
     Route::get('/consultas/{consulta}/versiones', [ConsultaController::class, 'versiones']);
     Route::post('/consultas/{consulta}/estado', [ConsultaEscrituraController::class, 'cambiarEstado']);
+    // Pedido interno, remito, factura y tipo de cambio de una vendida.
+    Route::put('/consultas/{consulta}/venta', [ConsultaEscrituraController::class, 'datosDeLaVenta']);
     Route::post('/consultas/{consulta}/observaciones', [ConsultaEscrituraController::class, 'agregarObservacion']);
     Route::delete('/observaciones/{observacion}', [ConsultaEscrituraController::class, 'borrarObservacion']);
     Route::put('/observaciones/{observacion}', [ConsultaEscrituraController::class, 'editarObservacion']);

@@ -584,6 +584,39 @@ class ConsultaEscrituraController extends Controller
         ];
     }
 
+    /**
+     * Los datos de una cotizacion vendida, que se van completando.
+     *
+     * Pedido del cliente (29-10-2026): llega el pedido y se carga en su Access
+     * (numero de pedido interno), sale la mercaderia (remito), el cliente da
+     * la conformidad y se factura (factura y tipo de cambio de la factura).
+     * La hoja emitida no se toca: estos datos son de lo que paso despues.
+     * Cada cambio queda en el control de cambios.
+     */
+    public function datosDeLaVenta(Request $request, Consulta $consulta)
+    {
+        $this->soloSiPuedeModificar($request);
+
+        abort_unless(
+            $consulta->estado === 'Vendida',
+            422,
+            'Estos datos son de una cotizacion vendida: primero marcala con "La compro".',
+        );
+
+        $datos = $request->validate([
+            'nro_pedido_interno' => ['nullable', 'string', 'max:20'],
+            'nro_remito' => ['nullable', 'string', 'max:30'],
+            'nro_factura' => ['nullable', 'string', 'max:20'],
+            'tipo_cambio_factura' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            'tipo_cambio_factura.numeric' => 'El tipo de cambio tiene que ser un numero.',
+        ]);
+
+        $consulta->update($datos);
+
+        return response()->json(['mensaje' => 'Listo: quedaron guardados los datos de la venta.']);
+    }
+
     // ---------------------------------------------------------- observaciones
 
     public function agregarObservacion(Request $request, Consulta $consulta)

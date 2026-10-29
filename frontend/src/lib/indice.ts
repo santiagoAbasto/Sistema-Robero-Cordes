@@ -853,6 +853,28 @@ export async function cambiarEstadoConsulta(
   return data.mensaje
 }
 
+export interface DatosDeLaVenta {
+  nro_pedido_interno: string
+  nro_remito: string
+  nro_factura: string
+  tipo_cambio_factura: string
+}
+
+/** Pedido interno, remito, factura y tipo de cambio: se van completando. */
+export async function guardarDatosDeLaVenta(id: number, datos: DatosDeLaVenta): Promise<string> {
+  const { data } = await api.put<{ mensaje: string }>(`/consultas/${id}/venta`, {
+    ...datos,
+    // Como se escribe aca: "1.050,50". Con coma, los puntos son de miles.
+    tipo_cambio_factura:
+      datos.tipo_cambio_factura.trim() === ''
+        ? null
+        : datos.tipo_cambio_factura.includes(',')
+          ? datos.tipo_cambio_factura.replace(/\./g, '').replace(',', '.')
+          : datos.tipo_cambio_factura,
+  })
+  return data.mensaje
+}
+
 export async function editarObservacion(id: number, texto: string) {
   await api.put(`/observaciones/${id}`, { texto })
 }

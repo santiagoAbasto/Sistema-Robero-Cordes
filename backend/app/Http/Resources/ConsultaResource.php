@@ -45,6 +45,10 @@ class ConsultaResource extends JsonResource
             'ajuste_dif_cambio_detalle' => $this->ajuste_dif_cambio_detalle,
 
             'nro_factura' => $this->nro_factura,
+            // Lo que se va sabiendo de una vendida: pedido, remito, factura.
+            'nro_pedido_interno' => $this->nro_pedido_interno,
+            'nro_remito' => $this->nro_remito,
+            'tipo_cambio_factura' => $this->tipo_cambio_factura === null ? null : (float) $this->tipo_cambio_factura,
             'id_sistema' => $this->id_sistema,
             // Se lo pone el sistema al emitirla.
             'numero' => $this->numero,

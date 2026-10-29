@@ -243,6 +243,9 @@ export interface Consulta {
   ajuste_dif_cambio: boolean
   ajuste_dif_cambio_detalle: string | null
   nro_factura: string | null
+  nro_pedido_interno?: string | null
+  nro_remito?: string | null
+  tipo_cambio_factura?: number | null
   id_sistema: string | null
   /** 2026-0001. Se lo pone el sistema al emitirla. */
   numero: string | null
