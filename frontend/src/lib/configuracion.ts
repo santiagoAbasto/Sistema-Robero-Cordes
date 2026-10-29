@@ -78,3 +78,56 @@ export async function borrarCondicion(id: number) {
   await api.delete(`/config/condiciones/${id}`)
   olvidarCatalogos()
 }
+
+/*
+  Envio de cotizaciones (29-10-2026): el texto que acompaña la hoja por
+  WhatsApp y por correo, y la casilla desde la que el servidor manda el
+  correo con la hoja adjunta. La clave de la casilla nunca vuelve: solo se
+  sabe si hay una guardada.
+*/
+export interface Casilla {
+  host: string | null
+  puerto: string | null
+  usuario: string | null
+  remitente: string | null
+  nombre: string | null
+  tiene_clave: boolean
+}
+
+export interface Envios {
+  texto_whatsapp: string
+  texto_correo: string
+  correo_listo: boolean
+  es_admin: boolean
+  casilla: Casilla | null
+}
+
+export interface EnviosAGuardar {
+  texto_whatsapp: string
+  texto_correo: string
+  host: string
+  puerto: string
+  usuario: string
+  clave: string
+  borrar_clave?: boolean
+  remitente: string
+  nombre: string
+}
+
+export async function traerEnvios(): Promise<Envios> {
+  const { data } = await api.get<Envios>('/config/envios')
+  return data
+}
+
+export async function guardarEnvios(datos: EnviosAGuardar): Promise<Envios> {
+  const { data } = await api.put<Envios>('/config/envios', {
+    ...datos,
+    puerto: datos.puerto.trim() === '' ? null : Number(datos.puerto),
+  })
+  return data
+}
+
+export async function probarCasilla(): Promise<string> {
+  const { data } = await api.post<{ mensaje: string }>('/config/envios/prueba')
+  return data.mensaje
+}

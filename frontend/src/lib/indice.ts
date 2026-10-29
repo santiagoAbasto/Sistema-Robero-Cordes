@@ -1034,16 +1034,38 @@ export function telefonoParaWhatsApp(crudo: string): string {
   return '54' + (solo.startsWith('9') ? '' : '9') + solo
 }
 
-export function textoParaElCliente(nombreDeLaCotizacion: string, empresa: string): string {
-  return (
-    `Hola, les paso la cotizacion de Roberto Cordes S.A. para ${empresa}: ` +
-    `${nombreDeLaCotizacion}. Queda adjunta en este mensaje. ` +
-    'Cualquier duda, quedamos a disposicion.'
-  )
+/**
+ * El texto que acompaña la hoja, con {empresa}, {cotizacion} y {quien_manda}
+ * completados. La plantilla la escribe la empresa en Configuración, Envío de
+ * cotizaciones.
+ */
+export function completarTexto(
+  plantilla: string,
+  valores: { empresa: string; cotizacion: string; quien_manda: string },
+): string {
+  return plantilla
+    .replaceAll('{empresa}', valores.empresa)
+    .replaceAll('{cotizacion}', valores.cotizacion)
+    .replaceAll('{quien_manda}', valores.quien_manda)
 }
 
 /**
- * Baja la hoja y abre WhatsApp o el correo con el texto puesto.
+ * La hoja por correo, adjunta, desde la casilla de la empresa: la manda el
+ * servidor. Solo cuando la casilla está cargada; si no, mandarLaHoja.
+ */
+export async function mandarPorCorreo(
+  id: number,
+  para: string,
+  nombre: string,
+  hoja: Record<string, unknown> = {},
+): Promise<string> {
+  const { data } = await api.post<{ mensaje: string }>(`/consultas/${id}/correo`, { ...hoja, para, nombre })
+  return data.mensaje
+}
+
+/**
+ * Baja la hoja y abre WhatsApp o el correo con el texto puesto. Ninguno de los
+ * dos deja adjuntar desde un enlace: la hoja queda bajada para adjuntarla.
  *
  * Devuelve false si no hay a quien mandarsela: ahi la pantalla manda a elegir
  * el contacto en vez de abrir una ventana vacia.
@@ -1053,11 +1075,9 @@ export async function mandarLaHoja(
   via: 'WhatsApp' | 'Correo',
   destino: string | null,
   nombre: string,
-  empresa: string,
+  texto: string,
 ): Promise<boolean> {
   if (!destino) return false
-
-  const texto = textoParaElCliente(nombre, empresa)
 
   // La ventana se abre DENTRO del clic o el navegador la bloquea por emergente;
   // recien despues se pide el PDF, que tarda.

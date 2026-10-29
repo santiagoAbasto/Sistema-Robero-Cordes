@@ -22,7 +22,9 @@ import {
   emitirConsulta,
   fecha as fmtFecha,
   mensajeDeError,
+  completarTexto,
   mandarLaHoja,
+  mandarPorCorreo,
   nombreDeLaHoja,
   plata,
   imagenPegada,
@@ -41,6 +43,8 @@ import {
 import { JUEGOS_DE_CONDICIONES } from '../../types/indice'
 import type { CampoDeForma, CanoEstandar, JuegoDeCondiciones } from '../../types/indice'
 import { traerLaHoja } from '../../lib/indice'
+import { traerEnvios } from '../../lib/configuracion'
+import { useAuth } from '../../lib/auth'
 import type { DatosLinea } from '../../lib/indice'
 
 /** Una condición mientras se edita: título separado del texto. */
@@ -512,6 +516,9 @@ export default function ConsultaEditor() {
   }, [hayCambios])
   const [guardando, setGuardando] = useState(false)
   const [bajando, setBajando] = useState(false)
+  // El texto que acompaña la hoja y si el correo sale desde el servidor.
+  const { datos: envios } = useCarga(traerEnvios, [])
+  const { user } = useAuth()
   const [error, setError] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(alGuardar?.aviso ?? null)
   const [nuevaObs, setNuevaObs] = useState('')
@@ -865,17 +872,32 @@ export default function ConsultaEditor() {
       return
     }
 
+    if (!envios) return
+
+    const nombre = existente
+      ? nombreDeLaHoja(existente, empresaActual!.nombre)
+      : `${tipo} - ${empresaActual!.nombre}`
+
     setBajando(true)
 
     try {
+      // Con la casilla cargada el correo lo manda el servidor, con la hoja adjunta.
+      if (via === 'Correo' && envios.correo_listo) {
+        setAviso(await mandarPorCorreo(Number(consultaId), destino, nombre))
+
+        return
+      }
+
       await mandarLaHoja(
         Number(consultaId),
         via,
         destino,
-        existente
-          ? nombreDeLaHoja(existente, empresaActual!.nombre)
-          : `${tipo} - ${empresaActual!.nombre}`,
-        empresaActual!.nombre,
+        nombre,
+        completarTexto(via === 'WhatsApp' ? envios.texto_whatsapp : envios.texto_correo, {
+          empresa: empresaActual!.nombre,
+          cotizacion: nombre,
+          quien_manda: user?.name ?? '',
+        }),
       )
     } catch (err) {
       setError(mensajeDeError(err))
@@ -1289,21 +1311,22 @@ export default function ConsultaEditor() {
 
         Es lo que sigue después de emitir y no estaba en ningún lado: "¿cómo
         hago para enviarla al cliente? no veo ningún link desde donde terminé
-        de cotizar" (Roberto, 20-10-2026). WhatsApp y correo abren la
-        conversación o el mail con el texto escrito y la hoja ya bajada para
-        adjuntar —ninguno de los dos deja adjuntar desde un enlace— y queda
-        registrado por dónde salió.
+        de cotizar" (Roberto, 20-10-2026). WhatsApp abre la conversación con
+        el texto escrito y la hoja ya bajada para adjuntar —un enlace no deja
+        adjuntar—. El correo, con la casilla cargada en Configuración, lo manda
+        el servidor con la hoja adjunta (29-10-2026); sin casilla, abre el mail
+        como WhatsApp. Queda registrado por dónde salió.
       */}
       {emitida && tipo !== 'Observacion' && (
         <div className="flex flex-wrap items-center gap-2.5 rounded-[12px] border border-brand-200 bg-[#f3f9fe] p-2.5">
           <span className="pl-1 text-[10.5px] font-bold uppercase tracking-wide text-brand-600">
             Mandársela al cliente
           </span>
-          <Boton variante="suave" onClick={() => mandarla('WhatsApp')} disabled={bajando}>
+          <Boton variante="suave" onClick={() => mandarla('WhatsApp')} disabled={bajando || !envios}>
             <MessageCircle size={14} strokeWidth={2.2} />
             WhatsApp
           </Boton>
-          <Boton variante="suave" onClick={() => mandarla('Correo')} disabled={bajando}>
+          <Boton variante="suave" onClick={() => mandarla('Correo')} disabled={bajando || !envios}>
             <Mail size={14} strokeWidth={2.2} />
             Correo
           </Boton>
@@ -1312,7 +1335,9 @@ export default function ConsultaEditor() {
             {bajando ? 'Bajando…' : 'Descargar el PDF'}
           </Boton>
           <span className="text-[11.5px] text-muted">
-            La hoja se baja sola para que la adjuntes.
+            {envios?.correo_listo
+              ? 'Por correo sale con la hoja adjunta. Por WhatsApp se baja sola para que la adjuntes.'
+              : 'La hoja se baja sola para que la adjuntes.'}
           </span>
         </div>
       )}

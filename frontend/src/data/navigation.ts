@@ -133,6 +133,12 @@ export const NAVIGATION: NavNode[] = [
         ayuda: 'Qué medidas pide cada forma y con qué fórmula se calcula el peso. Se baja y se sube en Excel',
       },
       {
+        key: 'envios',
+        label: 'Envío de cotizaciones',
+        to: '/config/envios',
+        ayuda: 'El texto que acompaña la hoja por WhatsApp y por correo, y la casilla desde la que sale el correo',
+      },
+      {
         key: 'usuarios',
         label: 'Usuarios y permisos',
         to: '/config/usuarios',

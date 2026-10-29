@@ -2,12 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\CotizacionPorCorreo;
+use App\Models\Ajuste;
 use App\Models\Consulta;
 use App\Models\Impresion;
+use App\Services\Correo;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Mailables\Address;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 
 /**
  * La hoja que recibe el cliente.
@@ -148,6 +154,83 @@ class PdfController extends Controller
         return $request->boolean('descargar')
             ? $pdf->download($archivo)
             : $pdf->stream($archivo);
+    }
+
+    /**
+     * La hoja por correo, ya adjunta, desde la casilla de la empresa.
+     *
+     * Pedido del cliente (29-10-2026): con el boton Correo "el mail salio sin
+     * la cotizacion adjuntada". Un enlace mailto: no puede adjuntar nada; por
+     * eso, con la casilla cargada en Configuracion, el correo lo manda el
+     * servidor.
+     *
+     * La hoja sale de cotizacion(), la misma que se imprime: con los mismos
+     * datos elegidos, los mismos controles y el mismo registro de envio. Si el
+     * correo no sale, el registro se deshace: no queda anotado un envio que
+     * el cliente no recibio.
+     */
+    public function porCorreo(Request $request, Consulta $consulta)
+    {
+        $datos = $request->validate([
+            'para' => ['required', 'email', 'max:120'],
+            // El nombre de la hoja como se ve en la pantalla: es el asunto.
+            'nombre' => ['nullable', 'string', 'max:200'],
+        ], [
+            'para.required' => 'Falta el mail al que va.',
+            'para.email' => 'El mail al que va no es una dirección de correo.',
+        ]);
+
+        abort_unless(
+            Correo::lista(),
+            409,
+            'Todavía no está cargada la casilla de correo de la empresa: un administrador la carga en Configuración, Envío de cotizaciones.',
+        );
+
+        $request->merge([
+            'via' => 'Correo',
+            'registrar' => true,
+            'descargar' => false,
+            'mail' => $request->input('mail') ?: $datos['para'],
+        ]);
+
+        $usuario = $request->user();
+
+        try {
+            DB::transaction(function () use ($request, $consulta, $datos, $usuario) {
+                $hoja = $this->cotizacion($request, $consulta);
+
+                // El nombre con que la arma cotizacion(): "Cotizacion 2026-0013 R0 - ... .pdf".
+                preg_match('/filename="?([^";]+)"?/', (string) $hoja->headers->get('Content-Disposition'), $m);
+                $archivo = $m[1] ?? 'Cotizacion.pdf';
+                $nombre = $datos['nombre'] ?? preg_replace('/\.pdf$/i', '', $archivo);
+
+                $consulta->loadMissing('empresa');
+                $cuerpo = Correo::completar(Ajuste::valor('texto_correo', Correo::TEXTO_CORREO), [
+                    'empresa' => $consulta->empresa->nombre,
+                    'cotizacion' => $nombre,
+                    'quien_manda' => $usuario->name,
+                ]);
+
+                [$direccion, $nombreRemitente] = Correo::remitente();
+
+                Correo::mailer()->to($datos['para'])->send(new CotizacionPorCorreo(
+                    new Address($direccion, $nombreRemitente),
+                    new Address($usuario->email, $usuario->name),
+                    $nombre,
+                    $cuerpo,
+                    (string) $hoja->getContent(),
+                    $archivo,
+                ));
+            });
+        } catch (TransportExceptionInterface $e) {
+            return response()->json([
+                'message' => 'El correo no salió: la casilla no respondió ('.$e->getMessage().'). No quedó registrado el envío.',
+            ], 502);
+        }
+
+        return [
+            'mensaje' => "Listo: se mandó a {$datos['para']} con la hoja adjunta. Te llegó una copia a {$usuario->email}.",
+        ];
     }
 
     /**

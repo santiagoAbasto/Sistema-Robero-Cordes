@@ -18,6 +18,8 @@ import api from '../../lib/api'
 import {
   buscarEmpresas,
   fecha as fmtFecha,
+  mandarPorCorreo,
+  mensajeDeError,
   nombreDeLaHoja,
   plata,
   traerEmpresa,
@@ -25,6 +27,7 @@ import {
   useDebounce,
 } from '../../lib/indice'
 import type { Empresa } from '../../types/indice'
+import { traerEnvios } from '../../lib/configuracion'
 
 const VIAS = [
   { via: 'Impresora', icono: Printer, detalle: 'Sale por la impresora de siempre' },
@@ -133,6 +136,9 @@ function ElegirImpresion({
   const [incluyeNota, setIncluyeNota] = useState(false)
   const [via, setVia] = useState('Impresora')
   const [aviso, setAviso] = useState<string | null>(null)
+  // Con la casilla cargada, "Correo" lo manda el servidor con la hoja adjunta.
+  const { datos: envios } = useCarga(traerEnvios, [])
+  const porElServidor = via === 'Correo' && !!envios?.correo_listo
 
   const contacto = empresa.contactos.find((c) => c.id === contactoId)
 
@@ -162,20 +168,41 @@ function ElegirImpresion({
   async function abrirPdf(descargar: boolean) {
     if (!consulta) return
 
+    const hoja = {
+      nombre_en_pdf: nombreEnPdf,
+      contacto_id: contactoId || undefined,
+      telefono: telefono || undefined,
+      mail: mail || undefined,
+      incluye_importes: incluyeImportes ? 1 : 0,
+      incluye_nota: incluyeNota ? 1 : 0,
+    }
+
+    if (!descargar && porElServidor) {
+      if (!mail) {
+        setAviso('Elegí a qué mail va: falta en los datos de contacto.')
+
+        return
+      }
+
+      setGenerando(true)
+
+      try {
+        setAviso(await mandarPorCorreo(consulta.id, mail, nombreDeLaHoja(consulta, nombreEnPdf), hoja))
+      } catch (e) {
+        setAviso(mensajeDeError(e, 'No pudimos mandar el correo. Probá de nuevo.'))
+      } finally {
+        setGenerando(false)
+      }
+
+      return
+    }
+
     setGenerando(true)
 
     try {
       const { data } = await api.get(`/consultas/${consulta.id}/pdf`, {
         responseType: 'blob',
-        params: {
-          nombre_en_pdf: nombreEnPdf,
-          contacto_id: contactoId || undefined,
-          telefono: telefono || undefined,
-          mail: mail || undefined,
-          incluye_importes: incluyeImportes ? 1 : 0,
-          incluye_nota: incluyeNota ? 1 : 0,
-          via,
-        },
+        params: { ...hoja, via },
       })
 
       const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }))
@@ -231,7 +258,7 @@ function ElegirImpresion({
             </Boton>
             <Boton variante="primario" onClick={() => abrirPdf(false)} disabled={!consulta || generando}>
               <Printer size={15} strokeWidth={2} />
-              {generando ? 'Armando la hoja…' : 'Realizar la Impresion'}
+              {generando ? 'Armando la hoja…' : porElServidor ? 'Mandar por correo' : 'Realizar la Impresion'}
             </Boton>
           </>
         }

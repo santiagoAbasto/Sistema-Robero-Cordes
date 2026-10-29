@@ -27,12 +27,14 @@ import DatosDelSistemaAnterior from './pages/indice/DatosDelSistemaAnterior'
 import AntesYAhora from './pages/indice/AntesYAhora'
 import Seguimiento from './pages/indice/Seguimiento'
 import Reportes from './pages/indice/Reportes'
+import EnvioDeCotizaciones from './pages/indice/EnvioDeCotizaciones'
 import { BuscarConsultas, ConsultasPorFecha, EmpresasPorCondicion } from './pages/indice/Busquedas'
 
 /** Las que ya están hechas: el resto sigue mostrando el placeholder. */
 const HECHAS = [
   '/config/antes-y-ahora',
   '/config/condiciones',
+  '/config/envios',
   '/config/formas',
   '/config/listas',
   '/config/migracion',
@@ -84,6 +86,7 @@ export default function App() {
               <Route path="/config/formas" element={<FormasYFormulas />} />
               <Route path="/config/listas" element={<ListasEditables />} />
               <Route path="/config/condiciones" element={<CondicionesHabituales />} />
+              <Route path="/config/envios" element={<EnvioDeCotizaciones />} />
               <Route path="/config/migracion" element={<DatosDelSistemaAnterior />} />
               <Route path="/cotizaciones/seguimiento" element={<Seguimiento />} />
               <Route path="/reportes" element={<Reportes />} />

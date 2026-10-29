@@ -9,6 +9,7 @@ use App\Http\Controllers\ConsultaEscrituraController;
 use App\Http\Controllers\DireccionController;
 use App\Http\Controllers\EmpresaController;
 use App\Http\Controllers\EmpresaEscrituraController;
+use App\Http\Controllers\EnviosController;
 use App\Http\Controllers\FormaController;
 use App\Http\Controllers\ListasController;
 use App\Http\Controllers\HistorialController;
@@ -68,6 +69,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/config/condiciones/orden', [CondicionesController::class, 'ordenar']);
     Route::put('/config/condiciones/{condicion}', [CondicionesController::class, 'update']);
     Route::delete('/config/condiciones/{condicion}', [CondicionesController::class, 'destroy']);
+    // El texto que acompaña la hoja y la casilla desde la que sale el correo.
+    Route::get('/config/envios', [EnviosController::class, 'index']);
+    Route::put('/config/envios', [EnviosController::class, 'guardar']);
+    Route::post('/config/envios/prueba', [EnviosController::class, 'prueba']);
 
     // Listas que el sistema propone (formas, materiales, monedas, unidades…).
     Route::get('/catalogos', [CatalogoController::class, 'index']);
@@ -174,4 +179,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // La hoja que recibe el cliente. Los datos de contacto se eligen al imprimir.
     Route::get('/consultas/{consulta}/pdf', [PdfController::class, 'cotizacion']);
+    // La misma hoja, adjunta en un correo que manda el servidor.
+    Route::post('/consultas/{consulta}/correo', [PdfController::class, 'porCorreo']);
 });
