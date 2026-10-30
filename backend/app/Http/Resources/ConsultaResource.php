@@ -72,8 +72,9 @@ class ConsultaResource extends JsonResource
             'nota' => $this->nota,
             'texto' => $this->texto,
 
-            'solicitud' => $this->solicitud_via || $this->solicitud_texto ? [
+            'solicitud' => $this->solicitud_via || $this->solicitud_texto || $this->solicitud_nro ? [
                 'via' => $this->solicitud_via,
+                'nro' => $this->solicitud_nro,
                 'fecha' => $this->solicitud_fecha?->format('Y-m-d'),
                 'texto' => $this->solicitud_texto,
             ] : null,

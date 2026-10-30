@@ -271,7 +271,7 @@ export interface Consulta {
   lista_precios: string | null
   nota: string | null
   texto: string | null
-  solicitud: { via: string | null; fecha: string | null; texto: string | null } | null
+  solicitud: { via: string | null; nro: string | null; fecha: string | null; texto: string | null } | null
   copiada_de?: { id: number; empresa: string | null; fecha: string | null } | null
   total: number
   /** Sólo cuando hay líneas que se facturan por peso. */

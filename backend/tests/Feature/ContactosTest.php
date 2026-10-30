@@ -231,4 +231,44 @@ class ContactosTest extends TestCase
 
         $this->assertSame('Web', $consulta->fresh()->solicitud_via);
     }
+
+    /**
+     * Portal y licitacion como via, con su numero de pedido.
+     *
+     * Roberto: una solicitud puede venir de un portal o de una licitacion, y
+     * en esos casos trae su propio N° de pedido de cotizacion. Las dos vias
+     * nuevas se guardan, y el numero viaja con "lo que pidio el cliente".
+     */
+    public function test_portal_y_licitacion_con_su_nro_de_pedido(): void
+    {
+        $consulta = Consulta::create([
+            'empresa_id' => $this->empresa->id,
+            'tipo' => 'Cotizacion',
+            'fecha' => now()->toDateString(),
+            'estado' => 'Borrador',
+            'usuario_id' => User::first()->id,
+        ]);
+
+        $this->putJson("/api/consultas/{$consulta->id}", [
+            'tipo' => 'Cotizacion',
+            'fecha' => $consulta->fecha->toDateString(),
+            'solicitud_via' => 'Portal',
+            'solicitud_nro' => 'OC-PORTAL-00987',
+            'lineas' => [['descripcion' => 'Barra', 'cantidad' => 1]],
+        ])->assertOk()
+            ->assertJsonPath('data.solicitud.via', 'Portal')
+            ->assertJsonPath('data.solicitud.nro', 'OC-PORTAL-00987');
+
+        $this->assertSame('OC-PORTAL-00987', $consulta->fresh()->solicitud_nro);
+
+        // La otra via nueva tambien pasa la validacion.
+        $this->putJson("/api/consultas/{$consulta->id}", [
+            'tipo' => 'Cotizacion',
+            'fecha' => $consulta->fecha->toDateString(),
+            'solicitud_via' => 'Licitacion',
+            'lineas' => [['descripcion' => 'Barra', 'cantidad' => 1]],
+        ])->assertOk();
+
+        $this->assertSame('Licitacion', $consulta->fresh()->solicitud_via);
+    }
 }

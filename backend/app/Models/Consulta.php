@@ -308,7 +308,7 @@ class Consulta extends Model
      * guardado. Estaban escritas por separado, y al sumar "Web" a la de la
      * pantalla la otra la rechazaba: elegirla y guardar daba error.
      */
-    public const VIAS = ['Mail', 'WhatsApp', 'Web', 'Telefono', 'En persona'];
+    public const VIAS = ['Mail', 'WhatsApp', 'Web', 'Portal', 'Licitacion', 'Telefono', 'En persona'];
 
     // ------------------------------------------------------------- relaciones
 

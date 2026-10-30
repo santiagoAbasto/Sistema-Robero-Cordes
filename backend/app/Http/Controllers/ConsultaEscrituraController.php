@@ -322,6 +322,7 @@ class ConsultaEscrituraController extends Controller
                     'nota' => $consulta->nota,
                     'solicitud_texto' => $misma ? $consulta->solicitud_texto : null,
                     'solicitud_via' => $misma ? $consulta->solicitud_via : null,
+                    'solicitud_nro' => $misma ? $consulta->solicitud_nro : null,
                     'solicitud_fecha' => $misma ? $consulta->solicitud_fecha : null,
                 ]);
 
@@ -769,6 +770,7 @@ class ConsultaEscrituraController extends Controller
             'texto' => ['nullable', 'string'],
             'estado' => ['nullable', Rule::in(Consulta::ESTADOS)],
             'solicitud_via' => ['nullable', Rule::in(Consulta::VIAS)],
+            'solicitud_nro' => ['nullable', 'string', 'max:60'],
             'solicitud_fecha' => ['nullable', 'date'],
             'solicitud_texto' => ['nullable', 'string'],
 

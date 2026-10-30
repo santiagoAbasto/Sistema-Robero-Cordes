@@ -474,6 +474,7 @@ export default function ConsultaEditor() {
     nota: '',
     texto: '',
     solicitud_via: '',
+    solicitud_nro: '',
     // El pedido llegó hoy salvo que digan otra cosa: es lo que pasa casi
     // siempre, y tipear la fecha del día en cada cotización es trabajo al pedo.
     solicitud_fecha: hoy(),
@@ -554,6 +555,7 @@ export default function ConsultaEditor() {
       nota: existente.nota ?? '',
       texto: existente.texto ?? '',
       solicitud_via: existente.solicitud?.via ?? '',
+      solicitud_nro: existente.solicitud?.nro ?? '',
       solicitud_fecha: existente.solicitud?.fecha ?? '',
       solicitud_texto: existente.solicitud?.texto ?? '',
       juego_condiciones: existente.juego_condiciones ?? '',
@@ -740,6 +742,7 @@ export default function ConsultaEditor() {
       nota: cabecera.nota || null,
       texto: cabecera.texto || null,
       solicitud_via: cabecera.solicitud_via || null,
+      solicitud_nro: cabecera.solicitud_nro || null,
       solicitud_fecha: cabecera.solicitud_fecha || null,
       solicitud_texto: cabecera.solicitud_texto || null,
       // De la calculadora viajan las medidas, no el peso: el peso lo rehace el
@@ -1826,6 +1829,7 @@ function Solicitud({
 }) {
   const c = cabecera as {
     solicitud_via: string
+    solicitud_nro: string
     solicitud_fecha: string
     solicitud_texto: string
   }
@@ -1850,12 +1854,18 @@ function Solicitud({
         </p>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[180px_180px]">
+      <div className="grid gap-3 lg:grid-cols-[180px_180px_180px]">
         <Lista
           etiqueta="Como llego"
           value={c.solicitud_via}
           onChange={(e) => set('solicitud_via', e.target.value)}
           opciones={(catalogos?.solicitud_vias ?? []).map((v) => ({ valor: v, texto: v }))}
+        />
+        <Texto
+          etiqueta="N° de pedido"
+          ayuda="del portal o la licitación"
+          value={c.solicitud_nro}
+          onChange={(e) => set('solicitud_nro', e.target.value)}
         />
         <Texto
           etiqueta="Fecha de la solicitud"
