@@ -4286,7 +4286,7 @@ function Condiciones({
                   : 'rounded-[5px] border border-line px-[10px] py-1 text-[12px] text-ink transition-colors hover:border-brand-200'
               }
             >
-              {j === 'Importacion' ? 'Importación' : 'Stock'}
+              {j === 'Importacion' ? 'Importación' : j}
             </button>
           ))}
           {!juego && (
