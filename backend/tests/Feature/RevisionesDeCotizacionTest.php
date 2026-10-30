@@ -79,6 +79,58 @@ class RevisionesDeCotizacionTest extends TestCase
         return $this->postJson("/api/consultas/{$consulta->id}/revision");
     }
 
+    /**
+     * La original emitida conserva su total al revisar (regresion, 30-10-2026).
+     *
+     * Roberto vio una emitida en $0 despues de crear su revision. La revision
+     * COPIA el contenido, no lo mueve: la original tiene que quedar intacta,
+     * con alternativa, editando el borrador y emitiendo la R1.
+     */
+    public function test_la_original_conserva_su_total_al_revisar(): void
+    {
+        // Una alternativa de la linea madre: no suma, pero se copia en la revision.
+        ConsultaLinea::create([
+            'consulta_id' => $this->consulta->id,
+            'orden' => 2,
+            'descripcion' => 'Alternativa en 316L',
+            'cantidad' => 3,
+            'precio_unitario' => 120,
+            'importe' => 360,
+            'alternativa_de_id' => $this->consulta->lineas()->first()->id,
+        ]);
+
+        $this->emitir($this->consulta)->assertOk();
+
+        $antes = $this->consulta->fresh();
+        $antes->load('lineas');
+        $this->assertSame(300.0, $antes->total, 'precondicion: la emitida tiene su total');
+
+        // El borrador de la revision nace con los precios copiados (no en $0).
+        $revisada = $this->revisar($this->consulta)->assertCreated();
+        $revisada->assertJsonPath('data.total', 300);
+        $idRevision = $revisada->json('data.id');
+
+        // Roberto edita la revision (le cambia el precio) y la emite.
+        $revision = Consulta::findOrFail($idRevision);
+        $madre = $revision->lineas()->whereNull('alternativa_de_id')->first();
+        $this->putJson("/api/consultas/{$idRevision}", [
+            'tipo' => 'Cotizacion',
+            'fecha' => $revision->fecha->toDateString(),
+            'lineas' => [[
+                'id' => $madre->id,
+                'descripcion' => 'Barra redonda Ø20',
+                'cantidad' => 3,
+                'precio_unitario' => 150,
+            ]],
+        ])->assertOk();
+        $this->emitir($revision)->assertOk();
+
+        // La original emitida DEBE conservar su linea madre y su total.
+        $original = $this->consulta->fresh();
+        $original->load('lineas');
+        $this->assertSame(300.0, $original->total, 'la original emitida quedo en 0 al crear/emitir la revision');
+    }
+
     /** Un borrador se edita todas las veces que haga falta. */
     public function test_un_borrador_se_edita(): void
     {
