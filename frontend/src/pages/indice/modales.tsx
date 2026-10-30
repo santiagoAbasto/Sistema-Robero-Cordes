@@ -467,7 +467,7 @@ export function ModalRazonSocial({
             obligatorio
             value={v.cuit}
             onChange={(e) => set('cuit', e.target.value)}
-            placeholder="30-50000011-7"
+            placeholder="30-12345678-9"
           />
         </div>
 

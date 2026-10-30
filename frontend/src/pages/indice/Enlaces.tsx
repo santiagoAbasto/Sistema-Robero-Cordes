@@ -242,7 +242,7 @@ function ModalEnlace({
           obligatorio
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="www.delvalle.com.ar   ·   instagram.com/delvalle"
+          placeholder="www.ejemplo.com.ar   ·   instagram.com/ejemplo"
           ayuda="con o sin https"
         />
 

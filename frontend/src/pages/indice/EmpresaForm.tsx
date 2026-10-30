@@ -159,7 +159,7 @@ export default function EmpresaForm({
           ayuda="se puede buscar por acá"
           value={valores.cuit ?? ''}
           onChange={(e) => set('cuit', e.target.value)}
-          placeholder="30-50000011-7"
+          placeholder="30-12345678-9"
         />
         <Texto
           etiqueta="Codigo ISIS"

@@ -110,7 +110,7 @@ export function EmpresasPorCondicion() {
             etiqueta="Texto en la observacion"
             value={f.observacion}
             onChange={(e) => set('observacion', e.target.value)}
-            placeholder="un cliente, recortes, planta…"
+            placeholder="recortes, barra, planta…"
           />
 
           <div className="flex flex-wrap gap-2.5">
