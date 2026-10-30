@@ -217,21 +217,98 @@ class EstadoYSeguimientoTest extends TestCase
         $this->putJson("/api/consultas/{$id}/venta", ['tipo_cambio_factura' => 'mil'])->assertStatus(422);
     }
 
+    /**
+     * Cada dato de la venta con su fecha (pedido del cliente, 30-10-2026): la
+     * del remito y la factura pueden no coincidir, y al reabrir la cotizacion
+     * las fechas tienen que estar.
+     */
+    public function test_los_datos_de_la_venta_llevan_cada_uno_su_fecha(): void
+    {
+        $this->consulta->forceFill(['emitida_el' => now(), 'numero' => '2026-0001', 'estado' => 'Confirmada'])->save();
+        $id = $this->consulta->id;
+
+        $this->cambiar(['estado' => 'Vendida'])->assertOk();
+
+        $this->putJson("/api/consultas/{$id}/venta", [
+            'nro_pedido_interno' => '12345', 'fecha_pedido' => '2026-10-20',
+            'nro_remito' => '0001-00004321', 'fecha_remito' => '2026-10-27',
+            'nro_factura' => '0001-00001234', 'fecha_factura' => '2026-10-29',
+            'tipo_cambio_factura' => '1050.50',
+        ])->assertOk();
+
+        $r = $this->getJson("/api/consultas/{$id}")->assertOk();
+        $r->assertJsonPath('data.fecha_pedido', '2026-10-20');
+        $r->assertJsonPath('data.fecha_remito', '2026-10-27');
+        $r->assertJsonPath('data.fecha_factura', '2026-10-29');
+
+        // Una fecha mal escrita no pasa.
+        $this->putJson("/api/consultas/{$id}/venta", ['fecha_remito' => 'el martes'])->assertStatus(422);
+
+        // Se puede borrar una fecha que estaba.
+        $this->putJson("/api/consultas/{$id}/venta", ['fecha_factura' => null])->assertOk();
+        $this->assertNull($this->consulta->fresh()->fecha_factura);
+    }
+
     /** "La compro" con lo que ya se sepa de la venta, en un solo paso (29-10-2026). */
     public function test_la_compro_guarda_los_datos_de_la_venta_en_el_mismo_paso(): void
     {
         $this->consulta->forceFill(['emitida_el' => now(), 'numero' => '2026-0001', 'estado' => 'Confirmada'])->save();
 
         $this->cambiar([
-            'estado' => 'Vendida', 'comentario' => 'La compro.', 'nro_pedido_interno' => '88231',
+            'estado' => 'Vendida', 'comentario_venta' => 'encargado al proveedor, OC-1234',
+            'nro_pedido_interno' => '88231', 'fecha_pedido' => '2026-10-20',
             'nro_remito' => '0001-00004321', 'tipo_cambio_factura' => '1050.5',
         ])->assertOk();
 
         $c = $this->consulta->fresh();
         $this->assertSame('Vendida', $c->estado);
         $this->assertSame('88231', $c->nro_pedido_interno);
+        $this->assertSame('2026-10-20', $c->fecha_pedido->toDateString());
         $this->assertSame('0001-00004321', $c->nro_remito);
         $this->assertEquals(1050.5, (float) $c->tipo_cambio_factura);
+        $this->assertSame('encargado al proveedor, OC-1234', $c->comentario_venta);
         $this->assertNull($c->nro_factura, 'lo que no se escribio queda vacio');
+        $this->assertNull($c->fecha_remito, 'la fecha que no se cargo queda vacia');
+
+        // El comentario del pedido es un campo propio, editable: no es una
+        // observacion del hilo (pedido del cliente, 30-10-2026).
+        $this->assertSame(0, $c->observaciones()->count());
+    }
+
+    /**
+     * El comentario del pedido se escribe, se actualiza y se puede borrar, y
+     * siempre viaja en la cotizacion para mostrarlo (cliente, 30-10-2026:
+     * "poner cosas del pedido ... y se pueda modificar/actualizar").
+     */
+    public function test_el_comentario_del_pedido_se_edita_y_se_actualiza(): void
+    {
+        $this->consulta->forceFill(['emitida_el' => now(), 'numero' => '2026-0001', 'estado' => 'Confirmada'])->save();
+        $id = $this->consulta->id;
+
+        $this->cambiar(['estado' => 'Vendida'])->assertOk();
+
+        $this->putJson("/api/consultas/{$id}/venta", ['comentario_venta' => 'encargado al proveedor, OC-1234'])->assertOk();
+        $this->getJson("/api/consultas/{$id}")->assertJsonPath('data.comentario_venta', 'encargado al proveedor, OC-1234');
+
+        $this->putJson("/api/consultas/{$id}/venta", ['comentario_venta' => 'entregado, factura en camino'])->assertOk();
+        $this->assertSame('entregado, factura en camino', $this->consulta->fresh()->comentario_venta);
+
+        $this->putJson("/api/consultas/{$id}/venta", ['comentario_venta' => null])->assertOk();
+        $this->assertNull($this->consulta->fresh()->comentario_venta);
+    }
+
+    /**
+     * Con factura la venta se anota en el hilo; sin un "cuando" suelto, esa nota
+     * se fecha cuando entro el pedido (30-10-2026).
+     */
+    public function test_la_nota_de_la_venta_se_fecha_en_el_pedido_si_no_hay_fecha_suelta(): void
+    {
+        $this->consulta->forceFill(['emitida_el' => now(), 'numero' => '2026-0001', 'estado' => 'Confirmada'])->save();
+
+        $this->cambiar(['estado' => 'Vendida', 'nro_factura' => '0001-00001234', 'fecha_pedido' => '2026-10-20'])->assertOk();
+
+        $nota = $this->consulta->observaciones()->latest('id')->first();
+        $this->assertStringContainsString('Confirmada -> Vendida. Factura 0001-00001234.', $nota->texto);
+        $this->assertSame('2026-10-20', $nota->fecha->toDateString());
     }
 }

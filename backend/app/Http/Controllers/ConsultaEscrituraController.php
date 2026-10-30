@@ -536,10 +536,19 @@ class ConsultaEscrituraController extends Controller
             'fecha' => ['nullable', 'date'],
             // "La compro": lo que ya se sepa de la venta, en el mismo paso.
             // Una emitida no se edita: despues se completa con datosDeLaVenta.
-            'nro_factura' => ['nullable', 'string', 'max:20'],
+            // Cada numero con su fecha: la del remito y la factura suelen
+            // coincidir, pero a veces el remito va primero y la factura despues.
             'nro_pedido_interno' => ['nullable', 'string', 'max:20'],
+            'fecha_pedido' => ['nullable', 'date'],
             'nro_remito' => ['nullable', 'string', 'max:30'],
+            'fecha_remito' => ['nullable', 'date'],
+            'nro_factura' => ['nullable', 'string', 'max:20'],
+            'fecha_factura' => ['nullable', 'date'],
             'tipo_cambio_factura' => ['nullable', 'numeric', 'min:0'],
+            // El comentario del pedido (a quien se encargo, su N° de orden): se
+            // edita y siempre queda a la vista, por eso es campo propio y no
+            // una observacion del hilo.
+            'comentario_venta' => ['nullable', 'string', 'max:2000'],
         ], [
             'comentario.required' => 'Para cerrar una cotizacion hay que decir por que.',
         ]);
@@ -555,7 +564,10 @@ class ConsultaEscrituraController extends Controller
             $consulta->estado = $datos['estado'];
 
             if ($datos['estado'] === 'Vendida') {
-                foreach (['nro_factura', 'nro_pedido_interno', 'nro_remito', 'tipo_cambio_factura'] as $campo) {
+                foreach ([
+                    'nro_pedido_interno', 'fecha_pedido', 'nro_remito', 'fecha_remito',
+                    'nro_factura', 'fecha_factura', 'tipo_cambio_factura', 'comentario_venta',
+                ] as $campo) {
                     if (filled($datos[$campo] ?? null)) {
                         $consulta->{$campo} = $datos[$campo];
                     }
@@ -577,10 +589,17 @@ class ConsultaEscrituraController extends Controller
                 return;
             }
 
+            // La nota del hilo lleva una fecha. En una venta no hay un "cuando"
+            // suelto: el momento es cuando entro el pedido (o, si no, la fecha
+            // de la factura). En los demas cambios, la que se eligio o hoy.
+            $cuando = $datos['fecha']
+                ?? ($datos['estado'] === 'Vendida' ? ($datos['fecha_pedido'] ?? $datos['fecha_factura'] ?? null) : null)
+                ?? now();
+
             Observacion::create([
                 'consulta_id' => $consulta->id,
                 'numero' => ($consulta->observaciones()->max('numero') ?? 0) + 1,
-                'fecha' => $datos['fecha'] ?? now(),
+                'fecha' => $cuando,
                 'usuario_id' => $request->user()->id,
                 'texto' => "{$anterior} -> {$datos['estado']}. {$datos['comentario']}",
             ]);
@@ -614,9 +633,14 @@ class ConsultaEscrituraController extends Controller
 
         $datos = $request->validate([
             'nro_pedido_interno' => ['nullable', 'string', 'max:20'],
+            'fecha_pedido' => ['nullable', 'date'],
             'nro_remito' => ['nullable', 'string', 'max:30'],
+            'fecha_remito' => ['nullable', 'date'],
             'nro_factura' => ['nullable', 'string', 'max:20'],
+            'fecha_factura' => ['nullable', 'date'],
             'tipo_cambio_factura' => ['nullable', 'numeric', 'min:0'],
+            // Se edita y se actualiza; vacio lo borra.
+            'comentario_venta' => ['nullable', 'string', 'max:2000'],
         ], [
             'tipo_cambio_factura.numeric' => 'El tipo de cambio tiene que ser un numero.',
         ]);

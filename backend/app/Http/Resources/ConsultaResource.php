@@ -45,10 +45,16 @@ class ConsultaResource extends JsonResource
             'ajuste_dif_cambio_detalle' => $this->ajuste_dif_cambio_detalle,
 
             'nro_factura' => $this->nro_factura,
-            // Lo que se va sabiendo de una vendida: pedido, remito, factura.
+            // Lo que se va sabiendo de una vendida: pedido, remito, factura,
+            // cada uno con la fecha en que paso.
             'nro_pedido_interno' => $this->nro_pedido_interno,
+            'fecha_pedido' => $this->fecha_pedido?->format('Y-m-d'),
             'nro_remito' => $this->nro_remito,
+            'fecha_remito' => $this->fecha_remito?->format('Y-m-d'),
+            'fecha_factura' => $this->fecha_factura?->format('Y-m-d'),
             'tipo_cambio_factura' => $this->tipo_cambio_factura === null ? null : (float) $this->tipo_cambio_factura,
+            // Comentario del pedido: editable y siempre a la vista en la venta.
+            'comentario_venta' => $this->comentario_venta,
             'id_sistema' => $this->id_sistema,
             // Se lo pone el sistema al emitirla.
             'numero' => $this->numero,

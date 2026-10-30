@@ -854,7 +854,11 @@ export async function cambiarEstadoConsulta(
     nro_factura?: string
     nro_pedido_interno?: string
     nro_remito?: string
+    fecha_pedido?: string | null
+    fecha_remito?: string | null
+    fecha_factura?: string | null
     tipo_cambio_factura?: string | null
+    comentario_venta?: string
   },
 ): Promise<string> {
   const { data } = await api.post<{ mensaje: string }>(`/consultas/${id}/estado`, datos)
@@ -863,9 +867,13 @@ export async function cambiarEstadoConsulta(
 
 export interface DatosDeLaVenta {
   nro_pedido_interno: string
+  fecha_pedido: string
   nro_remito: string
+  fecha_remito: string
   nro_factura: string
+  fecha_factura: string
   tipo_cambio_factura: string
+  comentario_venta: string
 }
 
 /** Como se escribe aca: "1.050,50". Con coma, los puntos son de miles. */
@@ -875,11 +883,20 @@ export function numeroComoSeEscribe(texto: string): string | null {
   return t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
 }
 
-/** Pedido interno, remito, factura y tipo de cambio: se van completando. */
+/** Vacío va como nulo: una fecha en blanco no es una fecha, y así se puede borrar un dato. */
+const oNulo = (texto: string): string | null => (texto.trim() === '' ? null : texto.trim())
+
+/** Pedido, remito y factura —cada uno con su fecha— y el tipo de cambio: se van completando. */
 export async function guardarDatosDeLaVenta(id: number, datos: DatosDeLaVenta): Promise<string> {
   const { data } = await api.put<{ mensaje: string }>(`/consultas/${id}/venta`, {
-    ...datos,
+    nro_pedido_interno: oNulo(datos.nro_pedido_interno),
+    fecha_pedido: oNulo(datos.fecha_pedido),
+    nro_remito: oNulo(datos.nro_remito),
+    fecha_remito: oNulo(datos.fecha_remito),
+    nro_factura: oNulo(datos.nro_factura),
+    fecha_factura: oNulo(datos.fecha_factura),
     tipo_cambio_factura: numeroComoSeEscribe(datos.tipo_cambio_factura),
+    comentario_venta: oNulo(datos.comentario_venta),
   })
   return data.mensaje
 }

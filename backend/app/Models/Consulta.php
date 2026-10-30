@@ -25,6 +25,10 @@ class Consulta extends Model
         'fecha' => 'date',
         'vence_el' => 'date',
         'solicitud_fecha' => 'date',
+        // Cuando paso cada cosa de la venta: el pedido, el remito, la factura.
+        'fecha_pedido' => 'date',
+        'fecha_remito' => 'date',
+        'fecha_factura' => 'date',
         'tipo_cambio' => 'decimal:4',
         'tipo_cambio_factura' => 'decimal:4',
         'ajuste_dif_cambio' => 'boolean',

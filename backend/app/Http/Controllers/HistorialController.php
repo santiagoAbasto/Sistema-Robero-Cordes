@@ -188,10 +188,14 @@ class HistorialController extends Controller
      */
     private const NOMBRES = [
         'nro_factura' => 'N° de factura',
+        'fecha_factura' => 'fecha de la factura',
         'nro_pedido_interno' => 'N° de pedido interno',
+        'fecha_pedido' => 'fecha del pedido',
         'nro_remito' => 'N° de remito',
+        'fecha_remito' => 'fecha del remito',
         'tipo_cambio' => 'tipo de cambio',
         'tipo_cambio_factura' => 'tipo de cambio de la factura',
+        'comentario_venta' => 'comentario del pedido',
         'condicion_iva' => 'condición frente al IVA',
         'condicion_pago' => 'condición de pago',
         'precio_unitario' => 'precio unitario',

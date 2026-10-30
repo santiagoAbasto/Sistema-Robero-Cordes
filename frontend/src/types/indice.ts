@@ -244,8 +244,14 @@ export interface Consulta {
   ajuste_dif_cambio_detalle: string | null
   nro_factura: string | null
   nro_pedido_interno?: string | null
+  /** Cuando paso cada cosa de la venta. La del remito y la factura pueden no coincidir. */
+  fecha_pedido?: string | null
   nro_remito?: string | null
+  fecha_remito?: string | null
+  fecha_factura?: string | null
   tipo_cambio_factura?: number | null
+  /** Comentario del pedido (a quién se encargó, su N° de orden): editable, siempre a la vista. */
+  comentario_venta?: string | null
   id_sistema: string | null
   /** 2026-0001. Se lo pone el sistema al emitirla. */
   numero: string | null
