@@ -19,7 +19,7 @@ class RevisarDatos extends Command
         $this->line('empresas: '.Empresa::count().' | consultas: '.Consulta::count().' | lineas: '.ConsultaLinea::count());
         $this->newLine();
 
-        $e = Empresa::where('nombre', 'like', '%delvalle%')
+        $e = Empresa::where('nombre', 'like', '%DEL VALLE%')
             ->with('relaciones', 'contactos.medios.tipoMedio', 'razonesSociales', 'campos')->first();
 
         $this->line('FICHA: '.$e->nombre);

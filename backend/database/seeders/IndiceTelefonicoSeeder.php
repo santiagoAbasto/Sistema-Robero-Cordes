@@ -27,8 +27,13 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 
 /**
- * Datos de ejemplo tomados de las fichas reales del Índice Telefónico,
- * para que el sistema se pueda probar con algo parecido a lo que usan.
+ * Datos de ejemplo FICTICIOS, con la misma forma que las fichas del Índice
+ * Telefónico, para probar el sistema con algo parecido a lo que usan.
+ *
+ * Las empresas, personas, teléfonos, correos y CUIT de los CLIENTES son
+ * inventados: este repositorio es público y los datos reales de los clientes
+ * no viajan a GitHub. La empresa propia (Roberto Cordes S.A.) y su equipo sí
+ * quedan: es de quien es el sistema.
  */
 class IndiceTelefonicoSeeder extends Seeder
 {
@@ -41,13 +46,13 @@ class IndiceTelefonicoSeeder extends Seeder
     {
         $this->cargarReferencias();
 
-        $delvalle = $this->delvalle();
+        $cliente = $this->clientePrincipal();
         $this->distribuidores();
         $minera = $this->minera();
         $this->otras();
 
-        $this->historialDedelvalle($delvalle);
-        $this->casominera($minera);
+        $this->historialDelCliente($cliente);
+        $this->casoMinera($minera);
     }
 
     // ------------------------------------------------------------- referencias
@@ -160,7 +165,7 @@ class IndiceTelefonicoSeeder extends Seeder
 
     // ---------------------------------------------------------------- empresas
 
-    private function delvalle(): Empresa
+    private function clientePrincipal(): Empresa
     {
         $e = $this->crearEmpresa([
             'nombre' => 'METALURGICA DEL VALLE S.A.',
@@ -332,20 +337,20 @@ class IndiceTelefonicoSeeder extends Seeder
         ], ['Agenda general' => null]);
     }
 
-    // ------------------------------------------------------- historial de delvalle
+    // ------------------------------------------- historial del cliente principal
 
-    private function historialDedelvalle(Empresa $e): void
+    private function historialDelCliente(Empresa $e): void
     {
-        $gabriel = $e->contactos()->where('nombre', 'Daniel Ortega')->first();
-        $marcela = $e->contactos()->where('nombre', 'Sandra Rivas')->first();
-        $cesar = $e->contactos()->where('nombre', 'Esteban Valverde')->first();
+        $compras = $e->contactos()->where('nombre', 'Daniel Ortega')->first();
+        $admin = $e->contactos()->where('nombre', 'Sandra Rivas')->first();
+        $dueno = $e->contactos()->where('nombre', 'Esteban Valverde')->first();
         $dolar = $this->mon['DOLAR BILLETE BNA VENDEDOR'];
 
         // --- una cotización con dos líneas cotizadas distinto a lo pedido -----
         $cot = $this->consulta($e, [
             'tipo' => 'Cotizacion',
             'fecha' => '2026-07-20',
-            'contacto_id' => $gabriel?->id,
+            'contacto_id' => $compras?->id,
             'usuario_id' => $this->u['RIC']->id,
             'moneda_id' => $dolar,
             'condicion_pago' => '50% anticipo, saldo contra entrega',
@@ -406,7 +411,7 @@ class IndiceTelefonicoSeeder extends Seeder
             ['consulta_id' => $cot->id, 'via' => 'Correo'],
             [
                 'fecha' => '2026-07-20 12:15', 'usuario_id' => $this->u['RIC']->id,
-                'nombre_en_pdf' => $e->nombre, 'contacto_id' => $gabriel?->id,
+                'nombre_en_pdf' => $e->nombre, 'contacto_id' => $compras?->id,
                 'telefono' => '03571 40-0010', 'mail' => 'dortega@delvalle.test',
             ]
         );
@@ -415,7 +420,7 @@ class IndiceTelefonicoSeeder extends Seeder
             ['consulta_id' => $cot->id, 'via' => 'WhatsApp'],
             [
                 'fecha' => '2026-07-20 12:18', 'usuario_id' => $this->u['RIC']->id,
-                'nombre_en_pdf' => $e->nombre, 'contacto_id' => $marcela?->id,
+                'nombre_en_pdf' => $e->nombre, 'contacto_id' => $admin?->id,
                 'telefono' => '03571 40-0012', 'mail' => 'administracion@delvalle.test',
             ]
         );
@@ -423,7 +428,7 @@ class IndiceTelefonicoSeeder extends Seeder
         // --- una cotización vieja que terminó en venta -----------------------
         $vieja = $this->consulta($e, [
             'tipo' => 'Cotizacion', 'fecha' => '2020-12-02',
-            'contacto_id' => $gabriel?->id, 'usuario_id' => $this->u['JD']->id,
+            'contacto_id' => $compras?->id, 'usuario_id' => $this->u['JD']->id,
             'moneda_id' => $dolar, 'tipo_cambio' => 78.20, 'nro_factura' => '22763',
             'nota' => 'stock', 'estado' => 'Vendida',
         ]);
@@ -445,7 +450,7 @@ class IndiceTelefonicoSeeder extends Seeder
         // --- un pedido: venta de material que ya está en stock ---------------
         $pedido = $this->consulta($e, [
             'tipo' => 'Pedido', 'fecha' => '2026-05-12',
-            'contacto_id' => $gabriel?->id, 'usuario_id' => $this->u['RIC']->id,
+            'contacto_id' => $compras?->id, 'usuario_id' => $this->u['RIC']->id,
             'moneda_id' => $dolar, 'estado' => 'Vendida',
         ]);
 
@@ -453,14 +458,14 @@ class IndiceTelefonicoSeeder extends Seeder
             'material' => 'NIQUEL 201', 'forma' => 'BARRA REDONDA', 'dimensiones' => '38.1 X 110 MM',
             'cantidad' => 4, 'unidad' => 'UN', 'precio_unitario' => 206.00,
             'descripcion' => '4 UN NIQUEL 201 BARRA 38.1 X 110 MM', 'igual' => true,
-            'stock' => ['Deposito Palpa', 'H-88421'],
+            'stock' => ['Deposito Central', 'H-10001'],
         ]);
 
         $this->linea($pedido, 2, [
             'material' => 'TITANIO GR2', 'forma' => 'BARRA REDONDA', 'dimensiones' => '50.0 X 125 MM',
             'cantidad' => 2, 'unidad' => 'UN', 'precio_unitario' => 165.00,
             'descripcion' => '2 UN TIT GR2 BARRA 50.0 X 125 MM', 'igual' => true,
-            'stock' => ['Deposito Palpa', 'T-22190'],
+            'stock' => ['Deposito Central', 'T-20001'],
         ]);
 
         $this->observaciones($pedido, [
@@ -470,15 +475,15 @@ class IndiceTelefonicoSeeder extends Seeder
         // --- una observación suelta -----------------------------------------
         $this->consulta($e, [
             'tipo' => 'Observacion', 'fecha' => '2026-04-02',
-            'contacto_id' => $cesar?->id, 'usuario_id' => $this->u['JD']->id,
+            'contacto_id' => $dueno?->id, 'usuario_id' => $this->u['JD']->id,
             'texto' => 'Llamo Esteban por el tema de los recortes que nos quiere vender. Pasar a verlo el mes que viene.',
             'estado' => 'Confirmada',
         ]);
     }
 
-    // -------------------------------------------- el caso del 12/08: la minera
+    // ----------------------------------------- el caso del 12/08: la minera
 
-    private function casominera(Empresa $minera): void
+    private function casoMinera(Empresa $minera): void
     {
         $contacto = $minera->contactos()->first();
         $dolar = $this->mon['DOLAR BILLETE BNA VENDEDOR'];
