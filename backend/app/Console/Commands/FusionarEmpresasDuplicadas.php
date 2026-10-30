@@ -108,13 +108,26 @@ class FusionarEmpresasDuplicadas extends Command
         }
 
         $r = ['grupos' => 0, 'archivadas' => 0, 'consultas' => 0, 'contactos' => 0, 'razones' => 0, 'enlaces' => 0, 'campos' => 0];
+        $fallidos = [];
 
-        DB::transaction(function () use ($plan, &$r) {
-            foreach ($plan as $p) {
-                $this->fusionarGrupo($p['sobrevive'], $p['duplicadas'], $r);
+        // Una transaccion POR GRUPO: cada empresa queda consistente, es
+        // reanudable (al re-correr, las ya archivadas quedan inactivas y
+        // renombradas, asi que no se vuelven a tomar) y un grupo con problema
+        // no frena los demas.
+        foreach ($plan as $i => $p) {
+            try {
+                DB::transaction(function () use ($p, &$r) {
+                    $this->fusionarGrupo($p['sobrevive'], $p['duplicadas'], $r);
+                });
                 $r['grupos']++;
+            } catch (\Throwable $e) {
+                $fallidos[] = "{$p['nombre']}: ".$e->getMessage();
             }
-        });
+
+            if (($i + 1) % 50 === 0) {
+                $this->line('  … '.($i + 1).'/'.count($plan).' grupos procesados');
+            }
+        }
 
         $this->newLine();
         $this->info(sprintf(
@@ -122,6 +135,14 @@ class FusionarEmpresasDuplicadas extends Command
             $r['grupos'], $r['archivadas'], $r['consultas'], $r['contactos'], $r['razones'], $r['enlaces'], $r['campos'],
         ));
         $this->line('Las archivadas quedaron con activa=false (fuera del listado y del conteo) y renombradas. Se revierten con activa=true.');
+
+        if ($fallidos !== []) {
+            $this->newLine();
+            $this->warn('Grupos que NO se fusionaron (quedaron intactos, se pueden reintentar):');
+            foreach ($fallidos as $f) {
+                $this->line("  - {$f}");
+            }
+        }
 
         return self::SUCCESS;
     }
