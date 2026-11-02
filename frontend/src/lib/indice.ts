@@ -157,6 +157,45 @@ export function olvidarCatalogos() {
   cacheCatalogos = null
 }
 
+/* ---------------------------------------------------- materiales al vuelo */
+
+type MaterialDelCatalogo = Catalogos['materiales'][number]
+
+export interface DatosDeMaterial {
+  nombre?: string
+  familia?: string | null
+  forma_habitual_id?: number | null
+  densidad?: number | null
+}
+
+/**
+ * Deja el material actualizado en la cache para que aparezca ya en las listas,
+ * sin volver a pedir todo el catálogo. Comparte la referencia con lo que ven
+ * las pantallas abiertas: al re-renderizar, lo encuentran.
+ */
+function guardarMaterialEnCache(m: MaterialDelCatalogo) {
+  if (!cacheCatalogos) return
+  const i = cacheCatalogos.materiales.findIndex((x) => x.id === m.id)
+  if (i >= 0) cacheCatalogos.materiales[i] = m
+  else cacheCatalogos.materiales.push(m)
+}
+
+/** Alta de un material con todos sus datos, desde la cotización. */
+export async function crearMaterial(datos: DatosDeMaterial): Promise<MaterialDelCatalogo> {
+  const { data } = await api.post<MaterialDelCatalogo>('/catalogos/materiales', datos)
+  guardarMaterialEnCache(data)
+
+  return data
+}
+
+/** Completar o corregir los datos de un material que ya existe. */
+export async function actualizarMaterial(id: number, datos: DatosDeMaterial): Promise<MaterialDelCatalogo> {
+  const { data } = await api.put<MaterialDelCatalogo>(`/catalogos/materiales/${id}`, datos)
+  guardarMaterialEnCache(data)
+
+  return data
+}
+
 export function useCatalogos() {
   const [catalogos, setCatalogos] = useState<Catalogos | null>(cacheCatalogos)
 

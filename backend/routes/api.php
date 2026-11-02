@@ -77,6 +77,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Listas que el sistema propone (formas, materiales, monedas, unidades…).
     Route::get('/catalogos', [CatalogoController::class, 'index']);
     Route::get('/catalogos/materiales', [CatalogoController::class, 'materiales']);
+    Route::post('/catalogos/materiales', [CatalogoController::class, 'crearMaterial']);
+    Route::put('/catalogos/materiales/{material}', [CatalogoController::class, 'actualizarMaterial']);
 
     /* ------------------------------------------------------------- empresas */
 

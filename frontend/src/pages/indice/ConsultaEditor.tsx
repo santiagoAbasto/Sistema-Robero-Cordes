@@ -13,7 +13,7 @@ import {
   PageHeader,
   SinResultados,
 } from '../../components/ui'
-import { AreaTexto, Casilla, Combo, Etiqueta, Guardado, Lista, Texto } from '../../components/ui/form'
+import { AreaTexto, Casilla, Combo, Etiqueta, Guardado, Lista, Modal, Texto } from '../../components/ui/form'
 import {
   actualizarConsulta,
   agregarObservacion,
@@ -31,6 +31,8 @@ import {
   plata,
   imagenPegada,
   interpretarTexto,
+  crearMaterial,
+  actualizarMaterial,
   nuevaRevision,
   traerConsulta,
   traerEmpresa,
@@ -48,7 +50,7 @@ import { traerLaHoja } from '../../lib/indice'
 import { traerEnvios } from '../../lib/configuracion'
 import ComoSiguio from './ComoSiguio'
 import { useAuth } from '../../lib/auth'
-import type { DatosLinea } from '../../lib/indice'
+import type { DatosLinea, DatosDeMaterial } from '../../lib/indice'
 
 /** Una condición mientras se edita: título separado del texto. */
 type CondicionForm = {
@@ -2824,6 +2826,10 @@ function ElegirMaterial({
   const esNuevo = !elegido && escrito !== ''
   const sinDensidad = Boolean(elegido) && !elegido?.densidad
 
+  const [editor, setEditor] = useState<
+    { modo: 'nuevo'; nombre: string } | { modo: 'editar'; material: Catalogos['materiales'][number] } | null
+  >(null)
+
   function escribir(valor: string) {
     /*
       Puede ser uno de la lista escrito a mano. Se compara ignorando mayusculas
@@ -2874,23 +2880,173 @@ function ElegirMaterial({
   }
 
   return (
-    <Combo
-      id={`material-${linea.clave}`}
-      etiqueta="MATERIAL"
-      onBlur={alSalir}
-      ayuda={esNuevo ? 'no esta en el catalogo: se da de alta al guardar' : undefined}
-      aviso={
-        esNuevo
-          ? 'Material nuevo, sin densidad: no se calcula el peso hasta que la carguen.'
-          : sinDensidad
-            ? `${elegido?.nombre} no tiene densidad cargada: no se calcula el peso.`
-            : undefined
+    <div className="flex min-w-0 flex-col gap-1">
+      <Combo
+        id={`material-${linea.clave}`}
+        etiqueta="MATERIAL"
+        onBlur={alSalir}
+        ayuda={esNuevo ? 'no esta en el catalogo' : undefined}
+        aviso={
+          esNuevo
+            ? 'Material nuevo, sin densidad: no se calcula el peso hasta cargarla.'
+            : sinDensidad
+              ? `${elegido?.nombre} no tiene densidad cargada: no se calcula el peso.`
+              : undefined
+        }
+        value={elegido?.nombre ?? linea.material_nuevo ?? ''}
+        onChange={(e) => escribir(e.target.value)}
+        placeholder="Elegi de la lista o escribi el que pidieron"
+        opciones={materiales.map((m) => m.nombre)}
+      />
+
+      {esNuevo && (
+        <Accion onClick={() => setEditor({ modo: 'nuevo', nombre: escrito })}>
+          <span className="inline-flex items-center gap-1">
+            <Plus size={12} strokeWidth={2.6} />
+            Agregar “{escrito}” al catálogo con sus datos
+          </span>
+        </Accion>
+      )}
+      {!esNuevo && sinDensidad && elegido && (
+        <Accion onClick={() => setEditor({ modo: 'editar', material: elegido })}>
+          Cargar los datos de {elegido.nombre}
+        </Accion>
+      )}
+
+      {editor && (
+        <EditorDeMaterial
+          key={editor.modo === 'editar' ? `editar-${editor.material.id}` : 'nuevo'}
+          modo={editor.modo}
+          inicial={
+            editor.modo === 'editar'
+              ? {
+                  id: editor.material.id,
+                  nombre: editor.material.nombre,
+                  familia: editor.material.familia,
+                  densidad: editor.material.densidad,
+                }
+              : { nombre: editor.nombre, familia: null, densidad: null }
+          }
+          formas={catalogos?.formas ?? []}
+          onCerrar={() => setEditor(null)}
+          onGuardado={(m) => {
+            onCambio({ material_id: m.id, material_nuevo: null })
+            setEditor(null)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Alta o completado de un material desde la misma cotización.
+ *
+ * Un material nuevo nace con todos sus datos (familia, forma habitual,
+ * densidad), y a uno que ya existe pero le falta algo —típico: la densidad— se
+ * lo completa acá. Lo que se escribe se guarda en el catálogo para siempre; un
+ * campo que se deja vacío al editar NO se toca, así no se pisa lo que ya tenía.
+ */
+function EditorDeMaterial({
+  modo,
+  inicial,
+  formas,
+  onCerrar,
+  onGuardado,
+}: {
+  modo: 'nuevo' | 'editar'
+  inicial: { id?: number; nombre: string; familia: string | null; densidad: string | null }
+  formas: { id: number; nombre: string }[]
+  onCerrar: () => void
+  onGuardado: (m: Catalogos['materiales'][number]) => void
+}) {
+  // Se monta fresco cada vez que se abre (con key en el padre), así los campos
+  // arrancan de "inicial" y no hace falta un efecto que los resetee.
+  const [nombre, setNombre] = useState(inicial.nombre)
+  const [familia, setFamilia] = useState(inicial.familia ?? '')
+  const [formaId, setFormaId] = useState('')
+  const [densidad, setDensidad] = useState(inicial.densidad ?? '')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function guardar() {
+    const nom = nombre.trim()
+    if (nom === '') {
+      setError('Falta el nombre.')
+
+      return
+    }
+
+    // Sólo se manda lo que tiene valor: al editar, un campo vacío queda como estaba.
+    const datos: DatosDeMaterial = {}
+    if (modo === 'nuevo' || nom !== inicial.nombre) datos.nombre = nom
+    if (familia.trim() !== '') datos.familia = familia.trim()
+    if (formaId !== '') datos.forma_habitual_id = Number(formaId)
+
+    const d = densidad.trim().replace(',', '.')
+    if (d !== '') {
+      const n = Number(d)
+      if (Number.isNaN(n) || n < 0) {
+        setError('La densidad tiene que ser un número (por ejemplo 8,83).')
+
+        return
       }
-      value={elegido?.nombre ?? linea.material_nuevo ?? ''}
-      onChange={(e) => escribir(e.target.value)}
-      placeholder="Elegi de la lista o escribi el que pidieron"
-      opciones={materiales.map((m) => m.nombre)}
-    />
+      datos.densidad = n
+    }
+
+    setGuardando(true)
+    setError(null)
+    try {
+      const m =
+        modo === 'nuevo' ? await crearMaterial(datos) : await actualizarMaterial(inicial.id as number, datos)
+      onGuardado(m)
+    } catch (err) {
+      setError(mensajeDeError(err))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Modal
+      abierto
+      titulo={modo === 'nuevo' ? 'Nuevo material' : 'Datos del material'}
+      bajada="Queda en el catálogo para todas las cotizaciones."
+      onCerrar={onCerrar}
+      onGuardar={guardar}
+      guardando={guardando}
+      ancho="max-w-lg"
+    >
+      <div className="flex flex-col gap-4">
+        {error && <Aviso tono="ambar">{error}</Aviso>}
+
+        <Texto etiqueta="Nombre" obligatorio value={nombre} onChange={(e) => setNombre(e.target.value)} />
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Texto
+            etiqueta="Familia"
+            ayuda="níquel, inoxidable, titanio…"
+            value={familia}
+            onChange={(e) => setFamilia(e.target.value)}
+          />
+          <Texto
+            etiqueta="Densidad"
+            ayuda="g/cm³ · para el peso (opcional si cotizás por precio)"
+            value={densidad}
+            onChange={(e) => setDensidad(e.target.value)}
+            placeholder="ej: 8,83"
+          />
+        </div>
+
+        <Lista
+          etiqueta="Forma habitual"
+          ayuda="cómo viene normalmente (opcional)"
+          value={formaId}
+          onChange={(e) => setFormaId(e.target.value)}
+          opciones={formas.map((f) => ({ valor: f.id, texto: f.nombre }))}
+        />
+      </div>
+    </Modal>
   )
 }
 
