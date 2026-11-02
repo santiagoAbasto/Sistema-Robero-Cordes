@@ -358,6 +358,12 @@ class InterpreteIA
 
         - "forma" tiene que ser EXACTAMENTE una de esta lista, o null:
           {$this->lista($formas)}
+          Sinonimos frecuentes, elegi el de la lista: un "trozo", "pedazo",
+          "corte" o "barra" con diametro y largo es BARRA REDONDA; un "disco" es
+          DISCO; una "arandela" o "anillo" es ANILLO; una "planchuela" o "fleje"
+          es PLANCHUELA. Una "varilla para soldar" / "material de aporte" TIG o
+          MIG es un consumible de soldadura: dejá "forma" null si no hay una
+          exacta, pero igual devolvé la linea con su diametro y su largo.
         - "unidad" tiene que ser EXACTAMENTE una de: {$this->lista($unidades)}
         - "dimensiones" son SOLO las medidas, no la frase entera: de "10 metros de
           barra de titanio de 25.4 mm" corresponde "25.4 MM", no todo el renglon.
@@ -382,6 +388,10 @@ class InterpreteIA
           Sin el largo no se puede calcular el peso de una barra, asi que si el
           cliente lo escribio, tiene que estar.
         - Si un dato no esta, poné null. NO INVENTES medidas, cantidades ni precios.
+        - "cada una", "cada uno", "c/u" NO cambian la cantidad: solo aclaran que
+          la medida o el precio son por pieza. "2 trozos de 54 mm x 17 mm de
+          largo cada una" son cantidad 2, no 1; "diametro 22 mm x 570 mm de
+          largo" son diametro_mm 22 y largo_mm 570.
         - Devolve UNA linea por cada renglon pedido, ni una mas. Si dos renglones
           son iguales, son dos lineas solo si el cliente los escribio dos veces.
         - Ignorá saludos, firmas, encabezados de mail y comentarios que no sean pedidos.
