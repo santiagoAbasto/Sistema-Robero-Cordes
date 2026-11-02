@@ -19,9 +19,11 @@ class EmpresaController extends Controller
      */
     public function index(Request $request)
     {
+        $buscar = trim((string) $request->query('buscar'));
+
         $empresas = Empresa::query()
             ->activas()
-            ->buscar($request->query('buscar'))
+            ->buscar($buscar)
             ->conRelacion($request->query('relacion'))
             ->when($request->query('rubro_id'), fn ($q, $v) => $q->where('rubro_id', $v))
             ->when($request->query('localidad_id'), fn ($q, $v) => $q->where('localidad_id', $v))
@@ -54,6 +56,15 @@ class EmpresaController extends Controller
             // Los borradores no cuentan: todavia no figuran en el historial.
             ->withCount(['consultas as consultas_count' => fn ($q) => $q->where('tipo', 'Cotizacion')
                 ->where('estado', '!=', 'Borrador')])
+            // Con búsqueda, primero las que coinciden por NOMBRE (empieza con,
+            // después contiene); las que sólo matchean por un contacto, una
+            // razón social o una línea de cotización van al final. Sin esto,
+            // buscar una empresa por su nombre la enterraba detrás de cualquier
+            // cotización cuyo material contuviera ese texto, a varias páginas.
+            ->when($buscar !== '', fn ($q) => $q->orderByRaw(
+                'CASE WHEN nombre LIKE ? THEN 1 WHEN nombre LIKE ? THEN 2 ELSE 3 END',
+                [$buscar.'%', '%'.$buscar.'%']
+            ))
             ->orderBy('nombre')
             ->paginate((int) $request->query('por_pagina', 25));
 
