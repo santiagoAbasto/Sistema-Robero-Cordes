@@ -34,6 +34,7 @@ import {
   crearMaterial,
   actualizarMaterial,
   cambiarTipoDeConsulta,
+  guardarNotaInterna,
   nuevaRevision,
   traerConsulta,
   traerEmpresa,
@@ -1492,6 +1493,20 @@ export default function ConsultaEditor() {
       {emitida && tipo !== 'Observacion' && existente && (
         <ComoSiguio
           consulta={existente}
+          onListo={(m) => {
+            setAviso(m)
+            recargar()
+          }}
+          onError={setError}
+        />
+      )}
+
+      {/* La NOTA interna se corrige aunque esté emitida: no es parte de la oferta, no pide revisión. */}
+      {emitida && tipo !== 'Observacion' && existente && (
+        <NotaInterna
+          key={existente.nota ?? ''}
+          consultaId={existente.id}
+          nota={existente.nota ?? ''}
           onListo={(m) => {
             setAviso(m)
             recargar()
@@ -4460,6 +4475,59 @@ function LineaFila({
 }
 
 /* -------------------------------------------------------- condiciones y nota */
+
+/**
+ * La NOTA interna de una emitida: se edita sin generar una revisión nueva
+ * (pedido del cliente, 03-11-2026). No se imprime; lo demás de la hoja sigue
+ * congelado.
+ */
+function NotaInterna({
+  consultaId,
+  nota,
+  onListo,
+  onError,
+}: {
+  consultaId: number
+  nota: string
+  onListo: (mensaje: string) => void
+  onError: (mensaje: string) => void
+}) {
+  const [texto, setTexto] = useState(nota)
+  const [guardando, setGuardando] = useState(false)
+
+  async function guardar() {
+    setGuardando(true)
+    try {
+      onListo(await guardarNotaInterna(consultaId, texto))
+    } catch (err) {
+      onError(mensajeDeError(err))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Card className="flex flex-col gap-3 border-[#f3d9a6] bg-[#fffdf7] p-[18px]">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <h2 className="text-[14px] font-semibold text-warning-ink">NOTA</h2>
+        <Chip tono="ambar">no se imprime</Chip>
+        <span className="text-[11.5px] text-muted">Se corrige sin hacer una revisión nueva.</span>
+      </div>
+      <AreaTexto
+        aria-label="NOTA interna"
+        filas={3}
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        placeholder="Lo interno: de dónde sale el material, el stock, el proveedor."
+      />
+      <div>
+        <Boton variante="primario" onClick={guardar} disabled={guardando || texto === nota}>
+          {guardando ? 'Guardando…' : 'Guardar la nota'}
+        </Boton>
+      </div>
+    </Card>
+  )
+}
 
 function Condiciones({
   condiciones,

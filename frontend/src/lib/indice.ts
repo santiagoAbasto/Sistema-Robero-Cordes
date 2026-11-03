@@ -479,10 +479,15 @@ export function estadoDeConsulta(c: {
   tipo?: string
   emitida?: boolean
   esta_vencida?: boolean
+  compra?: { parcial: boolean; compradas: number; total: number } | null
 }): { texto: string; tono: 'verde' | 'brand' | 'ambar' | 'neutro' } {
   // Una observación es una anotación: no se emite ni se vence, así que nunca "falta emisión".
   if (c.tipo === 'Observacion') return { texto: 'Observación', tono: 'neutro' }
   if (c.esta_vencida && c.estado !== 'Vendida') return { texto: 'Vencida por tiempo', tono: 'ambar' }
+  // Compraron algunos ítems, no todos: la lista no puede leerse como compra total.
+  if (c.estado === 'Vendida' && c.compra?.parcial) {
+    return { texto: `Compra parcial · ${c.compra.compradas} de ${c.compra.total}`, tono: 'verde' }
+  }
   if (c.estado === 'Vendida') return { texto: 'Vendida', tono: 'verde' }
   if (c.estado === 'Confirmada') {
     return c.emitida ? { texto: 'Emitida', tono: 'brand' } : { texto: 'Falta emisión', tono: 'ambar' }
@@ -899,6 +904,8 @@ export async function cambiarEstadoConsulta(
     estado: EstadoConsulta
     comentario?: string
     fecha?: string
+    /** Los ids de las líneas compradas. Sin decir nada, todas. */
+    lineas_compradas?: number[]
     nro_factura?: string
     nro_pedido_interno?: string
     nro_remito?: string
@@ -924,10 +931,6 @@ export async function cambiarTipoDeConsulta(id: number, tipo: 'Cotizacion' | 'Pe
 export interface DatosDeLaVenta {
   nro_pedido_interno: string
   fecha_pedido: string
-  nro_remito: string
-  fecha_remito: string
-  nro_factura: string
-  fecha_factura: string
   tipo_cambio_factura: string
   comentario_venta: string
 }
@@ -942,19 +945,53 @@ export function numeroComoSeEscribe(texto: string): string | null {
 /** Vacío va como nulo: una fecha en blanco no es una fecha, y así se puede borrar un dato. */
 const oNulo = (texto: string): string | null => (texto.trim() === '' ? null : texto.trim())
 
-/** Pedido, remito y factura —cada uno con su fecha— y el tipo de cambio: se van completando. */
+/** El pedido con su fecha y el tipo de cambio: se van completando. Los comprobantes van aparte, uno por renglón. */
 export async function guardarDatosDeLaVenta(id: number, datos: DatosDeLaVenta): Promise<string> {
   const { data } = await api.put<{ mensaje: string }>(`/consultas/${id}/venta`, {
     nro_pedido_interno: oNulo(datos.nro_pedido_interno),
     fecha_pedido: oNulo(datos.fecha_pedido),
-    nro_remito: oNulo(datos.nro_remito),
-    fecha_remito: oNulo(datos.fecha_remito),
-    nro_factura: oNulo(datos.nro_factura),
-    fecha_factura: oNulo(datos.fecha_factura),
     tipo_cambio_factura: numeroComoSeEscribe(datos.tipo_cambio_factura),
     comentario_venta: oNulo(datos.comentario_venta),
   })
   return data.mensaje
+}
+
+/** La NOTA interna de una cotización, aunque esté emitida: no genera una revisión. */
+export async function guardarNotaInterna(id: number, nota: string): Promise<string> {
+  const { data } = await api.put<{ mensaje: string }>(`/consultas/${id}/nota`, { nota })
+
+  return data.mensaje
+}
+
+export interface DatosDeComprobante {
+  tipo: string
+  numero: string
+  fecha: string
+  nota: string
+}
+
+const comprobante = (d: DatosDeComprobante) => ({
+  tipo: d.tipo,
+  numero: oNulo(d.numero),
+  fecha: oNulo(d.fecha),
+  nota: oNulo(d.nota),
+})
+
+export async function agregarComprobante(consultaId: number, datos: DatosDeComprobante) {
+  await api.post(`/consultas/${consultaId}/comprobantes`, comprobante(datos))
+}
+
+export async function editarComprobante(consultaId: number, id: number, datos: DatosDeComprobante) {
+  await api.put(`/consultas/${consultaId}/comprobantes/${id}`, comprobante(datos))
+}
+
+export async function borrarComprobante(consultaId: number, id: number) {
+  await api.delete(`/consultas/${consultaId}/comprobantes/${id}`)
+}
+
+/** Qué líneas se compraron (compra parcial). */
+export async function marcarCompra(consultaId: number, lineas: number[]) {
+  await api.put(`/consultas/${consultaId}/compra`, { lineas })
 }
 
 export async function editarObservacion(id: number, texto: string) {

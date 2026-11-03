@@ -54,6 +54,7 @@ class ConsultaLinea extends Model
         'idem' => 'boolean',
         'desde_stock' => 'boolean',
         'quitada' => 'boolean',
+        'comprada' => 'boolean',
         'no_cotizada' => 'boolean',
         // Si el factor lo saco la cuenta o lo puso una persona.
         'factor_calculado' => 'boolean',

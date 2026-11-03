@@ -81,6 +81,7 @@ class ConsultaLineaResource extends JsonResource
             'aprox' => $this->aprox,
             'idem' => $this->idem,
             'quitada' => $this->quitada,
+            'comprada' => (bool) $this->comprada,
             'no_cotizada' => $this->no_cotizada,
             'motivo_no_cotiza' => $this->motivo_no_cotiza,
 

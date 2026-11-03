@@ -14,7 +14,7 @@ class ConsultaController extends Controller
         'lineas.unidadFactura', 'lineas.unidadPedida',
         'condiciones', 'observaciones.usuario',
         'impresiones.contacto', 'impresiones.usuario',
-        'copiadaDe.empresa',
+        'copiadaDe.empresa', 'comprobantes',
         // Quien la emitio: sale en el aviso de "emitida como 2026-0001 R0".
         'emisor',
     ];

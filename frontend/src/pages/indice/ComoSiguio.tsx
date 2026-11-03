@@ -1,9 +1,22 @@
 import { useState } from 'react'
 import { Boton, Chip } from '../../components/ui'
-import { AreaTexto, Texto } from '../../components/ui/form'
-import { cambiarEstadoConsulta, guardarDatosDeLaVenta, hoy, mensajeDeError, numeroComoSeEscribe } from '../../lib/indice'
-import type { DatosDeLaVenta as Datos } from '../../lib/indice'
-import type { EstadoConsulta } from '../../types/indice'
+import { AreaTexto, Lista, Texto } from '../../components/ui/form'
+import {
+  agregarComprobante,
+  borrarComprobante,
+  cambiarEstadoConsulta,
+  editarComprobante,
+  fecha as fmtFecha,
+  guardarDatosDeLaVenta,
+  hoy,
+  marcarCompra,
+  mensajeDeError,
+  numeroComoSeEscribe,
+  plata,
+  useCatalogos,
+} from '../../lib/indice'
+import type { DatosDeComprobante, DatosDeLaVenta as Datos } from '../../lib/indice'
+import type { Comprobante, ConsultaLinea, EstadoConsulta } from '../../types/indice'
 
 /*
   "¿Cómo siguió?": el paso que faltaba después de mandarla (pedido del
@@ -34,14 +47,12 @@ const ABIERTA: EstadoConsulta = 'Confirmada'
 type ConsultaQueSigue = {
   id: number
   estado: EstadoConsulta
-  nro_factura: string | null
   nro_pedido_interno?: string | null
   fecha_pedido?: string | null
-  nro_remito?: string | null
-  fecha_remito?: string | null
-  fecha_factura?: string | null
   tipo_cambio_factura?: number | null
   comentario_venta?: string | null
+  lineas?: ConsultaLinea[]
+  comprobantes?: Comprobante[]
 }
 
 /*
@@ -54,10 +65,6 @@ type ConsultaQueSigue = {
 const SIN_DATOS: Datos = {
   nro_pedido_interno: '',
   fecha_pedido: '',
-  nro_remito: '',
-  fecha_remito: '',
-  nro_factura: '',
-  fecha_factura: '',
   tipo_cambio_factura: '',
   comentario_venta: '',
 }
@@ -67,10 +74,6 @@ function datosDesde(c: ConsultaQueSigue): Datos {
   return {
     nro_pedido_interno: c.nro_pedido_interno ?? '',
     fecha_pedido: c.fecha_pedido ?? '',
-    nro_remito: c.nro_remito ?? '',
-    fecha_remito: c.fecha_remito ?? '',
-    nro_factura: c.nro_factura ?? '',
-    fecha_factura: c.fecha_factura ?? '',
     tipo_cambio_factura: c.tipo_cambio_factura == null ? '' : String(c.tipo_cambio_factura).replace('.', ','),
     comentario_venta: c.comentario_venta ?? '',
   }
@@ -91,12 +94,242 @@ function CamposDeLaVenta({ datos, onCambio }: { datos: Datos; onCambio: (d: Dato
     <>
       <Texto etiqueta="N° de pedido (Access)" placeholder="12345" {...campo('nro_pedido_interno')} />
       <Texto etiqueta="Fecha del pedido" type="date" {...campo('fecha_pedido')} />
-      <Texto etiqueta="N° de remito" placeholder="0001-00004321" {...campo('nro_remito')} />
-      <Texto etiqueta="Fecha del remito" type="date" {...campo('fecha_remito')} />
-      <Texto etiqueta="N° de factura" placeholder="0001-00001234" {...campo('nro_factura')} />
-      <Texto etiqueta="Fecha de la factura" type="date" {...campo('fecha_factura')} />
       <Texto etiqueta="Tipo de cambio factura" inputMode="decimal" placeholder="1050,50" {...campo('tipo_cambio_factura')} />
     </>
+  )
+}
+
+/** Los ítems que se pueden comprar: los cotizados, sin las quitadas. Las alternativas van aparte, debajo de su ítem. */
+function lineasDeLaCompra(lineas?: ConsultaLinea[]): ConsultaLinea[] {
+  return (lineas ?? []).filter((l) => !l.quitada && !l.no_cotizada)
+}
+
+/** Casillas por ítem: qué se compró. Compraron 1 de 3 no es lo mismo que una compra total. */
+function ListaDeCompra({
+  lineas,
+  marcadas,
+  onCambio,
+  aviso,
+}: {
+  lineas?: ConsultaLinea[]
+  marcadas: Set<number>
+  onCambio: (m: Set<number>) => void
+  aviso?: string
+}) {
+  const items = lineasDeLaCompra(lineas)
+  if (items.length === 0) return null
+
+  const alternar = (id: number) => {
+    const nueva = new Set(marcadas)
+    if (nueva.has(id)) nueva.delete(id)
+    else nueva.add(id)
+    onCambio(nueva)
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[12px] font-semibold text-ink">¿Qué compraron?</span>
+      {items.map((l, i) => (
+        <label
+          key={l.id}
+          className={`flex cursor-pointer items-start gap-2 rounded-[7px] border border-line px-2.5 py-1.5 text-[12.5px] ${
+            l.alternativa_de_id ? 'ml-5 bg-app/60' : ''
+          }`}
+        >
+          <input type="checkbox" className="mt-0.5" checked={marcadas.has(l.id)} onChange={() => alternar(l.id)} />
+          <span className="min-w-0 flex-1 text-ink">
+            {l.alternativa_de_id && <span className="text-faint">Alternativa · </span>}
+            {l.descripcion || `Ítem ${i + 1}`}
+          </span>
+          <span className="shrink-0 font-semibold tabular-nums text-ink">{l.importe ? plata(Number(l.importe)) : '—'}</span>
+        </label>
+      ))}
+      <span className="text-[11.5px] text-muted">
+        Tildá lo que compraron. Si no son todos, en las listas figura como compra parcial.
+      </span>
+      {aviso && <span className="text-[11.5px] text-danger">{aviso}</span>}
+    </div>
+  )
+}
+
+/** Lo comprado de una vendida: se ve y se corrige cuando haga falta. */
+function CompraGuardada({
+  consulta,
+  onListo,
+  onError,
+}: {
+  consulta: ConsultaQueSigue
+  onListo: (mensaje: string) => void
+  onError: (mensaje: string) => void
+}) {
+  const items = lineasDeLaCompra(consulta.lineas)
+  // Sin ninguna marcada (vendidas de antes) se lee como compra total.
+  const guardadas = new Set(items.filter((l) => l.comprada).map((l) => l.id))
+  const inicial = guardadas.size === 0 ? new Set(items.map((l) => l.id)) : guardadas
+  const [marcadas, setMarcadas] = useState<Set<number>>(inicial)
+  const [guardando, setGuardando] = useState(false)
+  const cambio = [...marcadas].sort().join() !== [...inicial].sort().join()
+
+  if (items.length === 0) return null
+
+  async function guardar() {
+    setGuardando(true)
+    try {
+      await marcarCompra(consulta.id, [...marcadas])
+      onListo(marcadas.size < items.length ? 'Listo: quedó como compra parcial.' : 'Listo: quedó como compra total.')
+    } catch (err) {
+      onError(mensajeDeError(err))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-2.5">
+      <ListaDeCompra lineas={consulta.lineas} marcadas={marcadas} onCambio={setMarcadas} />
+      {cambio && (
+        <div>
+          <Boton variante="primario" onClick={guardar} disabled={guardando || marcadas.size === 0}>
+            {guardando ? 'Guardando…' : 'Guardar lo comprado'}
+          </Boton>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const SIN_COMPROBANTE: DatosDeComprobante = { tipo: '', numero: '', fecha: '', nota: '' }
+
+/**
+ * Los comprobantes de la compra, uno por renglón y sin tope: factura de
+ * anticipo, de saldo, remito, nota de crédito si llegó de menos, hasta el vale
+ * de retiro del expreso (pedido del cliente, 03-11-2026).
+ */
+function Comprobantes({
+  consulta,
+  onListo,
+  onError,
+}: {
+  consulta: ConsultaQueSigue
+  onListo: (mensaje: string) => void
+  onError: (mensaje: string) => void
+}) {
+  const catalogos = useCatalogos()
+  // null: nada abierto. 0: renglón nuevo. Otro número: el comprobante que se edita.
+  const [abierto, setAbierto] = useState<number | null>(null)
+  const [datos, setDatos] = useState<DatosDeComprobante>(SIN_COMPROBANTE)
+  const [guardando, setGuardando] = useState(false)
+  const [intentado, setIntentado] = useState(false)
+
+  const tipos = catalogos?.tipos_comprobante ?? []
+  // Un tipo que ya no está en la lista sigue pudiéndose elegir al editar.
+  const opciones = [...new Set([...tipos, ...(datos.tipo ? [datos.tipo] : [])])].map((t) => ({ valor: t, texto: t }))
+
+  function abrir(c?: Comprobante) {
+    setDatos(c ? { tipo: c.tipo, numero: c.numero ?? '', fecha: c.fecha ?? '', nota: c.nota ?? '' } : SIN_COMPROBANTE)
+    setAbierto(c ? c.id : 0)
+    setIntentado(false)
+  }
+
+  async function guardar() {
+    if (!datos.tipo) {
+      setIntentado(true)
+      return
+    }
+
+    setGuardando(true)
+    try {
+      if (abierto) await editarComprobante(consulta.id, abierto, datos)
+      else await agregarComprobante(consulta.id, datos)
+      setAbierto(null)
+      onListo(abierto ? 'Listo: el comprobante quedó corregido.' : 'Listo: comprobante agregado.')
+    } catch (err) {
+      onError(mensajeDeError(err))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  async function borrar(c: Comprobante) {
+    if (!window.confirm(`¿Borramos ${c.tipo}${c.numero ? ' ' + c.numero : ''}?`)) return
+
+    try {
+      await borrarComprobante(consulta.id, c.id)
+      onListo('Listo: comprobante borrado.')
+    } catch (err) {
+      onError(mensajeDeError(err))
+    }
+  }
+
+  const lista = consulta.comprobantes ?? []
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-2.5">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span className="text-[12px] font-semibold text-ink">Comprobantes</span>
+        {abierto === null && (
+          <Boton variante="suave" onClick={() => abrir()}>
+            + Agregar comprobante
+          </Boton>
+        )}
+      </div>
+
+      {lista.length === 0 && abierto === null && (
+        <p className="text-[11.5px] text-muted">
+          Factura de anticipo, de saldo, remito, nota de crédito, vale de retiro del expreso: uno por renglón, los que
+          hagan falta.
+        </p>
+      )}
+
+      {lista.map((c) =>
+        abierto === c.id ? null : (
+          <div key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[7px] border border-line px-2.5 py-1.5 text-[12.5px]">
+            <Chip tono="neutro">{c.tipo}</Chip>
+            <span className="font-semibold tabular-nums text-ink">{c.numero || 'sin número'}</span>
+            <span className="text-muted">{c.fecha ? fmtFecha(c.fecha) : 'sin fecha'}</span>
+            {c.nota && <span className="min-w-0 flex-1 truncate text-muted">{c.nota}</span>}
+            <span className="ml-auto flex gap-2">
+              <Boton variante="texto" onClick={() => abrir(c)}>
+                Editar
+              </Boton>
+              <Boton variante="texto" onClick={() => borrar(c)}>
+                Borrar
+              </Boton>
+            </span>
+          </div>
+        ),
+      )}
+
+      {abierto !== null && (
+        <div className="flex flex-col gap-2.5 rounded-[7px] border border-brand-200 bg-[#f3f9fe] p-2.5">
+          <div className="grid items-end gap-3 sm:grid-cols-3">
+            <Lista
+              etiqueta="Tipo"
+              value={datos.tipo}
+              onChange={(e) => setDatos({ ...datos, tipo: e.target.value })}
+              opciones={opciones}
+              error={intentado && !datos.tipo ? 'Elegí el tipo' : undefined}
+            />
+            <Texto etiqueta="Número" placeholder="0001-00001234" value={datos.numero} onChange={(e) => setDatos({ ...datos, numero: e.target.value })} />
+            <Texto etiqueta="Fecha" type="date" value={datos.fecha} onChange={(e) => setDatos({ ...datos, fecha: e.target.value })} />
+          </div>
+          <Texto
+            etiqueta="Nota"
+            placeholder="Por ejemplo: llegó de menos, anticipo del 50%"
+            value={datos.nota}
+            onChange={(e) => setDatos({ ...datos, nota: e.target.value })}
+          />
+          <div className="flex flex-wrap gap-2.5">
+            <Boton variante="primario" onClick={guardar} disabled={guardando}>
+              {guardando ? 'Guardando…' : 'Guardar'}
+            </Boton>
+            <Boton variante="suave" onClick={() => setAbierto(null)}>
+              Cancelar
+            </Boton>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -136,8 +369,8 @@ function DatosDeLaVenta({
         onChange={(e) => setDatos({ ...datos, comentario_venta: e.target.value })}
       />
       <p className="text-[11.5px] text-muted">
-        Se van completando a medida que pasan: el pedido, el remito y, cuando se factura, la factura con su tipo de
-        cambio. Cada uno con su fecha.
+        El número del pedido con su fecha y, cuando se factura, el tipo de cambio. Las facturas, remitos y demás
+        comprobantes se cargan abajo, uno por renglón.
       </p>
       {/* Número a la izquierda, su fecha a la derecha; etiquetas de un renglón, parejas. */}
       <div className="grid items-end gap-3 sm:grid-cols-2">
@@ -168,6 +401,8 @@ export default function ComoSiguio({
   const [fecha, setFecha] = useState(hoy())
   // "La compró": lo que ya se sepa de la venta va en el mismo paso.
   const [datosVenta, setDatosVenta] = useState<Datos>(SIN_DATOS)
+  // Qué líneas compraron: al marcarla vendida arrancan todas tildadas.
+  const [compradas, setCompradas] = useState<Set<number>>(new Set())
   const [guardando, setGuardando] = useState(false)
   // El aviso del motivo recién cuando intentan guardar, no apenas se abre.
   const [intentado, setIntentado] = useState(false)
@@ -180,6 +415,7 @@ export default function ComoSiguio({
     setComentario('')
     setFecha(hoy())
     setDatosVenta(datosDesde(consulta))
+    setCompradas(new Set(lineasDeLaCompra(consulta.lineas).map((l) => l.id)))
     setIntentado(false)
   }
 
@@ -190,7 +426,7 @@ export default function ComoSiguio({
 
   async function guardar() {
     if (!elegido) return
-    if (falta) {
+    if (falta || (elegido === 'Vendida' && lineasDeLaCompra(consulta.lineas).length > 0 && compradas.size === 0)) {
       setIntentado(true)
       return
     }
@@ -207,10 +443,7 @@ export default function ComoSiguio({
           comentario_venta: comentario.trim() || undefined,
           nro_pedido_interno: datosVenta.nro_pedido_interno.trim() || undefined,
           fecha_pedido: datosVenta.fecha_pedido || undefined,
-          nro_remito: datosVenta.nro_remito.trim() || undefined,
-          fecha_remito: datosVenta.fecha_remito || undefined,
-          nro_factura: datosVenta.nro_factura.trim() || undefined,
-          fecha_factura: datosVenta.fecha_factura || undefined,
+          lineas_compradas: [...compradas],
           tipo_cambio_factura: numeroComoSeEscribe(datosVenta.tipo_cambio_factura),
         })
       } else {
@@ -274,8 +507,7 @@ export default function ComoSiguio({
         <DatosDeLaVenta
           // Se arma de nuevo cuando cambian los datos guardados.
           key={[
-            consulta.nro_pedido_interno, consulta.fecha_pedido, consulta.nro_remito, consulta.fecha_remito,
-            consulta.nro_factura, consulta.fecha_factura, consulta.tipo_cambio_factura, consulta.comentario_venta,
+            consulta.nro_pedido_interno, consulta.fecha_pedido, consulta.tipo_cambio_factura, consulta.comentario_venta,
           ].join('|')}
           consulta={consulta}
           onListo={onListo}
@@ -283,13 +515,28 @@ export default function ComoSiguio({
         />
       )}
 
+      {consulta.estado === 'Vendida' && !corrigiendo && !elegido && (
+        <>
+          <CompraGuardada consulta={consulta} onListo={onListo} onError={onError} />
+          <Comprobantes consulta={consulta} onListo={onListo} onError={onError} />
+        </>
+      )}
+
       {elegido && (
         <div className="flex flex-col gap-3 border-t border-line pt-2.5">
           {elegido === 'Vendida' ? (
             // Cada dato de la venta con su fecha: número a la izquierda, fecha a la derecha.
-            <div className="grid items-end gap-3 sm:grid-cols-2">
-              <CamposDeLaVenta datos={datosVenta} onCambio={setDatosVenta} />
-            </div>
+            <>
+              <div className="grid items-end gap-3 sm:grid-cols-2">
+                <CamposDeLaVenta datos={datosVenta} onCambio={setDatosVenta} />
+              </div>
+              <ListaDeCompra
+                lineas={consulta.lineas}
+                marcadas={compradas}
+                onCambio={setCompradas}
+                aviso={intentado && compradas.size === 0 ? 'Marcá al menos un ítem comprado.' : undefined}
+              />
+            </>
           ) : (
             // Al cerrar o reabrir, una sola fecha; no ocupa media pantalla.
             <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">

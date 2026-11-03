@@ -41,6 +41,9 @@ class CatalogoController extends Controller
             // Configuracion > Listas.
             'motivos_no_cotiza' => \App\Models\MotivoNoCotiza::where('activo', true)
                 ->orderBy('orden')->pluck('nombre'),
+            // Los tipos de comprobante de la compra: se editan en Configuración > Listas.
+            'tipos_comprobante' => \App\Models\TipoComprobante::where('activo', true)
+                ->orderBy('orden')->pluck('nombre'),
             'tipos_consulta' => ['Cotizacion', 'Pedido', 'Observacion'],
             'estados' => \App\Models\Consulta::ESTADOS,
             'estados_de_cierre' => \App\Models\Consulta::ESTADOS_DE_CIERRE,

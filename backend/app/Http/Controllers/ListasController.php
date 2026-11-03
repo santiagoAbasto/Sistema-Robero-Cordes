@@ -25,6 +25,7 @@ class ListasController extends Controller
         'caracteristicas' => Caracteristica::class,
         'motivos_cambio' => MotivoCambio::class,
         'motivos_no_cotiza' => MotivoNoCotiza::class,
+        'tipos_comprobante' => \App\Models\TipoComprobante::class,
     ];
 
     public function index()

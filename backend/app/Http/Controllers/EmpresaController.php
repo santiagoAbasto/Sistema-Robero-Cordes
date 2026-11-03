@@ -91,6 +91,7 @@ class EmpresaController extends Controller
             'consultas.lineas.unidadVenta',
             'consultas.lineas.unidadFactura',
             'consultas.lineas.unidadPedida',
+            'consultas.comprobantes',
             'consultas.contacto',
             'consultas.usuario',
             'consultas.moneda',

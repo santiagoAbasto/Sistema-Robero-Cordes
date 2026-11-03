@@ -7,6 +7,7 @@ use App\Models\CanoEstandar;
 use App\Models\CondicionHabitual;
 use App\Models\CondicionPago;
 use App\Models\Consulta;
+use App\Models\ConsultaComprobante;
 use App\Models\ConsultaCondicion;
 use App\Models\Caracteristica;
 use App\Models\ConsultaLinea;
@@ -267,6 +268,8 @@ class ConsultaEscrituraController extends Controller
         foreach ($base->lineas->sortBy(fn ($l) => $l->alternativa_de_id ? 1 : 0) as $linea) {
             $copia = $linea->replicate(['id', 'consulta_id', 'created_at', 'updated_at']);
             $copia->consulta_id = $nueva->id;
+            // Qué se compró es de ESTA cotización: la revisión empieza sin nada comprado.
+            $copia->comprada = false;
             $copia->alternativa_de_id = $linea->alternativa_de_id ? ($copias[$linea->alternativa_de_id] ?? null) : null;
 
             if (! $conPrecios) {
@@ -579,6 +582,9 @@ class ConsultaEscrituraController extends Controller
             // edita y siempre queda a la vista, por eso es campo propio y no
             // una observacion del hilo.
             'comentario_venta' => ['nullable', 'string', 'max:2000'],
+            // Qué líneas compraron. Sin decir nada, todas: compra total.
+            'lineas_compradas' => ['nullable', 'array'],
+            'lineas_compradas.*' => ['integer'],
         ], [
             'comentario.required' => 'Para cerrar una cotizacion hay que decir por que.',
         ]);
@@ -605,6 +611,10 @@ class ConsultaEscrituraController extends Controller
             }
 
             $consulta->save();
+
+            if ($datos['estado'] === 'Vendida') {
+                $this->marcarLineasCompradas($consulta, $datos['lineas_compradas'] ?? $consulta->lineas()->pluck('id')->all());
+            }
 
             /*
               Deja de ser un borrador: se gana el numero. Copiar una cotizacion
@@ -678,6 +688,109 @@ class ConsultaEscrituraController extends Controller
         $consulta->update($datos);
 
         return response()->json(['mensaje' => 'Listo: quedaron guardados los datos de la venta.']);
+    }
+
+    /**
+     * La NOTA interna de una cotización, aunque ya esté emitida.
+     *
+     * No se imprime ni es parte de la oferta, así que corregirla no pide una
+     * revisión nueva (pedido del cliente, 03-11-2026). El cambio queda en el
+     * control de cambios.
+     */
+    public function cambiarNota(Request $request, Consulta $consulta)
+    {
+        $this->soloSiPuedeModificar($request);
+
+        $datos = $request->validate(['nota' => ['nullable', 'string', 'max:5000']]);
+
+        $consulta->update(['nota' => filled($datos['nota'] ?? null) ? $datos['nota'] : null]);
+
+        return response()->json(['mensaje' => 'Listo: la nota quedó guardada. No se generó una revisión nueva.']);
+    }
+
+    // ----------------------------------------------------- comprobantes de la compra
+
+    private function datosDeComprobante(Request $request): array
+    {
+        return $request->validate([
+            'tipo' => ['required', 'string', 'max:120'],
+            'numero' => ['nullable', 'string', 'max:60'],
+            'fecha' => ['nullable', 'date'],
+            'nota' => ['nullable', 'string', 'max:500'],
+        ], [
+            'tipo.required' => 'Elegí qué tipo de comprobante es.',
+        ]);
+    }
+
+    /** Un renglón más: anticipo, saldo, remito, nota de crédito, vale del expreso... */
+    public function agregarComprobante(Request $request, Consulta $consulta)
+    {
+        $this->soloSiPuedeModificar($request);
+        abort_unless($consulta->estado === 'Vendida', 422, 'Los comprobantes son de una cotizacion vendida: primero marcala con "La compro".');
+
+        $datos = $this->datosDeComprobante($request);
+
+        $comprobante = $consulta->comprobantes()->create($datos + [
+            'orden' => (int) $consulta->comprobantes()->max('orden') + 1,
+        ]);
+
+        $consulta->anotarCambio('Comprobante', null, null, trim($comprobante->tipo.' '.$comprobante->numero));
+
+        return new ConsultaResource($this->recargar($consulta));
+    }
+
+    public function editarComprobante(Request $request, Consulta $consulta, ConsultaComprobante $comprobante)
+    {
+        $this->soloSiPuedeModificar($request);
+        abort_unless($comprobante->consulta_id === $consulta->id, 404);
+
+        $datos = $this->datosDeComprobante($request);
+        $antes = trim($comprobante->tipo.' '.$comprobante->numero);
+        $comprobante->update($datos);
+
+        $consulta->anotarCambio('Comprobante', null, $antes, trim($comprobante->tipo.' '.$comprobante->numero));
+
+        return new ConsultaResource($this->recargar($consulta));
+    }
+
+    public function borrarComprobante(Request $request, Consulta $consulta, ConsultaComprobante $comprobante)
+    {
+        $this->soloSiPuedeModificar($request);
+        abort_unless($comprobante->consulta_id === $consulta->id, 404);
+
+        $consulta->anotarCambio('Comprobante', null, trim($comprobante->tipo.' '.$comprobante->numero), null);
+        $comprobante->delete();
+
+        return new ConsultaResource($this->recargar($consulta));
+    }
+
+    /**
+     * Qué líneas se compraron: la compra parcial.
+     *
+     * "Compraron 1 de los 3 ítems ofrecidos" no es lo mismo que una compra
+     * total, y la lista general tiene que poder decirlo. Se marca por línea y
+     * se puede corregir cuando haga falta; la hoja emitida no cambia.
+     */
+    public function marcarCompra(Request $request, Consulta $consulta)
+    {
+        $this->soloSiPuedeModificar($request);
+        abort_unless($consulta->estado === 'Vendida', 422, 'Solo una cotizacion vendida tiene compra: primero marcala con "La compro".');
+
+        $datos = $request->validate([
+            'lineas' => ['present', 'array'],
+            'lineas.*' => ['integer'],
+        ]);
+
+        $this->marcarLineasCompradas($consulta, $datos['lineas']);
+
+        return new ConsultaResource($this->recargar($consulta));
+    }
+
+    /** Deja marcadas exactamente esas líneas (de ESTA cotización); las demás, no. */
+    private function marcarLineasCompradas(Consulta $consulta, array $ids): void
+    {
+        $consulta->lineas()->update(['comprada' => false]);
+        $consulta->lineas()->whereIn('id', $ids)->where('quitada', false)->update(['comprada' => true]);
     }
 
     // ---------------------------------------------------------- observaciones
@@ -1479,7 +1592,7 @@ class ConsultaEscrituraController extends Controller
             'lineas.material', 'lineas.forma', 'lineas.unidadVenta',
             'lineas.unidadFactura', 'lineas.unidadPedida',
             'condiciones', 'observaciones.usuario', 'impresiones.contacto',
-            'impresiones.usuario', 'copiadaDe.empresa', 'emisor',
+            'impresiones.usuario', 'copiadaDe.empresa', 'emisor', 'comprobantes',
         ]);
     }
 }

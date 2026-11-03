@@ -40,6 +40,7 @@ interface Resumen {
     cotizaciones_mes_pasado: number
     borradores: number
     borradores_eliminados: number
+    pedidos: number
   }
   ultimas: {
     id: number
@@ -50,6 +51,9 @@ interface Resumen {
     estado: string
     numero_con_revision: string | null
     emitida: boolean
+    /** N° de pedido del cliente (portal, licitación, orden de compra). */
+    solicitud_nro: string | null
+    compra: { parcial: boolean; compradas: number; total: number } | null
     moneda: string | null
     moneda_base: string | null
     total: number
@@ -74,11 +78,21 @@ const QUICK: { label: string; to: string; icon: LucideIcon; fg: string }[] = [
   { label: 'Imprimir', to: '/imprimir', icon: Printer, fg: 'text-[#d97706]' },
 ]
 
-function EstadoPill({ estado, emitida, tipo }: { estado: string; emitida?: boolean; tipo?: string }) {
+function EstadoPill({
+  estado,
+  emitida,
+  tipo,
+  compra,
+}: {
+  estado: string
+  emitida?: boolean
+  tipo?: string
+  compra?: { parcial: boolean; compradas: number; total: number } | null
+}) {
   // "Confirmada" no dice si ya se hizo. Sin emitir todavía no se mandó: falta
   // la emisión. Emitida es la que ya salió. El resto se muestra tal cual.
-  const texto = tipo === 'Observacion' ? 'Observación' : estado === 'Confirmada' ? (emitida ? 'Emitida' : 'Falta emisión') : estado
-  const s = ESTADOS[texto] ?? ESTADOS.Borrador
+  const texto = tipo === 'Observacion' ? 'Observación' : estado === 'Vendida' && compra?.parcial ? `Compra parcial · ${compra.compradas} de ${compra.total}` : estado === 'Confirmada' ? (emitida ? 'Emitida' : 'Falta emisión') : estado
+  const s = ESTADOS[texto] ?? (texto.startsWith('Compra parcial') ? ESTADOS.Vendida : ESTADOS.Borrador)
 
   return (
     <span
@@ -279,19 +293,27 @@ export default function Dashboard() {
                   >
                     <span className="truncate text-[13px] font-semibold text-ink">{c.empresa}</span>
                     {/* Un borrador no tiene número; una importada del sistema viejo tampoco. */}
-                    {c.numero_con_revision ? (
-                      <span className="truncate text-[12.5px] font-semibold tabular-nums text-slate-600">
-                        {c.numero_con_revision}
-                      </span>
-                    ) : (
-                      <span className="text-[12px] text-faint">{c.emitida || c.tipo === 'Observacion' ? '—' : 'sin emitir'}</span>
-                    )}
+                    <span className="flex min-w-0 flex-col">
+                      {c.numero_con_revision ? (
+                        <span className="truncate text-[12.5px] font-semibold tabular-nums text-slate-600">
+                          {c.numero_con_revision}
+                        </span>
+                      ) : (
+                        <span className="text-[12px] text-faint">{c.emitida || c.tipo === 'Observacion' ? '—' : 'sin emitir'}</span>
+                      )}
+                      {/* El número con el que el cliente pidió (portal, licitación, orden de compra). */}
+                      {c.solicitud_nro && (
+                        <span className="truncate text-[11px] text-faint" title="N° de pedido del cliente">
+                          Pedido {c.solicitud_nro}
+                        </span>
+                      )}
+                    </span>
                     <span className="text-[13px] text-muted">{fmtFecha(c.fecha)}</span>
                     <span className="text-right text-[13px] font-semibold text-ink">
                       {plata(c.total)}
                     </span>
                     <span className="flex justify-end">
-                      <EstadoPill estado={c.estado} emitida={c.emitida} tipo={c.tipo} />
+                      <EstadoPill estado={c.estado} emitida={c.emitida} tipo={c.tipo} compra={c.compra} />
                     </span>
                     {/* Dos botones claros: a la empresa o a la cotización. Con
                         borradores de por medio, el nombre solo no alcanza. */}
@@ -360,6 +382,26 @@ export default function Dashboard() {
             </div>
             <span className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600">
               Ver todos los borradores
+              <ArrowRight size={13} strokeWidth={2.4} className="transition-transform group-hover:translate-x-0.5" />
+            </span>
+          </Link>
+
+          {/* Pedidos: tienen su acceso, igual que las cotizaciones y los borradores. */}
+          <Link
+            to="/consultas/condicion?tipo=Pedido"
+            className="group rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-colors hover:border-brand-200 hover:bg-brand-50"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[13px] font-medium text-muted">Pedidos</p>
+                <p className="mt-1 text-[26px] font-bold text-ink">{totales.pedidos}</p>
+              </div>
+              <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-brand-50 text-brand-600">
+                <FileText size={20} strokeWidth={2} />
+              </span>
+            </div>
+            <span className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600">
+              Ver todos los pedidos
               <ArrowRight size={13} strokeWidth={2.4} className="transition-transform group-hover:translate-x-0.5" />
             </span>
           </Link>

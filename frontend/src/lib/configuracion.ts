@@ -7,7 +7,7 @@ import { olvidarCatalogos } from './indice'
   guardados: la proxima cotizacion que se abra ya trae la lista nueva.
 */
 
-export type NombreDeLista = 'caracteristicas' | 'motivos_cambio' | 'motivos_no_cotiza'
+export type NombreDeLista = 'caracteristicas' | 'motivos_cambio' | 'motivos_no_cotiza' | 'tipos_comprobante'
 
 export interface ItemDeLista {
   id: number

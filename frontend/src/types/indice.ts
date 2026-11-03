@@ -151,6 +151,8 @@ export interface ConsultaLinea {
   aprox: boolean
   idem: boolean
   quitada: boolean
+  /** Se compró esta línea (compra parcial). */
+  comprada?: boolean
   no_cotizada: boolean
   motivo_no_cotiza: string | null
   desde_stock: boolean
@@ -278,6 +280,10 @@ export interface Consulta {
   total_kilos: number | null
   lineas_iguales_a_lo_pedido: string | null
   lineas?: ConsultaLinea[]
+  /** Qué se compró, si está vendida. Parcial: compraron algunos ítems, no todos. */
+  compra?: { parcial: boolean; compradas: number; total: number; importe: number | null } | null
+  /** Los comprobantes de la compra, uno por renglón. */
+  comprobantes?: Comprobante[]
   juego_condiciones: JuegoDeCondiciones | null
   condiciones?: CondicionDeCotizacion[]
   observaciones?: Observacion[]
@@ -410,12 +416,22 @@ export interface CalculoDePeso {
   unidad_resultado: string
 }
 
+export interface Comprobante {
+  id: number
+  tipo: string
+  numero: string | null
+  fecha: string | null
+  nota: string | null
+}
+
 export interface Catalogos {
   relaciones: Relacion[]
   motivos_cambio: string[]
   /** Motivos predeterminados por los que no se cotiza un ítem. */
   motivos_no_cotiza: string[]
   tipos_consulta: TipoConsulta[]
+  /** Factura, remito, nota de crédito...: se editan en Configuración. */
+  tipos_comprobante: string[]
   estados: EstadoConsulta[]
   solicitud_vias: string[]
   condiciones_iva: string[]

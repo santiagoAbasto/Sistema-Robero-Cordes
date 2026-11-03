@@ -263,6 +263,11 @@ export function ConsultasPorFecha() {
             opciones={(catalogos?.materiales ?? []).map((m) => ({ valor: m.id, texto: m.nombre }))}
           />
           <Lista
+            etiqueta="Tipo" vacio="Todos" value={f.tipo}
+            onChange={(e) => set('tipo', e.target.value)}
+            opciones={(catalogos?.tipos_consulta ?? []).map((t) => ({ valor: t, texto: t }))}
+          />
+          <Lista
             etiqueta="Quien lo hizo" vacio="Todos" value={f.usuario_id}
             onChange={(e) => set('usuario_id', e.target.value)}
             opciones={(catalogos?.usuarios ?? []).map((u) => ({
@@ -325,6 +330,8 @@ export function BuscarConsultas() {
     diametro_desde: '',
     diametro_hasta: '',
     estado: params.get('estado') ?? '',
+    // "Pedidos" del dashboard entra acá ya filtrado por tipo.
+    tipo: params.get('tipo') ?? '',
     usuario_id: '',
     sin_respuesta: false,
   })
@@ -337,10 +344,11 @@ export function BuscarConsultas() {
         diametro_desde: f.diametro_desde ? Number(f.diametro_desde) : '',
         diametro_hasta: f.diametro_hasta ? Number(f.diametro_hasta) : '',
         estado: f.estado,
+        tipo: f.tipo,
         usuario_id: f.usuario_id ? Number(f.usuario_id) : '',
         sin_respuesta: f.sin_respuesta,
       }),
-    [f.material_id, f.forma_id, f.diametro_desde, f.diametro_hasta, f.estado, f.usuario_id, f.sin_respuesta],
+    [f.material_id, f.forma_id, f.diametro_desde, f.diametro_hasta, f.estado, f.tipo, f.usuario_id, f.sin_respuesta],
   )
 
   const set = (k: keyof typeof f, v: string | boolean) => setF({ ...f, [k]: v })

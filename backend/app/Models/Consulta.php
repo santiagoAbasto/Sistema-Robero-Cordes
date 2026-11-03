@@ -367,6 +367,45 @@ class Consulta extends Model
         return $this->hasMany(Observacion::class)->orderBy('numero');
     }
 
+    public function comprobantes(): HasMany
+    {
+        return $this->hasMany(ConsultaComprobante::class)->orderBy('orden')->orderBy('id');
+    }
+
+    /**
+     * Qué se compró de una cotización vendida (requiere las líneas cargadas).
+     *
+     * Cuenta ítems, no alternativas: una alternativa es otra forma de cubrir el
+     * mismo ítem, y si se compró ella cuenta el ítem de la madre. Una vendida sin
+     * ninguna línea marcada —las anteriores a la marca— se lee como compra total.
+     *
+     * @return array{parcial: bool, compradas: int, total: int, importe: ?float}|null
+     */
+    public function compra(): ?array
+    {
+        if ($this->estado !== 'Vendida') {
+            return null;
+        }
+
+        $lineas = $this->lineas->where('quitada', false);
+        $madres = $lineas->filter(fn ($l) => ! $l->esAlternativa() && ! $l->no_cotizada);
+        $marcadas = $lineas->where('comprada', true);
+
+        if ($marcadas->isEmpty()) {
+            return ['parcial' => false, 'compradas' => $madres->count(), 'total' => $madres->count(), 'importe' => null];
+        }
+
+        $compradas = $madres->filter(fn ($m) => $m->comprada
+            || $lineas->contains(fn ($a) => $a->alternativa_de_id === $m->id && $a->comprada))->count();
+
+        return [
+            'parcial' => $compradas < $madres->count(),
+            'compradas' => $compradas,
+            'total' => $madres->count(),
+            'importe' => round((float) $marcadas->sum(fn ($l) => (float) $l->importe), 2),
+        ];
+    }
+
     public function impresiones(): HasMany
     {
         return $this->hasMany(Impresion::class)->latest('fecha');

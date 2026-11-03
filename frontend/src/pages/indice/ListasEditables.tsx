@@ -30,6 +30,11 @@ const LISTAS: { clave: NombreDeLista; titulo: string; ayuda: string }[] = [
     ayuda: 'Salen impresos debajo del ítem que no se cotiza.',
   },
   {
+    clave: 'tipos_comprobante',
+    titulo: 'Tipos de comprobante',
+    ayuda: 'Factura, anticipo, saldo, remito, nota de crédito, vale del expreso. Se eligen al cargar los comprobantes de una compra.',
+  },
+  {
     clave: 'motivos_cambio',
     titulo: 'Motivos de cambio',
     ayuda: 'Por qué se cotiza distinto a lo que pidió el cliente. Salen impresos.',
@@ -53,7 +58,7 @@ export default function ListasEditables() {
 
       {error && <Aviso tono="ambar">{error}</Aviso>}
 
-      <div className="grid items-start gap-[18px] xl:grid-cols-3">
+      <div className="grid items-start gap-[18px] xl:grid-cols-2 2xl:grid-cols-4">
         {LISTAS.map((l) => (
           <ListaEditable key={l.clave} {...l} items={datos[l.clave]} onCambio={recargar} onError={setError} />
         ))}

@@ -44,7 +44,10 @@ class ConsultaResource extends JsonResource
             'ajuste_dif_cambio' => $this->ajuste_dif_cambio,
             'ajuste_dif_cambio_detalle' => $this->ajuste_dif_cambio_detalle,
 
-            'nro_factura' => $this->nro_factura,
+            'nro_factura' => $this->nro_factura
+                ?? ($this->relationLoaded('comprobantes')
+                    ? ($this->comprobantes->filter(fn ($c) => str_starts_with($c->tipo, 'Factura') && filled($c->numero))->pluck('numero')->implode(', ') ?: null)
+                    : null),
             // Lo que se va sabiendo de una vendida: pedido, remito, factura,
             // cada uno con la fecha en que paso.
             'nro_pedido_interno' => $this->nro_pedido_interno,
@@ -90,6 +93,12 @@ class ConsultaResource extends JsonResource
             'lineas_iguales_a_lo_pedido' => $this->lineas_iguales_a_lo_pedido,
 
             'lineas' => ConsultaLineaResource::collection($this->whenLoaded('lineas')),
+            // Qué se compró (compra parcial) y los comprobantes, uno por renglón.
+            'compra' => $this->when($this->relationLoaded('lineas'), fn () => $this->compra()),
+            'comprobantes' => $this->whenLoaded('comprobantes', fn () => $this->comprobantes->map(fn ($c) => [
+                'id' => $c->id, 'tipo' => $c->tipo, 'numero' => $c->numero,
+                'fecha' => $c->fecha?->format('Y-m-d'), 'nota' => $c->nota,
+            ])),
             'juego_condiciones' => $this->juego_condiciones,
             'condiciones' => $this->whenLoaded('condiciones', fn () => $this->condiciones->map(fn ($c) => [
                 'id' => $c->id, 'titulo' => $c->titulo, 'texto' => $c->texto,
