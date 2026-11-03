@@ -24,6 +24,7 @@ export default function Empresas() {
   const [relacion, setRelacion] = useState(params.get('relacion') ?? '')
   const [rubroId, setRubroId] = useState(params.get('rubro_id') ?? '')
   const [provinciaId, setProvinciaId] = useState(params.get('provincia_id') ?? '')
+  const [inactivas, setInactivas] = useState(params.get('inactivas') === '1')
 
   const catalogos = useCatalogos()
   const textoDiferido = useDebounce(texto, 300)
@@ -35,14 +36,15 @@ export default function Empresas() {
     if (relacion) nuevos.relacion = relacion
     if (rubroId) nuevos.rubro_id = rubroId
     if (provinciaId) nuevos.provincia_id = provinciaId
+    if (inactivas) nuevos.inactivas = '1'
     setParams(nuevos, { replace: true })
-  }, [textoDiferido, relacion, rubroId, provinciaId, setParams])
+  }, [textoDiferido, relacion, rubroId, provinciaId, inactivas, setParams])
 
   const [pagina, setPagina] = useState(1)
 
   // Cambiar un filtro vuelve a la primera pagina: si no, se busca "titanio"
   // estando en la 12 y la lista aparece vacia sin explicacion.
-  useEffect(() => setPagina(1), [textoDiferido, relacion, rubroId, provinciaId])
+  useEffect(() => setPagina(1), [textoDiferido, relacion, rubroId, provinciaId, inactivas])
 
   const { datos, cargando, error } = useCarga(
     () =>
@@ -52,8 +54,9 @@ export default function Empresas() {
         relacion,
         rubro_id: rubroId ? Number(rubroId) : '',
         provincia_id: provinciaId ? Number(provinciaId) : '',
+        inactivas,
       }),
-    [textoDiferido, relacion, rubroId, provinciaId, pagina],
+    [textoDiferido, relacion, rubroId, provinciaId, inactivas, pagina],
   )
 
   const empresas = datos?.data ?? []
@@ -118,6 +121,11 @@ export default function Empresas() {
           />
         </div>
 
+        <label className="flex w-fit items-center gap-2 text-[12px] text-muted">
+          <input type="checkbox" checked={inactivas} onChange={(e) => setInactivas(e.target.checked)} />
+          Ver solo las inactivas (empresas que cerraron o se dieron de baja)
+        </label>
+
         <p className="text-[11.5px] text-faint">
           {cargando ? 'Buscando…' : `${total} ${total === 1 ? 'resultado' : 'resultados'}`}
         </p>
@@ -165,6 +173,7 @@ export default function Empresas() {
                           >
                             {e.nombre}
                           </Link>
+                          {!e.activa && <Chip tono="ambar">Inactiva</Chip>}
                           {e.relaciones.map((r) => (
                             <Chip
                               key={r}

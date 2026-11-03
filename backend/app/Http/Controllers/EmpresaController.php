@@ -22,7 +22,12 @@ class EmpresaController extends Controller
         $buscar = trim((string) $request->query('buscar'));
 
         $empresas = Empresa::query()
-            ->activas()
+            // Las que cerraron no salen salvo que se pidan (?inactivas=1): se reactivan desde su ficha.
+            ->when(
+                $request->boolean('inactivas'),
+                fn ($q) => $q->where('activa', false),
+                fn ($q) => $q->activas()
+            )
             ->buscar($buscar)
             ->conRelacion($request->query('relacion'))
             ->when($request->query('rubro_id'), fn ($q, $v) => $q->where('rubro_id', $v))

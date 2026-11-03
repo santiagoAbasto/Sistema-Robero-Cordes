@@ -33,7 +33,7 @@ use App\Services\Migracion\EnlazadorDeLineas;
 class LectorDeSolicitud
 {
     /** Lo que encabeza un renglon de una lista y no es parte del pedido. */
-    private const VINETA = '/^\s*(?:[-–—*•·o]\s+|\d+[.)]\s+)/u';
+    private const VINETA = '/^\s*(?:[-–—*•·o]\s+|\d+[.)]\s+|0\d{2,3}\s+(?=\p{L}))/u';
 
     /**
      * Como escriben las formas cuando no escriben el nombre entero.
@@ -692,7 +692,22 @@ class LectorDeSolicitud
         // El rango de largo se lee antes y se saca del renglon: si no, en
         // "Ø 50 largo 2,80 - 3,20 m" el 2,80 entraba como largo, en milimetros.
         [$largoMin, $largoMax, $rango] = $this->largosDe($renglon);
-        $medidas = $this->buscarMedidas($rango === null ? $renglon : str_replace($rango, ' ', $renglon), $forma);
+        $paraMedidas = $rango === null ? $renglon : str_replace($rango, ' ', $renglon);
+
+        // "= Un tramo de 0,5 Metro": el largo de cada pieza, dicho con la cantidad.
+        $largoDelTramo = null;
+
+        if (preg_match('/\btramos?\s+de\s+(\d+(?:[.,]\d+)?)\s*(MM|CM|MTS?|METROS?|M)\b/iu', $renglon, $t)) {
+            $largoDelTramo = $this->aMilimetros($t[1], $t[2]);
+            $paraMedidas = str_replace($t[0], ' ', $paraMedidas);
+        }
+
+        $medidas = $this->buscarMedidas($paraMedidas, $forma);
+
+        if ($largoDelTramo !== null && $medidas['largo_mm'] === null) {
+            $medidas['largo_mm'] = $largoDelTramo;
+            $medidas['texto'] = trim(($medidas['texto'] ?? '').' x '.rtrim(rtrim(number_format($largoDelTramo, 1, '.', ''), '0'), '.').'mm', ' x');
+        }
 
         if ($rango !== null) {
             $medidas['texto'] = trim(($medidas['texto'] ?? '').' '.$rango);
@@ -719,7 +734,9 @@ class LectorDeSolicitud
         // queda como lo que pidio: en "CODO 90° ... ASTM A403 AISI 310 ..."
         // (Roberto, 14-10) el material se perdia. No se elige ningun grado:
         // "AISI 310" puede ser el 310, el 310S o el 310H, lo decide quien cotiza.
-        $pedido = $material === null ? $this->designacionAisi($renglon) : null;
+        $pedido = $material === null
+            ? ($this->designacionAisi($renglon) ?? $this->materialEscrito($renglon) ?? $this->designacionSuelta($renglon))
+            : null;
 
         return [
             'descripcion' => trim($renglon),
@@ -840,13 +857,26 @@ class LectorDeSolicitud
         */
         $limpio = preg_replace('/\bSCH\s*\d+\w*|"/iu', ' ', $renglon) ?? $renglon;
 
+        // Las medidas pegadas ("1220x3660mm") parecen una designacion y hacian
+        // que el buscador desconfiara de un material que estaba bien escrito.
+        $limpio = preg_replace('/\d+(?:[.,]\d+)?\s*(?:MM|CM|MTS?|M)?\s*[xX×]\s*\d+(?:[.,]\d+)?\s*(?:MM|CM|MTS?|M)?(?:\s*[xX×]\s*\d+(?:[.,]\d+)?\s*(?:MM|CM|MTS?|M)?)*/iu', ' ', $limpio) ?? $limpio;
+
+        // "SUPER DUPLEX 2507 S32750": el catalogo lo escribe "Acero Duplex ...".
+        $bases = [$limpio];
+
+        if (preg_match('/\bDUPLEX\b/iu', $limpio) && ! preg_match('/\bACERO\b/iu', $limpio)) {
+            $bases[] = 'ACERO '.$limpio;
+        }
+
         $encontrados = [];
 
-        foreach ($this->comoPudoHaberseEscrito($limpio) as $variante) {
-            $id = $this->buscadorDeMaterial->elegir($variante);
+        foreach ($bases as $base) {
+            foreach ($this->comoPudoHaberseEscrito($base) as $variante) {
+                $id = $this->buscadorDeMaterial->elegir($variante);
 
-            if ($id !== null) {
-                $encontrados[$id] = true;
+                if ($id !== null) {
+                    $encontrados[$id] = true;
+                }
             }
         }
 
@@ -886,6 +916,46 @@ class LectorDeSolicitud
         // larga sin rotulo no cuenta: "trabajamos acero de primera" no es un item.
         if (($rotulado || mb_strlen($limpio) <= 40) && $this->pareceMaterial($limpio)) {
             return ['id' => null, 'nombre' => mb_substr(mb_strtoupper($limpio, 'UTF-8'), 0, 120)];
+        }
+
+        return null;
+    }
+
+    /**
+     * El material que el renglon dice entre el "de" y la medida: "Chapa de
+     * aluminio 5052 H32 - Espesor 2mm" -> "ALUMINIO 5052 H32".
+     *
+     * Solo si lo escrito se ve como un material. Queda como lo que pidio el
+     * cliente: el catalogo no tiene esa aleacion o ese temple, y elegir el
+     * parecido seria adivinar.
+     */
+    private function materialEscrito(string $renglon): ?string
+    {
+        if (! preg_match('/\bde\s+(.+?)(?=\s[-–—]\s|,|\.\s|\bespesor\b|\bdimensiones\b|[Ø⌀]|\d\s*(?:mm|cm)\b|\sx\s|$)/iu', $renglon, $m)) {
+            return null;
+        }
+
+        $texto = trim($m[1]);
+
+        return mb_strlen($texto) <= 60 && $this->pareceMaterial($texto)
+            ? mb_strtoupper($texto, 'UTF-8')
+            : null;
+    }
+
+    /**
+     * Una designacion con guion que no es ni norma ni medida: "XLPE-VitE".
+     * Se deja como lo que pidio; el catalogo no la conoce y no se adivina.
+     */
+    private function designacionSuelta(string $renglon): ?string
+    {
+        if (! preg_match_all('/(?<![\p{L}\d])[A-Z]{2,}[A-Z0-9]*-[A-Za-z0-9]{2,}(?![\p{L}\d-])/u', $renglon, $m)) {
+            return null;
+        }
+
+        foreach ($m[0] as $token) {
+            if (! preg_match('/^(?:ASTM|AISI|ASME|AMS|SAE|UNS|API|DIN|ISO|EN|SCH)-/', $token)) {
+                return mb_strtoupper($token, 'UTF-8');
+            }
         }
 
         return null;
@@ -1119,6 +1189,19 @@ class LectorDeSolicitud
             return [(float) str_replace(',', '.', $mc[1]), $unidades->firstWhere('codigo', 'UN')];
         }
 
+        // "= Un tramo de 0,5 Metro": el tramo es la unidad, y "un" es uno.
+        if (preg_match('/\b(un|una|dos|tres|cuatro|cinco|\d+)\s+tramos?\b/iu', $renglon, $mt)) {
+            $palabras = ['un' => 1, 'una' => 1, 'dos' => 2, 'tres' => 3, 'cuatro' => 4, 'cinco' => 5];
+
+            return [(float) ($palabras[mb_strtolower($mt[1])] ?? $mt[1]), $unidades->firstWhere('codigo', 'UN')];
+        }
+
+        // "sería 1 unidad XLPE-VitE Ø 90 x 1524mm": lo que se cuenta, en medio del renglon.
+        if (! preg_match('/^\s*\d/u', $renglon)
+            && preg_match('/(?<![\d.,xX×Ø⌀\/])\b(\d+)\s+(?:UNIDADES|UNIDAD|UNID|UN|PIEZAS|PIEZA|PZAS|PZA)\b/iu', $renglon, $mu)) {
+            return [(float) $mu[1], $unidades->firstWhere('codigo', 'UN')];
+        }
+
         if (! preg_match('/^\s*(\d+(?:[.,]\d+)*)(.*)$/su', $renglon, $m)
             && ! $this->cantidadAlFinal($renglon, $m)) {
             return [null, null];
@@ -1158,7 +1241,7 @@ class LectorDeSolicitud
      */
     private function cantidadAlFinal(string $renglon, &$m): bool
     {
-        if (! preg_match('/^(.*?)(?<![\d.,])(\d+)\s*((?:BARRAS?|PIEZAS?|PZAS?|UNIDADES|UN)\.?)\s*$/iu', $renglon, $f)
+        if (! preg_match('/^(.*?)(?<![\d.,])(\d+)\s*((?:BARRAS?|PIEZAS?|PZAS?|UNIDADES|UN|CADA\s+UN[OA]|C\/U)\.?)\s*$/iu', $renglon, $f)
             || preg_match('/(?:\b(?:GR|GRADO|AISI|SAE|ASTM|UNS|TIPO|F)|[xX×Ø⌀])[\s.]*$/iu', $f[1])) {
             return false;
         }
@@ -1250,6 +1333,18 @@ class LectorDeSolicitud
         $marcado = false;
 
         /*
+          "Espesor 1mm, dimensiones 1220x3660mm": el espesor dicho con todas las
+          letras es el espesor, y lo que sigue en la serie es ancho y largo. Sin
+          esto la chapa entraba con 1220 de espesor.
+        */
+        $espesorDicho = null;
+
+        if (preg_match('/\b(?:ESPESOR|ESP)\.?\s*:?\s*('.$numero.')\s*(MM|CM)?/iu', $renglon, $e)) {
+            $espesorDicho = $this->aMilimetros($e[1], $e[2] ?? '');
+            $renglon = str_replace($e[0], ' ', $renglon);
+        }
+
+        /*
           Cada numero con su unidad, si la tiene: "Ø10mm x 3 metros de largo".
 
           Antes la unica unidad que se leia era MM, y al final de la serie. El
@@ -1304,6 +1399,13 @@ class LectorDeSolicitud
           no reconocer la forma.
         */
         $orden ??= count($numeros) === 2 || $marcado ? ['diameter', 'length'] : [];
+
+        if ($espesorDicho !== null) {
+            $medidas['espesor_mm'] = $espesorDicho;
+            $medidas['texto'] = trim(rtrim(rtrim(number_format($espesorDicho, 2, '.', ''), '0'), '.').' mm x '.($medidas['texto'] ?? ''), ' x');
+            // En la serie ya no va el espesor: ancho y largo.
+            $orden = array_values(array_diff($orden, ['wall', 'height']));
+        }
 
         foreach ($numeros as $i => $n) {
             $columna = self::COLUMNA[$orden[$i] ?? ''] ?? null;

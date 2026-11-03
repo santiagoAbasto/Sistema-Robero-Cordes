@@ -17,6 +17,7 @@ import { Casilla, Guardado, Lista, Texto } from '../../components/ui/form'
 import api from '../../lib/api'
 import {
   buscarEmpresas,
+  direccionDeLaHoja,
   fecha as fmtFecha,
   mandarPorCorreo,
   mensajeDeError,
@@ -145,17 +146,16 @@ function ElegirImpresion({
   // Al cambiar de persona, se proponen sus datos.
   useEffect(() => {
     if (!contacto) return
-    setTelefono(
-      contacto.telefonos[0]?.valor ?? contacto.celulares?.[0]?.valor ?? contacto.whatsapps[0]?.valor ?? '',
-    )
+    // El marcado como principal gana, sea fijo, celular o WhatsApp; si no, el orden de siempre.
+    const todos = [...contacto.telefonos, ...(contacto.celulares ?? []), ...contacto.whatsapps]
+    setTelefono((todos.find((m) => m.principal) ?? todos[0])?.valor ?? '')
     setMail(contacto.mails[0]?.valor ?? '')
   }, [contactoId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const opcionesTelefono = contacto
-    ? [...contacto.telefonos, ...(contacto.celulares ?? []), ...contacto.whatsapps].map((m) => ({
-        valor: m.valor,
-        texto: m.valor,
-      }))
+    ? [...contacto.telefonos, ...(contacto.celulares ?? []), ...contacto.whatsapps]
+        .sort((a, b) => Number(!!b.principal) - Number(!!a.principal))
+        .map((m) => ({ valor: m.valor, texto: m.valor }))
     : []
   const opcionesMail = contacto?.mails.map((m) => ({ valor: m.valor, texto: m.valor })) ?? []
 
@@ -200,24 +200,24 @@ function ElegirImpresion({
     setGenerando(true)
 
     try {
-      const { data } = await api.get(`/consultas/${consulta.id}/pdf`, {
-        responseType: 'blob',
-        params: { ...hoja, via },
-      })
-
-      const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }))
-
       if (descargar) {
+        const { data } = await api.get(`/consultas/${consulta.id}/pdf`, {
+          responseType: 'blob',
+          params: { ...hoja, via },
+        })
+
+        const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }))
         const a = document.createElement('a')
         a.href = url
         a.download = `${nombreDeLaHoja(consulta, nombreEnPdf)}.pdf`
         a.click()
-      } else {
-        window.open(url, '_blank')
-      }
 
-      // Se libera cuando el navegador ya lo abrió.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
+        // Se libera cuando el navegador ya lo bajó.
+        setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      } else {
+        // Con su nombre en la dirección: la pestaña y el "guardar" del visor lo muestran.
+        window.open(await direccionDeLaHoja(consulta.id, { ...hoja, via }), '_blank')
+      }
 
       setAviso(
         consulta.esta_vencida

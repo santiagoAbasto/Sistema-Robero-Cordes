@@ -11,6 +11,7 @@ use App\Services\Correo;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Mail\Mailables\Address;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -77,10 +78,8 @@ class PdfController extends Controller
             ?? $consulta->empresa->nombre;
 
         $telefono = $datos['telefono']
-            ?? $contacto?->medio('Telefono')?->valor
-            // Un contacto con solo celular salia sin telefono en la hoja.
-            ?? $contacto?->medio('Celular')?->valor
-            ?? $contacto?->medio('WhatsApp')?->valor;
+            // El marcado como principal, aunque sea celular; si no, fijo, celular, WhatsApp.
+            ?? $contacto?->telefonoParaLaHoja()?->valor;
 
         $mail = $datos['mail'] ?? $contacto?->medio('Mail')?->valor;
 
@@ -158,9 +157,38 @@ class PdfController extends Controller
 
         $archivo = $this->nombreDeArchivo($titulo, $consulta, $nombreEnPdf);
 
+        /*
+          Para abrirla en una pestaña con su nombre.
+
+          Un archivo que el navegador arma en memoria (blob:) se abre con un
+          nombre al azar, y el visor lo guarda con ese nombre. Con una
+          dirección que termina en el nombre del archivo, la pestaña y el
+          "guardar" del visor dicen "Cotizacion 2026-0013 R0 - ... .pdf".
+          Queda 10 minutos y la dirección no se puede adivinar.
+        */
+        if ($request->boolean('enlace')) {
+            $clave = Str::random(40);
+            Cache::put('hoja:'.$clave, base64_encode($pdf->output()), now()->addMinutes(10));
+
+            return response()->json(['ruta' => 'hojas/'.$clave.'/'.rawurlencode($archivo)]);
+        }
+
         return $request->boolean('descargar')
             ? $pdf->download($archivo)
             : $pdf->stream($archivo);
+    }
+
+    /** La hoja armada por cotizacion(?enlace=1), con su nombre en la dirección. */
+    public function hoja(string $clave, string $nombre)
+    {
+        $pdf = Cache::get('hoja:'.$clave);
+
+        abort_if($pdf === null, 404, 'La hoja venció: volvé a abrirla desde la cotización.');
+
+        return response(base64_decode($pdf), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.str_replace('"', '', Str::ascii($nombre)).'"',
+        ]);
     }
 
     /**

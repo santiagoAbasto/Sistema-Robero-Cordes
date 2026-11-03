@@ -61,6 +61,7 @@ const ESTADOS: Record<string, { dot: string; bg: string; fg: string }> = {
   Borrador: { dot: 'bg-[#94a3b8]', bg: 'bg-[#f1f5f9]', fg: 'text-[#64748b]' },
   // Confirmada pero sin emitir: todavía no se mandó, falta el paso de emisión.
   'Falta emisión': { dot: 'bg-[#f59e0b]', bg: 'bg-[#fff8ee]', fg: 'text-[#b45309]' },
+  'Observación': { dot: 'bg-[#94a3b8]', bg: 'bg-[#f1f5f9]', fg: 'text-[#64748b]' },
   Emitida: { dot: 'bg-brand', bg: 'bg-brand-50', fg: 'text-brand-700' },
   Confirmada: { dot: 'bg-brand', bg: 'bg-brand-50', fg: 'text-brand-700' },
   Vendida: { dot: 'bg-success', bg: 'bg-success-bg', fg: 'text-success-ink' },
@@ -73,10 +74,10 @@ const QUICK: { label: string; to: string; icon: LucideIcon; fg: string }[] = [
   { label: 'Imprimir', to: '/imprimir', icon: Printer, fg: 'text-[#d97706]' },
 ]
 
-function EstadoPill({ estado, emitida }: { estado: string; emitida?: boolean }) {
+function EstadoPill({ estado, emitida, tipo }: { estado: string; emitida?: boolean; tipo?: string }) {
   // "Confirmada" no dice si ya se hizo. Sin emitir todavía no se mandó: falta
   // la emisión. Emitida es la que ya salió. El resto se muestra tal cual.
-  const texto = estado === 'Confirmada' ? (emitida ? 'Emitida' : 'Falta emisión') : estado
+  const texto = tipo === 'Observacion' ? 'Observación' : estado === 'Confirmada' ? (emitida ? 'Emitida' : 'Falta emisión') : estado
   const s = ESTADOS[texto] ?? ESTADOS.Borrador
 
   return (
@@ -283,14 +284,14 @@ export default function Dashboard() {
                         {c.numero_con_revision}
                       </span>
                     ) : (
-                      <span className="text-[12px] text-faint">{c.emitida ? '—' : 'sin emitir'}</span>
+                      <span className="text-[12px] text-faint">{c.emitida || c.tipo === 'Observacion' ? '—' : 'sin emitir'}</span>
                     )}
                     <span className="text-[13px] text-muted">{fmtFecha(c.fecha)}</span>
                     <span className="text-right text-[13px] font-semibold text-ink">
                       {plata(c.total)}
                     </span>
                     <span className="flex justify-end">
-                      <EstadoPill estado={c.estado} emitida={c.emitida} />
+                      <EstadoPill estado={c.estado} emitida={c.emitida} tipo={c.tipo} />
                     </span>
                     {/* Dos botones claros: a la empresa o a la cotización. Con
                         borradores de por medio, el nombre solo no alcanza. */}

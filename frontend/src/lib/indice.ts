@@ -19,6 +19,8 @@ export interface FiltrosEmpresas {
   sin_cotizar_meses?: number | ''
   con_whatsapp?: boolean
   con_mail?: boolean
+  /** Solo las que se dieron de baja (la empresa cerró). */
+  inactivas?: boolean
 }
 
 function limpiar<T extends object>(params: T): Record<string, string> {
@@ -474,9 +476,12 @@ export function nombreDeLaHoja(
  */
 export function estadoDeConsulta(c: {
   estado: string
+  tipo?: string
   emitida?: boolean
   esta_vencida?: boolean
 }): { texto: string; tono: 'verde' | 'brand' | 'ambar' | 'neutro' } {
+  // Una observación es una anotación: no se emite ni se vence, así que nunca "falta emisión".
+  if (c.tipo === 'Observacion') return { texto: 'Observación', tono: 'neutro' }
   if (c.esta_vencida && c.estado !== 'Vendida') return { texto: 'Vencida por tiempo', tono: 'ambar' }
   if (c.estado === 'Vendida') return { texto: 'Vendida', tono: 'verde' }
   if (c.estado === 'Confirmada') {
@@ -561,6 +566,10 @@ export async function actualizarEmpresa(id: number, datos: DatosEmpresa) {
 
 export async function archivarEmpresa(id: number) {
   await api.post(`/empresas/${id}/archivar`)
+}
+
+export async function restaurarEmpresa(id: number) {
+  await api.post(`/empresas/${id}/restaurar`)
 }
 
 export interface DatosContacto {
@@ -1221,12 +1230,34 @@ export async function mandarLaHoja(
   return true
 }
 
+/**
+ * La dirección de la hoja para abrirla en una pestaña.
+ *
+ * Termina en el nombre del archivo ("Cotizacion 2026-0013 R0 - ... .pdf"): un
+ * blob: se abría con un nombre al azar y el visor lo guardaba así (Roberto,
+ * 03-11-2026). Pide la hoja con axios, para que el token viaje en el
+ * encabezado, y el servidor devuelve una dirección que dura unos minutos.
+ */
+export async function direccionDeLaHoja(id: number, params: Record<string, unknown>): Promise<string> {
+  const { data } = await api.get<{ ruta: string }>(`/consultas/${id}/pdf`, {
+    params: { ...params, enlace: 1 },
+  })
+
+  return `${String(api.defaults.baseURL).replace(/\/$/, '')}/${data.ruta}`
+}
+
 export async function traerLaHoja(
   id: number,
   pestana: Window | null,
   nombre: string,
   via = 'PDF',
 ): Promise<'pestana' | 'descarga'> {
+  if (pestana && !pestana.closed) {
+    pestana.location.href = await direccionDeLaHoja(id, { via })
+
+    return 'pestana'
+  }
+
   const { data } = await api.get(`/consultas/${id}/pdf`, {
     responseType: 'blob',
     params: { via },
@@ -1236,12 +1267,6 @@ export async function traerLaHoja(
 
   // El navegador la libera cuando ya la usó.
   setTimeout(() => URL.revokeObjectURL(url), 60_000)
-
-  if (pestana && !pestana.closed) {
-    pestana.location.href = url
-
-    return 'pestana'
-  }
 
   const a = document.createElement('a')
   a.href = url

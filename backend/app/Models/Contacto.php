@@ -38,4 +38,20 @@ class Contacto extends Model
             ->sortByDesc('principal')
             ->first();
     }
+
+    /**
+     * El teléfono que sale en la hoja.
+     *
+     * El que se marcó como principal gana, sea fijo, celular o WhatsApp: un
+     * celular marcado como principal salía igual con el fijo. Si ninguno está
+     * marcado, el orden de siempre: teléfono, celular, WhatsApp.
+     */
+    public function telefonoParaLaHoja(): ?ContactoMedio
+    {
+        $telefonos = collect(['Telefono', 'Celular', 'WhatsApp'])
+            ->map(fn ($tipo) => $this->medio($tipo))
+            ->filter();
+
+        return $telefonos->firstWhere('principal', true) ?? $telefonos->first();
+    }
 }

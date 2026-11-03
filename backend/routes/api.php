@@ -27,6 +27,9 @@ use Illuminate\Support\Facades\Route;
   arreglo que anda en local y "sigue fallando" en el servidor no se distingue
   de un arreglo que no anda.
 */
+// La hoja armada para abrirla con su nombre: sin token, la dirección es la clave.
+Route::get('/hojas/{clave}/{nombre}', [PdfController::class, 'hoja'])->where('clave', '[A-Za-z0-9]{40}');
+
 Route::get('/version', fn () => [
     'commit' => substr((string) env('RAILWAY_GIT_COMMIT_SHA', 'local'), 0, 7),
     'mensaje' => env('RAILWAY_GIT_COMMIT_MESSAGE'),

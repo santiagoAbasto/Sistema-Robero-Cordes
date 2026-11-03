@@ -22,12 +22,14 @@ import {
   actualizarEmpresa,
   anotarVisita,
   archivarContacto,
+  archivarEmpresa,
   archivarRazonSocial,
   borrarCampo,
   cantidad,
   fecha,
   mensajeDeError,
   plata,
+  restaurarEmpresa,
   traerEmpresa,
   usarComoBorrador,
   useCarga,
@@ -72,6 +74,7 @@ export default function FichaEmpresa() {
     { tipo: 'contacto' | 'razon' | 'campo'; id: number; nombre: string } | null
   >(null)
   const [archivando, setArchivando] = useState(false)
+  const [dandoDeBaja, setDandoDeBaja] = useState(false)
 
   function abrirEdicion() {
     setValores(estadoInicial(empresa))
@@ -112,6 +115,24 @@ export default function FichaEmpresa() {
 
       setAviso(aArchivar.tipo === 'campo' ? 'Campo quitado.' : 'Quedó desactivado. No se borró nada.')
       setAArchivar(null)
+      recargar()
+    } catch (err) {
+      setAviso(mensajeDeError(err))
+    } finally {
+      setArchivando(false)
+    }
+  }
+
+  // La empresa cerró: deja de salir en las listas y buscadores, pero no se borra nada.
+  async function cambiarActividad(activa: boolean) {
+    setArchivando(true)
+
+    try {
+      if (activa) await restaurarEmpresa(empresa!.id)
+      else await archivarEmpresa(empresa!.id)
+
+      setAviso(activa ? 'La empresa volvió a estar activa.' : 'La empresa quedó inactiva. No se borró nada.')
+      setDandoDeBaja(false)
       recargar()
     } catch (err) {
       setAviso(mensajeDeError(err))
@@ -164,11 +185,14 @@ export default function FichaEmpresa() {
           </span>
         }
         titulo={empresa.nombre}
-        chips={activas.map((r) => (
+        chips={[
+          ...(empresa.activa ? [] : [<Chip key="inactiva" tono="ambar">Inactiva</Chip>]),
+          ...activas.map((r) => (
           <Chip key={r} tono={r === 'Cliente' ? 'verde' : r === 'Proveedor' ? 'brand' : 'neutro'}>
             {r}
           </Chip>
-        ))}
+          )),
+        ]}
         acciones={
           <>
             <Link to={`/empresas/${empresa.id}/cambios`}>
@@ -183,6 +207,15 @@ export default function FichaEmpresa() {
                 Imprimir
               </Boton>
             </Link>
+            {empresa.activa ? (
+              <Boton variante="suave" onClick={() => setDandoDeBaja(true)}>
+                Dar de baja
+              </Boton>
+            ) : (
+              <Boton variante="suave" onClick={() => cambiarActividad(true)} disabled={archivando}>
+                Reactivar
+              </Boton>
+            )}
             <Boton variante="suave" onClick={abrirEdicion}>
               <Pencil size={15} strokeWidth={2} />
               Modificar
@@ -325,6 +358,16 @@ export default function FichaEmpresa() {
         textoConfirmar={aArchivar?.tipo === 'campo' ? 'Quitar' : 'Desactivar'}
         onCerrar={() => setAArchivar(null)}
         onConfirmar={confirmarArchivado}
+        trabajando={archivando}
+      />
+
+      <Confirmar
+        abierto={dandoDeBaja}
+        titulo="Dar de baja la empresa"
+        detalle={`"${empresa.nombre}" deja de aparecer en las listas y en los buscadores, pero no se borra nada: sus cotizaciones y su historial quedan. Se puede reactivar desde Empresas, "Ver solo las inactivas".`}
+        textoConfirmar="Dar de baja"
+        onCerrar={() => setDandoDeBaja(false)}
+        onConfirmar={() => cambiarActividad(false)}
         trabajando={archivando}
       />
 

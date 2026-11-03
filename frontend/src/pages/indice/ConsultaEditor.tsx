@@ -3651,9 +3651,22 @@ function LineaFila({
   }
 
   function alternarIgualALoPedido() {
-    // Estaba en distinto: vuelve a ser igual y no hay nada que copiar.
+    // Estaba en distinto: vuelve a ser igual. Lo que el cliente pidió y todavía
+    // no está en lo cotizado pasa para allá: antes el material se perdía al
+    // tildar (su nombre no estaba en el catálogo y la línea quedaba sin material).
     if (! linea.igual_a_lo_pedido) {
-      onCambio({ igual_a_lo_pedido: true })
+      const forma = catalogos?.formas.find((f) => f.nombre === linea.pedido_forma)
+
+      onCambio({
+        igual_a_lo_pedido: true,
+        ...(!linea.material_id && !linea.material_nuevo && linea.pedido_material
+          ? { material_nuevo: linea.pedido_material }
+          : {}),
+        ...(!linea.forma_id && forma ? { forma_id: forma.id } : {}),
+        ...(linea.cantidad == null && linea.cantidad_pedida != null
+          ? { cantidad: linea.cantidad_pedida, unidad_venta_id: linea.unidad_venta_id ?? linea.unidad_pedida_id }
+          : {}),
+      })
 
       return
     }
