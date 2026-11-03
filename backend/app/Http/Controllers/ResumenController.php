@@ -43,8 +43,8 @@ class ResumenController extends Controller
                 // Borradores sin terminar: para tener a mano lo que quedó a
                 // medias y poder abrirlos todos de una.
                 'borradores' => Consulta::where('estado', 'Borrador')->count(),
-                // Los pedidos firmes (no borradores): tienen su acceso en el dashboard.
-                'pedidos' => Consulta::pedidos()->firmes()->count(),
+                // Lo que se vendió (compra total o parcial): tiene su acceso en el dashboard.
+                'vendidas' => Consulta::where('estado', 'Vendida')->count(),
                 // En la papelera, todavía dentro de los 30 días que duran.
                 'borradores_eliminados' => Consulta::onlyTrashed()
                     ->where('deleted_at', '>=', now()->subDays(Consulta::DIAS_EN_PAPELERA))

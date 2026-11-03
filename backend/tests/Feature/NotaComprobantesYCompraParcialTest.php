@@ -162,7 +162,8 @@ class NotaComprobantesYCompraParcialTest extends TestCase
         $fila = collect($this->getJson('/api/resumen')->json('ultimas'))->firstWhere('id', $c->id);
 
         $this->assertTrue($fila['compra']['parcial']);
-        $this->assertSame(0, $this->getJson('/api/resumen')->json('totales.pedidos'));
+        // Lo vendido tiene su tarjeta en el dashboard, con su cuenta.
+        $this->assertSame(1, $this->getJson('/api/resumen')->json('totales.vendidas'));
     }
 
     public function test_una_revision_nace_sin_nada_comprado(): void

@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Briefcase,
   CalendarRange,
+  CheckCircle2,
   FileText,
   Inbox,
   Plus,
@@ -40,7 +41,7 @@ interface Resumen {
     cotizaciones_mes_pasado: number
     borradores: number
     borradores_eliminados: number
-    pedidos: number
+    vendidas: number
   }
   ultimas: {
     id: number
@@ -386,22 +387,22 @@ export default function Dashboard() {
             </span>
           </Link>
 
-          {/* Pedidos: tienen su acceso, igual que las cotizaciones y los borradores. */}
+          {/* Lo vendido: tiene su acceso, igual que los borradores. */}
           <Link
-            to="/consultas/condicion?tipo=Pedido"
+            to="/consultas/condicion?estado=Vendida"
             className="group rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-colors hover:border-brand-200 hover:bg-brand-50"
           >
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-[13px] font-medium text-muted">Pedidos</p>
-                <p className="mt-1 text-[26px] font-bold text-ink">{totales.pedidos}</p>
+                <p className="text-[13px] font-medium text-muted">Vendidas</p>
+                <p className="mt-1 text-[26px] font-bold text-ink">{totales.vendidas}</p>
               </div>
-              <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-brand-50 text-brand-600">
-                <FileText size={20} strokeWidth={2} />
+              <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-success-bg text-success-ink">
+                <CheckCircle2 size={20} strokeWidth={2} />
               </span>
             </div>
             <span className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600">
-              Ver todos los pedidos
+              Ver todo lo que se vendió
               <ArrowRight size={13} strokeWidth={2.4} className="transition-transform group-hover:translate-x-0.5" />
             </span>
           </Link>
