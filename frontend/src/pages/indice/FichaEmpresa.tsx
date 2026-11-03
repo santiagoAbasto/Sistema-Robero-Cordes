@@ -220,15 +220,24 @@ export default function FichaEmpresa() {
               <Pencil size={15} strokeWidth={2} />
               Modificar
             </Boton>
-            <Link to={`/empresas/${empresa.id}/agregar?tipo=Cotizacion`}>
-              <Boton variante="primario">
-                <Plus size={15} strokeWidth={2.4} />
-                Nueva cotización
-              </Boton>
-            </Link>
+            {empresa.activa && (
+              <Link to={`/empresas/${empresa.id}/agregar?tipo=Cotizacion`}>
+                <Boton variante="primario">
+                  <Plus size={15} strokeWidth={2.4} />
+                  Nueva cotización
+                </Boton>
+              </Link>
+            )}
           </>
         }
       />
+
+      {!empresa.activa && (
+        <Aviso tono="ambar" titulo="Empresa inactiva">
+          Se puede ver toda su historia, pero no se le pueden cargar cotizaciones ni pedidos. Si volvió a trabajar con
+          nosotros, apretá "Reactivar".
+        </Aviso>
+      )}
 
       {editando ? (
         <Card className="flex flex-col gap-4 p-[22px]">
@@ -291,7 +300,7 @@ export default function FichaEmpresa() {
         titulo="Cotizaciones"
         consultas={empresa.cotizaciones}
         ayuda="Todo lo que se le cotizó a esta empresa. Cada una guarda su moneda, el tipo de cambio, quién la hizo y su observación interna."
-        accion={{ texto: '+ Nueva cotización', to: `/empresas/${empresa.id}/agregar?tipo=Cotizacion` }}
+        accion={empresa.activa ? { texto: '+ Nueva cotización', to: `/empresas/${empresa.id}/agregar?tipo=Cotizacion` } : undefined}
         empresaId={empresa.id}
       />}
 
@@ -300,7 +309,7 @@ export default function FichaEmpresa() {
         titulo="Pedidos"
         consultas={empresa.pedidos}
         ayuda="Ventas de material que ya está en stock. Se descuentan del depósito al confirmarse."
-        accion={{ texto: '+ Agregar pedido', to: `/empresas/${empresa.id}/agregar?tipo=Pedido` }}
+        accion={empresa.activa ? { texto: '+ Agregar pedido', to: `/empresas/${empresa.id}/agregar?tipo=Pedido` } : undefined}
         empresaId={empresa.id}
       />}
 
@@ -364,7 +373,7 @@ export default function FichaEmpresa() {
       <Confirmar
         abierto={dandoDeBaja}
         titulo="Dar de baja la empresa"
-        detalle={`"${empresa.nombre}" deja de aparecer en las listas y en los buscadores, pero no se borra nada: sus cotizaciones y su historial quedan. Se puede reactivar desde Empresas, "Ver solo las inactivas".`}
+        detalle={`"${empresa.nombre}" queda inactiva: se sigue viendo con toda su historia, pero no se le pueden cargar cotizaciones y deja de salir en los buscadores comunes (se la encuentra en Empresas, tildando "Incluir las inactivas"). No se borra nada y se puede reactivar desde su ficha.`}
         textoConfirmar="Dar de baja"
         onCerrar={() => setDandoDeBaja(false)}
         onConfirmar={() => cambiarActividad(false)}
@@ -778,7 +787,8 @@ function Historial({
   titulo: string
   consultas: Consulta[]
   ayuda: string
-  accion: { texto: string; to: string }
+  /** Sin botón de alta cuando la empresa está inactiva. */
+  accion?: { texto: string; to: string }
   empresaId: number
   sinImprimir?: boolean
 }) {
@@ -816,7 +826,7 @@ function Historial({
                 ))}
               </div>
             )}
-            <Accion to={accion.to}>{accion.texto}</Accion>
+            {accion && <Accion to={accion.to}>{accion.texto}</Accion>}
           </div>
         }
       />

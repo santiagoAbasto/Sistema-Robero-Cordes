@@ -105,9 +105,51 @@ class TelefonoPrincipalHojaConNombreYBajaTest extends TestCase
         $this->assertCount(0, $this->getJson('/api/empresas?buscar=CERRADA')->json('data'));
         $this->assertCount(1, $this->getJson('/api/empresas?buscar=CERRADA&inactivas=1')->json('data'));
 
+        // Con ?con_inactivas=1 salen las dos clases, para poder verla.
+        $this->assertCount(1, $this->getJson('/api/empresas?buscar=CERRADA&con_inactivas=1')->json('data'));
+
         $this->postJson("/api/empresas/{$empresa->id}/restaurar")->assertOk();
 
         $this->assertCount(1, $this->getJson('/api/empresas?buscar=CERRADA')->json('data'));
         $this->assertCount(0, $this->getJson('/api/empresas?buscar=CERRADA&inactivas=1')->json('data'));
+    }
+
+    public function test_a_una_empresa_inactiva_no_se_le_cotiza_pero_se_ve_su_historia(): void
+    {
+        $empresa = Empresa::create(['nombre' => 'CERRADA SA']);
+        $vieja = Consulta::create([
+            'empresa_id' => $empresa->id, 'tipo' => 'Cotizacion', 'fecha' => '2026-09-01',
+            'estado' => 'Borrador', 'usuario_id' => $this->usuario->id,
+        ]);
+        ConsultaLinea::create(['consulta_id' => $vieja->id, 'orden' => 1, 'descripcion' => 'Barra', 'cantidad' => 1, 'precio_unitario' => 10, 'importe' => 10]);
+        $this->postJson("/api/consultas/{$vieja->id}/emitir")->assertOk();
+
+        $this->postJson("/api/empresas/{$empresa->id}/archivar")->assertOk();
+
+        // La historia se ve.
+        $this->getJson("/api/empresas/{$empresa->id}")->assertOk()->assertJsonPath('data.activa', false);
+        $this->getJson("/api/consultas/{$vieja->id}")->assertOk();
+
+        // Cotizaciones y pedidos nuevos, no.
+        $nueva = ['tipo' => 'Cotizacion', 'fecha' => '2026-11-03', 'lineas' => [['descripcion' => 'Barra']]];
+        $this->postJson("/api/empresas/{$empresa->id}/consultas", $nueva)->assertStatus(422);
+        $this->postJson("/api/empresas/{$empresa->id}/consultas", ['tipo' => 'Pedido'] + $nueva)->assertStatus(422);
+        // Ni una revision de las que ya tenia.
+        $this->postJson("/api/consultas/{$vieja->id}/revision")->assertStatus(422);
+        // Ni copiarle una de otra empresa.
+        $otra = Empresa::create(['nombre' => 'ACTIVA SA']);
+        $deOtra = Consulta::create([
+            'empresa_id' => $otra->id, 'tipo' => 'Cotizacion', 'fecha' => '2026-11-03',
+            'estado' => 'Borrador', 'usuario_id' => $this->usuario->id,
+        ]);
+        $this->postJson("/api/consultas/{$deOtra->id}/copiar", ['empresas' => [$empresa->id]])->assertStatus(422);
+
+        // Una observacion si: anotar por que cerro es parte de la historia.
+        $this->postJson("/api/empresas/{$empresa->id}/consultas", ['tipo' => 'Observacion', 'fecha' => '2026-11-03', 'texto' => 'Cerró en octubre'])
+            ->assertSuccessful();
+
+        // Reactivada, vuelve a poder cotizarse.
+        $this->postJson("/api/empresas/{$empresa->id}/restaurar")->assertOk();
+        $this->postJson("/api/empresas/{$empresa->id}/consultas", $nueva)->assertSuccessful();
     }
 }

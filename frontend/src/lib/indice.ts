@@ -21,6 +21,8 @@ export interface FiltrosEmpresas {
   con_mail?: boolean
   /** Solo las que se dieron de baja (la empresa cerró). */
   inactivas?: boolean
+  /** Activas e inactivas juntas, cada inactiva con su marca. */
+  con_inactivas?: boolean
 }
 
 function limpiar<T extends object>(params: T): Record<string, string> {

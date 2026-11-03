@@ -31,10 +31,28 @@ use Illuminate\Validation\ValidationException;
 /** Carga y modificación de cotizaciones, pedidos y observaciones. */
 class ConsultaEscrituraController extends Controller
 {
+    /**
+     * Una empresa dada de baja se ve —con su historia— pero no se le cotiza
+     * (pedido del cliente, 03-11-2026). Las observaciones sí: anotar por qué
+     * cerró o una llamada es parte de la historia, no una cotización nueva.
+     */
+    private function soloSiLaEmpresaEstaActiva(Empresa $empresa): void
+    {
+        abort_unless(
+            $empresa->activa,
+            422,
+            'Esta empresa está dada de baja: se puede ver su historia pero no cargarle cotizaciones. Reactivala desde su ficha para cotizar.',
+        );
+    }
+
     public function store(Request $request, Empresa $empresa)
     {
         $this->soloSiPuedeModificar($request);
         $datos = $this->validar($request);
+
+        if ($datos['tipo'] !== 'Observacion') {
+            $this->soloSiLaEmpresaEstaActiva($empresa);
+        }
 
         $consulta = DB::transaction(function () use ($empresa, $datos, $request) {
             $consulta = $empresa->consultas()->make($this->soloCabecera($datos));
@@ -196,6 +214,9 @@ class ConsultaEscrituraController extends Controller
             ], 409);
         }
 
+        $consulta->loadMissing('empresa');
+        $this->soloSiLaEmpresaEstaActiva($consulta->empresa);
+
         $consulta->load('lineas', 'condiciones');
 
         $revision = DB::transaction(function () use ($consulta, $request) {
@@ -317,6 +338,10 @@ class ConsultaEscrituraController extends Controller
             'con_precios' => ['boolean'],
         ]);
         $conPrecios = $request->boolean('con_precios', true);
+
+        foreach (Empresa::whereIn('id', $datos['empresas'])->get() as $destino) {
+            $this->soloSiLaEmpresaEstaActiva($destino);
+        }
 
         $consulta->load('lineas', 'condiciones');
 

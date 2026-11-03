@@ -26,7 +26,8 @@ class EmpresaController extends Controller
             ->when(
                 $request->boolean('inactivas'),
                 fn ($q) => $q->where('activa', false),
-                fn ($q) => $q->activas()
+                // Con ?con_inactivas=1 salen todas, cada una marcada como inactiva.
+                fn ($q) => $request->boolean('con_inactivas') ? $q : $q->activas()
             )
             ->buscar($buscar)
             ->conRelacion($request->query('relacion'))
