@@ -223,6 +223,35 @@ class ConsultaEscrituraController extends Controller
     }
 
     /**
+     * Corrige el tipo (Cotizacion <-> Pedido) de una ya emitida.
+     *
+     * El tipo se elige al cargarla y, una vez emitida, el selector queda
+     * bloqueado como el resto de la hoja. Pero el tipo es una clasificacion
+     * —en que seccion aparece—, no algo que vea el cliente en la hoja, y es
+     * facil elegir mal ("Pedido" el tipo se confunde con el "N° de pedido" del
+     * cliente). Si paso, hay que poder corregirlo sin rehacer la cotizacion.
+     * Se cambia en toda la familia de revisiones, que comparten el tipo, para
+     * que no queden R0 y R1 en secciones distintas. Una observacion no se
+     * emite, asi que no entra aca.
+     */
+    public function cambiarTipo(Request $request, Consulta $consulta)
+    {
+        $this->soloSiPuedeModificar($request);
+
+        $datos = $request->validate([
+            'tipo' => ['required', Rule::in(['Cotizacion', 'Pedido'])],
+        ]);
+
+        abort_if($consulta->tipo === 'Observacion', 422, 'Una observacion no cambia de tipo.');
+
+        $raiz = $consulta->raizId();
+        Consulta::where(fn ($q) => $q->whereKey($raiz)->orWhere('revision_de_id', $raiz))
+            ->update(['tipo' => $datos['tipo'], 'updated_at' => now()]);
+
+        return new ConsultaResource($this->recargar($consulta));
+    }
+
+    /**
      * Copia el contenido de una cotizacion en otra.
      *
      * Las lineas con todo lo suyo —lo pedido, las medidas, el calculo, el

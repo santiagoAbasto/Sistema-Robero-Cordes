@@ -33,6 +33,7 @@ import {
   interpretarTexto,
   crearMaterial,
   actualizarMaterial,
+  cambiarTipoDeConsulta,
   nuevaRevision,
   traerConsulta,
   traerEmpresa,
@@ -972,6 +973,29 @@ export default function ConsultaEditor() {
   }
 
   /**
+   * Corregir el tipo de una ya emitida (se eligió mal Cotización/Pedido). El
+   * selector de arriba queda bloqueado al emitir; esto lo cambia sin rehacerla.
+   */
+  const [cambiandoTipo, setCambiandoTipo] = useState(false)
+  async function corregirTipo(nuevo: 'Cotizacion' | 'Pedido') {
+    const comoSe = (t: string) => (t === 'Pedido' ? 'pedido' : 'cotización')
+    if (!window.confirm(`Esta ${comoSe(tipo)} va a pasar a ${comoSe(nuevo)}. ¿Lo cambiamos?`)) return
+
+    setCambiandoTipo(true)
+    setError(null)
+
+    try {
+      await cambiarTipoDeConsulta(Number(consultaId), nuevo)
+      recargar()
+      setAviso(`Ahora figura como ${comoSe(nuevo)}.`)
+    } catch (err) {
+      setError(mensajeDeError(err))
+    } finally {
+      setCambiandoTipo(false)
+    }
+  }
+
+  /**
    * Precarga: se pega el texto del cliente y el sistema propone las líneas.
    *
    * Reemplazan a las que hay. Antes se sumaban, y cada clic agregaba otra
@@ -1323,6 +1347,29 @@ export default function ConsultaEditor() {
       />
 
       {error && <Aviso tono="ambar">{error}</Aviso>}
+
+      {/*
+        Corregir el tipo de una emitida: al emitir, el selector de arriba queda
+        bloqueado, así que si se eligió mal (Cotización donde iba Pedido, o al
+        revés) este es el único lugar para arreglarlo sin rehacerla.
+      */}
+      {emitida && tipo !== 'Observacion' && (
+        <div className="flex flex-wrap items-center gap-2.5 rounded-[12px] border border-line bg-white p-2.5 text-[12.5px] shadow-[0_1px_2px_rgba(16,24,40,.04)]">
+          <span className="pl-1 text-slate-600">
+            Quedó cargada como <b className="text-ink">{tipo === 'Pedido' ? 'Pedido' : 'Cotización'}</b>.
+          </span>
+          <button
+            type="button"
+            onClick={() => corregirTipo(tipo === 'Pedido' ? 'Cotizacion' : 'Pedido')}
+            disabled={cambiandoTipo}
+            className="inline-flex items-center gap-1.5 rounded-[9px] border border-line-strong bg-white px-3 py-1.5 font-semibold text-slate-600 transition-colors hover:bg-app disabled:opacity-60"
+          >
+            {cambiandoTipo
+              ? 'Cambiando…'
+              : `Cambiar a ${tipo === 'Pedido' ? 'cotización' : 'pedido'}`}
+          </button>
+        </div>
+      )}
 
       {/*
         Accesos directos, arriba de todo: reutilizar esta cotización sin tener

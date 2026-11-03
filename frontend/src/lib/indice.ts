@@ -904,6 +904,14 @@ export async function cambiarEstadoConsulta(
   return data.mensaje
 }
 
+/**
+ * Corrige el tipo (Cotización ↔ Pedido) de una cotización ya emitida, cuando
+ * se eligió mal al cargarla. Cambia toda la familia de revisiones.
+ */
+export async function cambiarTipoDeConsulta(id: number, tipo: 'Cotizacion' | 'Pedido') {
+  await api.post(`/consultas/${id}/tipo`, { tipo })
+}
+
 export interface DatosDeLaVenta {
   nro_pedido_interno: string
   fecha_pedido: string
