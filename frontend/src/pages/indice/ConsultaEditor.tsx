@@ -2713,12 +2713,13 @@ function Lineas({
     última ya es una alternativa) y sale debajo, como 1.1, 1.2. Hereda lo
     ofrecido pero sin precio ni pedido: es otra respuesta, no otro renglón.
   */
-  const crearAlternativa = () =>
+  const crearAlternativa = (deClave?: string) =>
     setLineas((p) => {
       if (p.length === 0) return p
 
-      const ultima = p[p.length - 1]
-      const madre = ultima.madreClave ? (p.find((l) => l.clave === ultima.madreClave) ?? ultima) : ultima
+      // La línea que se pidió, o la última si no se dijo cuál.
+      const base = (deClave ? p.find((l) => l.clave === deClave) : null) ?? p[p.length - 1]
+      const madre = base.madreClave ? (p.find((l) => l.clave === base.madreClave) ?? base) : base
 
       const nueva: LineaForm = {
         ...madre,
@@ -2776,6 +2777,7 @@ function Lineas({
               catalogos={catalogos}
               onCambio={(c) => cambiarLinea(l.clave, c)}
               onQuitar={() => setLineas((p) => p.filter((x) => x.clave !== l.clave))}
+              onAlternativa={() => crearAlternativa(l.clave)}
             />
           ))
         })()}
@@ -2789,7 +2791,12 @@ function Lineas({
           {lineas.length > 0 && (
             <>
               <Accion onClick={copiarLaUltima}>+ Copiar la anterior, sin precio</Accion>
-              <Accion onClick={crearAlternativa}>+ Crear alternativa</Accion>
+              {/*
+                Dice de cuál la hace. Antes era "+ Crear alternativa" a secas y
+                siempre la colgaba de la última, sin que se viera por qué.
+                Cada línea tiene la suya arriba, al lado de "Quitar".
+              */}
+              <Accion onClick={() => crearAlternativa()}>+ Alternativa de la ultima linea</Accion>
             </>
           )}
         </div>
@@ -3456,6 +3463,7 @@ function LineaFila({
   catalogos,
   onCambio,
   onQuitar,
+  onAlternativa,
 }: {
   etiqueta: string
   esAlternativa: boolean
@@ -3463,6 +3471,8 @@ function LineaFila({
   catalogos: Catalogos | null
   onCambio: (c: Partial<LineaForm>) => void
   onQuitar: () => void
+  /** Crea una alternativa DE ESTA línea, no de la última de la cotización. */
+  onAlternativa: () => void
 }) {
   const cambiaUnidad =
     Boolean(linea.unidad_factura_id) &&
@@ -3726,6 +3736,18 @@ function LineaFila({
         {linea.no_cotizada && <Chip tono="ambar">No se cotiza</Chip>}
 
         <div className="ml-auto flex items-center gap-3">
+          {/*
+            La alternativa se crea DESDE la línea, no desde el pie.
+
+            Abajo hay un "+ Crear alternativa" que la cuelga de la última
+            línea: con varias cargadas no había forma de hacerle una a la
+            primera. "La linea 1 de las cotizaciones no tiene la posibilidad de
+            crear alternativa, a partir de la linea 2 aparece esa opcion"
+            (Roberto, 03-11-2026).
+          */}
+          {!linea.quitada && (
+            <Accion onClick={onAlternativa}>+ Alternativa</Accion>
+          )}
           <Accion onClick={() => onCambio({ quitada: !linea.quitada })} apagado={!linea.quitada}>
             {linea.quitada ? 'Volver a poner' : 'Quitar de la cotizacion'}
           </Accion>
