@@ -315,4 +315,27 @@ class RevisionesDeCotizacionTest extends TestCase
         $this->assertContains('2026-0001 R0', $numeros);
         $this->assertContains('2026-0001 R1', $numeros);
     }
+
+    /**
+     * La revisión en borrador va al final, no entre la R0 y la R1.
+     *
+     * Roberto, haciendo una R2, vio el borrador entre la 0 y la 1 (04-11-2026):
+     * sin emitir todavía no tiene número (revision = 0, como la R0), así que
+     * caía al medio. La en curso es la más nueva: va última.
+     */
+    public function test_el_borrador_de_revision_va_ultimo(): void
+    {
+        $this->emitir($this->consulta)->assertOk();                   // R0
+        $r1 = Consulta::find($this->revisar($this->consulta->fresh())->json('data.id'));
+        $this->guardar($r1, 90)->assertOk();
+        $this->emitir($r1)->assertOk();                               // R1
+        $this->revisar($r1->fresh())->assertCreated();                // R2 en borrador
+
+        $this->getJson("/api/consultas/{$this->consulta->id}/versiones")
+            ->assertOk()
+            ->assertJsonCount(3)
+            ->assertJsonPath('0.revision', 0)->assertJsonPath('0.emitida', true)
+            ->assertJsonPath('1.revision', 1)->assertJsonPath('1.emitida', true)
+            ->assertJsonPath('2.emitida', false); // el borrador en curso, último
+    }
 }

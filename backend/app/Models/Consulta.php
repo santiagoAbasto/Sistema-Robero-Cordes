@@ -199,6 +199,10 @@ class Consulta extends Model
 
         return static::query()
             ->where(fn ($q) => $q->whereKey($raiz)->orWhere('revision_de_id', $raiz))
+            // La revisión en borrador todavía no tiene número (se asigna al
+            // emitir), así que su `revision` es 0 como la R0 y quedaba entre la
+            // R0 y la R1. Va última: es la nueva, en curso (la futura R2).
+            ->orderByRaw('emitida_el is null')
             ->orderBy('revision')
             ->orderBy('id');
     }
