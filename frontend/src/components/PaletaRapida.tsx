@@ -48,7 +48,8 @@ export default function PaletaRapida({
   const [texto, setTexto] = useState('')
   const [activo, setActivo] = useState(0)
   const campo = useRef<HTMLInputElement>(null)
-  const ultimas = useUltimasVistas()
+  // Las últimas que abrió, con su estado de hoy: se vuelve a preguntar cada vez que se abre la paleta.
+  const ultimas = useUltimasVistas(abierta)
 
   const resultados = useMemo(() => {
     const q = plano(texto.trim())
@@ -106,10 +107,14 @@ export default function PaletaRapida({
     }
   }, [buscado])
 
-  const empresas = useMemo<EmpresaDePaleta[]>(
-    () => (texto.trim() ? encontradas : ultimas.slice(0, 4).map((e) => ({ ...e, activa: true }))),
-    [texto, encontradas, ultimas],
-  )
+  const empresas = useMemo<EmpresaDePaleta[]>(() => {
+    if (texto.trim()) return encontradas
+
+    // Hasta cuatro activas y, al final, hasta dos dadas de baja (las que no se sabe cómo están cuentan como activas).
+    const conEstado = ultimas.map((e) => ({ ...e, activa: e.activa !== false }))
+
+    return [...conEstado.filter((e) => e.activa).slice(0, 4), ...conEstado.filter((e) => !e.activa).slice(0, 2)]
+  }, [texto, encontradas, ultimas])
 
   function ir(item: { to: string }) {
     navigate(item.to)

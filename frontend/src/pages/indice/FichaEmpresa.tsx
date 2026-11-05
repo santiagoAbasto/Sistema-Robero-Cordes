@@ -216,6 +216,7 @@ export default function FichaEmpresa() {
       nombre: empresa.nombre,
       relaciones: empresa.relaciones.filter((r) => r.activa).map((r) => r.relacion),
       localidad: empresa.localidad,
+      activa: empresa.activa,
     })
   }, [empresa])
 

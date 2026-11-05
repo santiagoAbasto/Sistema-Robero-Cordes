@@ -175,11 +175,14 @@ export default function IndiceMenu() {
               >
                 <Link
                   to={`/empresas/${e.id}`}
-                  className="min-w-0 flex-1 text-[12.5px] font-semibold text-ink hover:text-brand-600"
+                  className={`min-w-0 flex-1 text-[12.5px] font-semibold ${
+                    e.activa === false ? 'text-[#b91c1c] hover:text-[#991b1b]' : 'text-ink hover:text-brand-600'
+                  }`}
                 >
                   {e.nombre}
                 </Link>
                 <div className="flex items-center gap-1.5">
+                  {e.activa === false && <Chip tono="rojo">Inactiva</Chip>}
                   {e.relaciones.map((r) => (
                     <Chip key={r} tono={r === 'Cliente' ? 'verde' : r === 'Proveedor' ? 'brand' : 'neutro'}>
                       {r}

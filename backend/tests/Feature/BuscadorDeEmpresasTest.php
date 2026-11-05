@@ -107,4 +107,32 @@ class BuscadorDeEmpresasTest extends TestCase
 
         $this->assertSame(['BBB ACTIVA SA'], $nombres);
     }
+
+    /**
+     * Las últimas empresas que se abrieron (⌘K y menú del Índice) se consultan por número para ver cómo están HOY.
+     *
+     * Una empresa se puede dar de baja después de haberla abierto: lo que se guardó al visitarla ya no vale. Con las
+     * inactivas pedidas, vuelven marcadas; las que no se pidieron por número no vienen.
+     */
+    public function test_se_puede_pedir_un_grupo_de_empresas_por_numero_con_su_estado_de_hoy(): void
+    {
+        Sanctum::actingAs(User::factory()->create(['role' => 'Administrador']));
+
+        $activa = Empresa::create(['nombre' => 'ALFA SA']);
+        $cerrada = Empresa::create(['nombre' => 'BETA CERRADA SA', 'activa' => false]);
+        $otra = Empresa::create(['nombre' => 'GAMMA SA']);
+
+        $datos = $this->getJson("/api/empresas?con_inactivas=1&ids={$activa->id},{$cerrada->id}")->assertOk()->json('data');
+
+        $this->assertSame(['ALFA SA', 'BETA CERRADA SA'], array_column($datos, 'nombre'));
+        $this->assertSame([true, false], array_column($datos, 'activa'));
+        $this->assertNotContains($otra->id, array_column($datos, 'id'));
+
+        // Sin pedir las inactivas, la cerrada no viene: es lo que esconde el listado común.
+        $this->assertSame(['ALFA SA'], array_column($this->getJson("/api/empresas?ids={$activa->id},{$cerrada->id}")->json('data'), 'nombre'));
+
+        // Números que no son números no rompen nada ni traen otras empresas.
+        $this->getJson('/api/empresas?con_inactivas=1&ids=abc,,-1,0')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/empresas?con_inactivas=1&ids=0')->assertOk()->assertJsonCount(0, 'data');
+    }
 }

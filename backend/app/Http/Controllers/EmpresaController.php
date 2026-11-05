@@ -30,6 +30,13 @@ class EmpresaController extends Controller
                 fn ($q) => $request->boolean('con_inactivas') ? $q : $q->activas()
             )
             ->buscar($buscar)
+            // Un grupo de empresas por número (?ids=3,7,12): las últimas que se abrieron, para ver cómo están HOY.
+            ->when($request->has('ids'), fn ($q) => $q->whereIn('id', collect(explode(',', (string) $request->query('ids')))
+                ->map(fn ($id) => (int) trim($id))
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->take(25)
+                ->all()))
             ->conRelacion($request->query('relacion'))
             ->when($request->query('rubro_id'), fn ($q, $v) => $q->where('rubro_id', $v))
             ->when($request->query('localidad_id'), fn ($q, $v) => $q->where('localidad_id', $v))

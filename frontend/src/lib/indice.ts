@@ -23,6 +23,8 @@ export interface FiltrosEmpresas {
   inactivas?: boolean
   /** Activas e inactivas juntas, cada inactiva con su marca. */
   con_inactivas?: boolean
+  /** Un grupo de empresas por número, "3,7,12": las últimas que se abrieron, para ver cómo están hoy. */
+  ids?: string
 }
 
 function limpiar<T extends object>(params: T): Record<string, string> {
@@ -365,6 +367,8 @@ export interface EmpresaVista {
   nombre: string
   relaciones: string[]
   localidad: string | null
+  /** Si está dada de baja. Lo que se guardó al abrirla puede estar viejo: se vuelve a preguntar (ver useUltimasVistas). */
+  activa?: boolean
 }
 
 export function leerUltimasVistas(): EmpresaVista[] {
@@ -386,10 +390,54 @@ export function anotarVisita(empresa: EmpresaVista): void {
   }
 }
 
-export function useUltimasVistas() {
+/** Las activas primero y las dadas de baja al final, cada grupo en el orden en que se abrieron. */
+function activasPrimero(vistas: EmpresaVista[]): EmpresaVista[] {
+  return [...vistas.filter((e) => e.activa !== false), ...vistas.filter((e) => e.activa === false)]
+}
+
+/**
+ * Las últimas empresas que se abrieron, con su estado de HOY.
+ *
+ * Una empresa se puede dar de baja después de haberla abierto —o la puede dar de baja otra persona—, así que lo que se guardó al
+ * visitarla no alcanza: cada vez que se activa (la pantalla se abre, o se abre la paleta) se le pregunta al servidor cómo está cada
+ * una. Las dadas de baja salen al final y marcadas; las que ya no existen se sacan. Si no hay conexión, queda lo guardado.
+ *
+ * @param activo  false mientras no se está mirando (la paleta cerrada): no se pregunta nada.
+ */
+export function useUltimasVistas(activo = true) {
   const [vistas, setVistas] = useState<EmpresaVista[]>([])
 
-  useEffect(() => setVistas(leerUltimasVistas()), [])
+  useEffect(() => {
+    if (!activo) return
+
+    const guardadas = leerUltimasVistas()
+    setVistas(activasPrimero(guardadas))
+
+    if (guardadas.length === 0) return
+
+    let vigente = true
+
+    buscarEmpresas({ ids: guardadas.map((e) => e.id).join(','), con_inactivas: true })
+      .then((r) => {
+        if (!vigente) return
+
+        const hoyEstan = new Map(r.data.map((e) => [e.id, e]))
+
+        setVistas(
+          activasPrimero(
+            guardadas
+              .filter((e) => hoyEstan.has(e.id))
+              .map((e) => ({ ...e, nombre: hoyEstan.get(e.id)!.nombre, activa: hoyEstan.get(e.id)!.activa })),
+          ),
+        )
+      })
+      // Sin conexión o con un error: queda lo que se guardó, que es una comodidad y no un dato.
+      .catch(() => undefined)
+
+    return () => {
+      vigente = false
+    }
+  }, [activo])
 
   return vistas
 }
