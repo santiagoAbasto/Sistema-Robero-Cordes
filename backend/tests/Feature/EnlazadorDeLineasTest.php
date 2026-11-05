@@ -478,4 +478,52 @@ class EnlazadorDeLineasTest extends TestCase
         $this->assertNull($e->elegir('16MO3 CHAPA 8 X 2000 X 6000 MM', false));
         $this->assertSame(42, $e->elegir('16MO3 CHAPA 8 X 2000 X 6000 MM'));
     }
+
+    /**
+     * "Cobre" o "plata" dichos de pasada no sueltan un enlace bueno; pegados al material, si.
+     *
+     * Hallado en el informe en seco de la VM: «CLIENTE DE MAR DEL PLATA: INCONEL 600», «MATRIZ DE EXTRUSION DE
+     * COBRE: INCONEL 718» o «COLOR PLATA» perdian un enlace correcto. En cambio «MONEL Y COBRE» o «PLATA 99.85 +
+     * 0.15 NIQUEL» nombran dos materiales y no se adivina.
+     */
+    public function test_cobre_o_plata_de_pasada_no_sueltan_un_enlace_bueno(): void
+    {
+        $e = new EnlazadorDeLineas([
+            [1, 'Inconel 600'], [2, 'Poliester'], [3, 'Titanio Grado 2'], [3, 'TIT GR2', true],
+            [4, 'Cobre Niquel 90/10'], [5, 'Cu-Ni 45'], [6, 'Monel'], [7, 'Niquel'], [8, 'Latón'],
+            [20, 'Titanio Grado 5'], [21, 'Zinc'], [22, 'Plomo'], [23, 'Estano'], [24, 'Hafnio'], [25, 'Renio'],
+            [26, 'Niobio'], [27, 'Tantalio'], [28, 'Molibdeno'], [29, 'Cobalto'],
+            // Como en el catalogo real, "Cobre" y "Plata" son materiales por si solos.
+            [30, 'Cobre'], [31, 'Plata'],
+        ], ruidoExtra: ['cobre', 'plata', 90, 45]);
+
+        // Lugares y colores: no es el metal.
+        $this->assertSame(1, $e->elegir('COTIZAMOS PARA CLIENTE DE MAR DEL PLATA: INCONEL 600 Ø25.4MM, X KG (+IVA)'));
+        $this->assertSame(2, $e->elegir('POLIESTER METALIZADO 23 MICRONES X 635 MM COLOR PLATA P/KG'));
+        // De pasada: tras un ":" o un ")" ya es otra frase.
+        $this->assertSame(1, $e->elegir('PARA MATRIZ DE EXTRUSION DE COBRE: INCONEL 600 DISCO Ø101.6 X 30MM, 1 C/U'));
+        $this->assertSame(3, $e->elegir('(ANODO INSOLUBLE PARA COBRE ACIDO) 15-4-93 4 GANCHOS TIT GR2 C/U'));
+        $this->assertSame(8, $e->elegir('LA PROXIMA COMPRA IRA CON 8% AUMENTO POR AUMENTO DEL COBRE 13.7.94: LATON 0,20 MM P/KG'));
+
+        // Pegado al material: son dos materiales.
+        $this->assertSame(6, $e->elegir('COTIZO PIEZAS EN MONEL Y COBRE PARA TALLERES', false));
+        $this->assertNull($e->elegir('COTIZO PIEZAS EN MONEL Y COBRE PARA TALLERES'));
+        $this->assertSame(7, $e->elegir('COTIZA PLATA 99.85 + 0.15 NIQUEL 13 C/U CHAPA 3 X 100 X 100 MM', false));
+        $this->assertNull($e->elegir('COTIZA PLATA 99.85 + 0.15 NIQUEL 13 C/U CHAPA 3 X 100 X 100 MM'));
+        $this->assertNull($e->elegir('14-3-97 2.600 KG NIQUEL ALEACION EN COBRE P/KG'));
+    }
+
+    /** "CUPRO NIQUEL 90/10" es cobre niquel 90/10: el enlace bueno sigue, y "CUNI 90/10" no cae en "Cu-Ni 45". */
+    public function test_cupro_es_cobre(): void
+    {
+        $e = new EnlazadorDeLineas([
+            [4, 'Cobre Niquel 90/10'], [5, 'Cu-Ni 45'],
+            [20, 'Titanio Grado 5'], [21, 'Zinc'], [22, 'Plomo'], [23, 'Estano'], [24, 'Hafnio'], [25, 'Renio'],
+            [26, 'Niobio'], [27, 'Tantalio'], [28, 'Molibdeno'], [29, 'Cobalto'],
+        ], ruidoExtra: ['cobre', 'plata', 90, 45]);
+
+        $this->assertSame(4, $e->elegir('TUBO CUPRO NIQUEL 90/10, W.NO. 2.0872 840 MTS 15.88 X 2.70 MM'));
+        $this->assertSame(4, $e->elegir('OFRECITO TUBO CUPRO-NIQUEL 90/10 Ø19.05 X 1.5MM POR KG'));
+        $this->assertNull($e->elegir('COTIZADO BARRA CUNI 70/30 DIA. 125 X 500 MM, X KG (+IVA)'));
+    }
 }

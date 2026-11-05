@@ -92,6 +92,16 @@ class EnlazadorDeLineas
     private array $nombranMaterial = [];
 
     /**
+     * Los tokens de todos los nombres y alias de cada material.
+     *
+     * @var array<int, array<string, true>>
+     */
+    private array $tokensDelMaterial = [];
+
+    /** Palabras que no cuentan al medir cuan cerca esta una de otra: "COBRE Y TUNGSTENO", "PLATA CON 10% CADMIO". */
+    private const CONECTORES = ['de', 'del', 'con', 'y', 'e', 'en', 'al', 'a', 'o', 'u', 'por', 'para', 'el', 'la', 'los', 'las', 'sobre'];
+
+    /**
      * Los materiales que el catalogo deja marcados para no usar: pueden bloquear una linea dudosa, no ganarla.
      *
      * @var array<int, true>
@@ -208,6 +218,8 @@ class EnlazadorDeLineas
 
             $palabras = array_flip($this->palabras($texto));
 
+            $this->tokensDelMaterial[(int) $id] = ($this->tokensDelMaterial[(int) $id] ?? []) + array_flip($tokens);
+
             $this->candidatos[] = [
                 'id' => (int) $id,
                 'tokens' => array_flip($tokens),
@@ -305,14 +317,19 @@ class EnlazadorDeLineas
         $mejor = $mejores[0];
 
         /*
-          Un texto que nombra cobre o plata y un ganador que no: son dos materiales.
+          Un texto que nombra cobre o plata pegado al material, y un ganador que no los dice: son dos materiales.
 
-          "COBRE TUNGSTENO 20/80" no es tungsteno: es otro material, que el catalogo
-          trae con su composicion ("Cobre Tungsteno 80W/20Cu"). Si el ganador no dice
-          lo que el texto dice, la linea queda sin enlazar.
+          "COBRE TUNGSTENO 20/80" no es tungsteno: es otro material, que el catalogo trae con su
+          composicion ("Cobre Tungsteno 80W/20Cu"). Lo mismo "MONEL Y COBRE" o "PLATA 99.85 + 0.15
+          NIQUEL". Pero "ANODO PARA COBRE ACIDO) ... TI GR 2" o "MATRIZ DE EXTRUSION DE COBRE: INCONEL
+          718" dicen cobre de pasada: el material es el titanio o el inconel, y el enlace es bueno.
         */
-        if ($reglasDeHoy && array_diff_key(array_intersect_key($dichas, $this->nombranMaterial), $this->palabrasDelMaterial[$mejor['id']] ?? []) !== []) {
-            return null;
+        if ($reglasDeHoy) {
+            $ajenas = array_diff_key(array_intersect_key($dichas, $this->nombranMaterial), $this->palabrasDelMaterial[$mejor['id']] ?? []);
+
+            if ($ajenas !== [] && $this->estaPegadoAlMaterial($descripcion, $ajenas, $this->tokensDelMaterial[$mejor['id']] ?? [])) {
+                return null;
+            }
         }
 
         /*
@@ -362,6 +379,55 @@ class EnlazadorDeLineas
         }
 
         return $mejor['id'];
+    }
+
+    /**
+     * Si alguna de estas palabras ("cobre", "plata") esta pegada a una del material elegido: hasta dos
+     * palabras de por medio, sin contar numeros, conectores ni ruido, y sin cruzar ":", ";", "(" ni ")".
+     *
+     * @param  array<string, mixed>  $ajenas  las palabras de otro material que el texto dice
+     * @param  array<string, true>  $delMaterial  los tokens del material elegido
+     */
+    private function estaPegadoAlMaterial(string $descripcion, array $ajenas, array $delMaterial): bool
+    {
+        $t = $this->plano($descripcion);
+        preg_match_all('/[a-z0-9]+/', $t, $m, PREG_OFFSET_CAPTURE);
+        $palabras = $m[0];
+
+        foreach ($palabras as $i => [$palabra]) {
+            if (! isset($ajenas[$palabra])) {
+                continue;
+            }
+
+            foreach ([-1, 1] as $sentido) {
+                $saltadas = 0;
+
+                for ($j = $i + $sentido; isset($palabras[$j]); $j += $sentido) {
+                    [$antes, $despues] = $sentido > 0 ? [$palabras[$j - 1], $palabras[$j]] : [$palabras[$j], $palabras[$j + 1]];
+                    $entre = substr($t, $antes[1] + strlen($antes[0]), $despues[1] - $antes[1] - strlen($antes[0]));
+
+                    if (preg_match('/[:;()]/', $entre)) {
+                        break;
+                    }
+
+                    $otra = $palabras[$j][0];
+
+                    if (isset($delMaterial[$otra])) {
+                        return true;
+                    }
+
+                    if (preg_match('/^\d/', $otra) || in_array($otra, self::CONECTORES, true) || isset($this->ruido[$otra])) {
+                        continue;
+                    }
+
+                    if (++$saltadas > 2) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -507,6 +573,15 @@ class EnlazadorDeLineas
         $t = mb_strtolower($texto);
         $t = strtr($t, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u',
             'ü' => 'u', 'ñ' => 'n']);
+
+        /*
+          "MAR DEL PLATA", "LA PLATA" y "COLOR PLATA" no son el metal: un cliente de Mar del Plata que pide
+          un Inconel no esta pidiendo plata. Sin esto, "plata" dicha de pasada soltaba enlaces buenos.
+        */
+        $t = preg_replace('/\b(?:la|del)\s+plata\b|\bcolor(?:es)?\s+(?:de\s+)?(?:plata|cobre)\b/', ' ', $t);
+
+        // "CUPRO NIQUEL 90/10" es cobre niquel 90/10.
+        $t = preg_replace('/\bcupro[\s-]+(?=[a-z])/', 'cobre ', $t);
 
         /*
           El simbolo de diametro se va, no se convierte en letra.
