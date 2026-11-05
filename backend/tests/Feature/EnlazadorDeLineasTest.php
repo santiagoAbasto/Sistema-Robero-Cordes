@@ -310,6 +310,34 @@ class EnlazadorDeLineasTest extends TestCase
     }
 
     /**
+     * Sin la letra no se adivina cual es: "ACERO CORTEN" no es la A por defecto.
+     *
+     * La A se tomaba por la preposicion "a" y no se exigia, asi que la B (que si exigia su letra) quedaba
+     * afuera y toda "ACERO CORTEN CHAPA 5 X 1500" caia en "Acero Corten A". Lo mismo en "ASTM A204 A/B/C".
+     */
+    public function test_sin_la_letra_del_grado_no_se_elige_el_a_por_defecto(): void
+    {
+        $e = $this->catalogoConFamilias();
+
+        $this->assertNull($e->elegir('ACERO CORTEN CHAPA 10 X 2000 X 8000MM, 3 C/U (+IVA)'));
+        $this->assertNull($e->elegir('ACERO CORTEN'));
+
+        $entradas = [
+            [1, 'Acero ASTM A204 A'], [2, 'Acero ASTM A204 B'], [3, 'Acero ASTM A204 C'],
+            [4, 'Acero ASTM A516 Gr 70'], [5, 'Aluminio 6061'], [6, 'Berilio'], [7, 'Hastelloy X'],
+        ];
+        foreach (['Plomo', 'Zinc', 'Estaño', 'Litio', 'Telurio', 'Bismuto', 'Cadmio', 'Galio', 'Indio', 'Niobio', 'Tantalio', 'Circonio'] as $i => $nombre) {
+            $entradas[] = [100 + $i, $nombre];
+        }
+        $a204 = new EnlazadorDeLineas($entradas);
+
+        $this->assertNull($a204->elegir('ACERO ASTM A204 CHAPA 10 X 1500 X 3000 MM C/U'));
+        $this->assertSame(1, $a204->elegir('ACERO ASTM A204 A CHAPA 10 X 1500 X 3000 MM C/U'));
+        $this->assertSame(2, $a204->elegir('ACERO ASTM A204 B CHAPA 10 X 1500 X 3000 MM C/U'));
+        $this->assertSame(3, $a204->elegir('ACERO ASTM A204 C CHAPA 10 X 1500 X 3000 MM C/U'));
+    }
+
+    /**
      * Un catalogo con "Cobre" y "Plata" dentro de nombres de otros materiales, y con las palabras de las
      * formas como ruido ("ALAMBRE CON ALMA DE COBRE", "FUNDENTE SOLD. PLATA"), como en el catalogo real.
      */

@@ -456,7 +456,7 @@ class EnlazadorDeLineas
 
     /**
      * Las letras sueltas de un nombre: la X de "Hastelloy X", la W de "Hastelloy W". No son tokens (una letra sola no
-     * identifica nada) pero son el grado, y el texto tiene que decirlas. Las conjunciones y las unidades ("98°C") no cuentan.
+     * identifica nada) pero son el grado, y el texto tiene que decirlas. Las unidades ("98°C") no cuentan.
      *
      * @param  array<string, mixed>  $palabras
      * @return array<string, true>
@@ -469,8 +469,9 @@ class EnlazadorDeLineas
         foreach (array_keys($palabras) as $palabra) {
             $palabra = (string) $palabra;
 
-            // La letra que sigue a un numero es una unidad ("98°C"), no un grado.
-            if (strlen($palabra) === 1 && ctype_alpha($palabra) && ! ctype_digit($anterior) && ! in_array($palabra, ['a', 'e', 'o', 'u', 'y'], true)) {
+            // La letra que sigue a un numero es una unidad ("98°C"), no un grado. La "A" de "Corten A" tambien es un
+            // grado: sin decirla, "ACERO CORTEN" caia en la A solo porque la B exigia su letra.
+            if (strlen($palabra) === 1 && ctype_alpha($palabra) && ! ctype_digit($anterior)) {
                 $letras[$palabra] = true;
             }
 
