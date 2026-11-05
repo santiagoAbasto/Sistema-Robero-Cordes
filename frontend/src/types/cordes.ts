@@ -49,6 +49,8 @@ export interface AnalisisDeCordes {
   vistas: { vista: Grano; titulo: string; cantidad: number; pedido: Pedido }[]
   /** Cuando no hay nada: qué filtro sobra. */
   relajar: { etiqueta: string; cantidad: number; pedido: Pedido }[]
+  /** false: sólo lo básico (cuántas hay y cuánto suman); el reparto y las vistas se piden aparte y llegan después. */
+  completo?: boolean
 }
 
 export interface RespuestaDeCordes {

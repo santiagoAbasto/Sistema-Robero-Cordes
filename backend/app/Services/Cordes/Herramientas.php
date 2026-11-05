@@ -226,6 +226,27 @@ final class Herramientas
         ];
     }
 
+    /**
+     * Sólo la cuenta de lo que cumple (una pasada sobre los datos, sin armar la página ni las cifras): para comparar listas y contar de a muchas.
+     *
+     * @param  array<string, mixed>  $filtros
+     * @return array{total: int, filtros_aplicados: array<string, string>}|array{error: string}
+     */
+    public function contar(string $vista, array $filtros): array
+    {
+        try {
+            [$pedido, , $f] = $this->filtrosDe(['filtros' => $filtros], $vista, 1);
+
+            return ['total' => $this->buscador->contar($f), 'filtros_aplicados' => $pedido];
+        } catch (HttpResponseException|ValidationException|HttpException $e) {
+            return ['error' => 'El pedido no es válido.'];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['error' => 'No pude contar eso.'];
+        }
+    }
+
     /** @return array<string, mixed> */
     private function agrupar(array $a): array
     {

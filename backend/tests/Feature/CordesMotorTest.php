@@ -439,7 +439,8 @@ class CordesMotorTest extends TestCase
         $this->assertStringContainsString('entre **10,00** y **30,00**; promedio **20,00**', $r['mensaje']);
         $this->assertStringContainsString('el último fue **30,00** (10/03/2026)', $r['mensaje']);
         $this->assertSame('renglones', $r['pedido']['grano']);
-        $this->assertNotNull($r['analisis']);
+        // La respuesta sale sola, al instante; el reparto y las vistas las pide la pantalla aparte (POST /api/cordes/analizar).
+        $this->assertNull($r['analisis']);
     }
 
     public function test_sin_permiso_de_importes_no_hay_precios(): void

@@ -15,6 +15,7 @@ use App\Models\Provincia;
 use App\Models\Unidad;
 use App\Models\User;
 use App\Services\Buscador\Catalogo;
+use App\Services\Cordes\Analista;
 use App\Services\Cordes\Conocimiento;
 use App\Services\Cordes\Cordes;
 use App\Services\Cordes\Entiende;
@@ -627,6 +628,43 @@ class CordesOrquestadorTest extends TestCase
         $this->assertStringContainsString('Pregunta: Peso de una barra', $salida);
         $this->assertStringNotContainsString('ZETA RESERVADA', $salida);
         $this->assertSame('', (string) config('services.openai.key'), 'la medición con el código solo no deja la IA apagada para el resto');
+    }
+
+    public function test_el_analisis_es_en_dos_tiempos_basico_rapido_y_completo_aparte(): void
+    {
+        $this->monel();
+        $e = Empresa::create(['nombre' => 'ALFA SA', 'activa' => true]);
+        $this->cotizado($e, '2026-03-01', 410);
+        $this->cotizado($e, '2026-04-01', 420);
+        $pedido = ['grano' => 'renglones', 'material' => 'Monel 400'];
+
+        $basico = (new Analista($this->admin))->basico($pedido);
+        $this->assertFalse($basico['completo']);
+        $this->assertSame(2, $basico['total']);
+        $this->assertSame('Encontré 2 renglones de material', $basico['titulo']);
+        $this->assertSame([], $basico['destacados']);
+        $this->assertSame([], $basico['vistas'], 'lo caro se pide aparte');
+
+        $completo = $this->postJson('/api/cordes/analizar', ['pedido' => $pedido])->assertOk()->json('analisis');
+        $this->assertTrue($completo['completo']);
+        $this->assertSame(2, $completo['total']);
+        $this->assertNotEmpty($completo['vistas'], 'cuántas hay si se cambia de vista');
+    }
+
+    public function test_una_respuesta_con_un_precio_no_espera_al_analisis_pero_una_lista_lleva_lo_basico(): void
+    {
+        $this->monel();
+        $e = Empresa::create(['nombre' => 'ALFA SA', 'activa' => true]);
+        $this->cotizado($e, '2026-03-01', 410);
+
+        $precio = (new Cordes($this->admin))->responder('a cuánto cotizamos monel');
+        $this->assertNotNull($precio['pedido']);
+        $this->assertNull($precio['analisis']);
+
+        $lista = (new Cordes($this->admin))->responder('cotizaciones sin respuesta de este mes');
+        $this->assertSame('reglas', $lista['fuente']);
+        $this->assertNotNull($lista['analisis']);
+        $this->assertFalse($lista['analisis']['completo']);
     }
 
     public function test_el_prompt_le_ensena_a_orquestar(): void

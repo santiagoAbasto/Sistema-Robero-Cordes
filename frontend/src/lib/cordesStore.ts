@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { Turno } from '../types/cordes'
-import { ErrorDeCordes, historialParaCordes, preguntarEnVivo, type ContextoDeCordes } from './cordes'
+import { analizarPedido, ErrorDeCordes, historialParaCordes, preguntarEnVivo, type ContextoDeCordes } from './cordes'
 
 /* ---------------------------------------------------------------------------
    La conversación con Cordes, FUERA de la pantalla.
@@ -158,6 +158,8 @@ export async function preguntar(texto: string, contexto?: ContextoDeCordes): Pro
       este.signal,
     )
     const turno = agregarTurno({ rol: 'cordes', respuesta, pregunta: limpio, aplicado: false })
+    // La respuesta ya está en pantalla; lo que cuesta calcular (por dónde se reparte, cuántas hay en otras vistas) llega después.
+    completarAnalisis(turno)
     // Si la pantalla se cerró mientras pensaba, la respuesta ya está completa: no se la "escribe" al volver.
     poner({ escribiendoId: pantallas > 0 ? turno.id : null }, false)
   } catch (e) {
@@ -170,3 +172,31 @@ export async function preguntar(texto: string, contexto?: ContextoDeCordes): Pro
     }
   }
 }
+
+/* ----------------------------------------------------- el análisis, después */
+
+const pendientes = new Set<number>()
+
+/**
+ * El análisis completo de una respuesta (reparto y vistas) se pide aparte y se suma al turno cuando llega: con muchos datos son varias
+ * pasadas, y nadie tiene que esperarlas para ver un precio o un peso. Si falla, la respuesta queda como estaba.
+ */
+export function completarAnalisis(turno: Turno | undefined) {
+  if (!turno || turno.rol !== 'cordes' || !turno.respuesta.pedido || turno.respuesta.analisis?.completo || pendientes.has(turno.id)) return
+
+  pendientes.add(turno.id)
+  const id = turno.id
+
+  analizarPedido(turno.respuesta.pedido)
+    .then((analisis) => {
+      const actual = estado.turnos.find((t) => t.id === id)
+      if (actual?.rol === 'cordes') actualizarTurno(id, { respuesta: { ...actual.respuesta, analisis } })
+    })
+    .catch(() => {
+      /* sin análisis completo: la respuesta ya se ve */
+    })
+    .finally(() => pendientes.delete(id))
+}
+
+// Si se recargó la página antes de que llegara, se vuelve a pedir lo de la última respuesta.
+setTimeout(() => completarAnalisis(estado.turnos.at(-1)), 0)

@@ -235,14 +235,18 @@ final class Cordes
     /**
      * Las cifras, los atajos y los "sin este filtro hay N" salen del código, sobre el pedido final.
      *
+     * Una lista (la respuesta ES la cuenta) lleva adentro lo básico, que es rápido. En todo lo demás (un precio, un peso, una comparación) la
+     * respuesta sale al instante y la pantalla pide el análisis completo aparte (POST /api/cordes/analizar) y lo suma cuando llega: así nadie espera
+     * diez pasadas sobre 230.000 renglones para ver un precio.
+     *
      * @param  array<string, mixed>  $r
      * @return array<string, mixed>
      */
     private function conAnalisis(array $r): array
     {
-        if (($r['pedido'] ?? null) !== null && ($r['verificada'] ?? true)) {
+        if (($r['pedido'] ?? null) !== null && ($r['verificada'] ?? true) && ($r['fuente'] ?? '') === 'reglas') {
             try {
-                $r['analisis'] = (new Analista($this->usuario))->analizar($r['pedido']);
+                $r['analisis'] = (new Analista($this->usuario))->basico($r['pedido']);
             } catch (\Throwable $e) {
                 report($e);
             }

@@ -373,7 +373,7 @@ final class Descompone
         }
 
         $vista = $r['borrador']['vista'] ?? $this->vistaDeLaFrase($texto);
-        $res = $this->h->ejecutar('buscar', ['vista' => $vista, 'filtros' => $filtros, 'limite' => 1]);
+        $res = $this->h->contar($vista, $filtros);
 
         if (isset($res['error'])) {
             return null;
@@ -1306,7 +1306,7 @@ final class Descompone
 
             foreach ([$fa2, $fb2] as $k => $filtros) {
                 $this->paso('Contando el lado '.($k + 1).'…');
-                $r = $this->h->ejecutar('buscar', ['vista' => $vista, 'filtros' => $filtros, 'limite' => 1]);
+                $r = $this->h->contar($vista, $filtros);
 
                 if (isset($r['error'])) {
                     continue 2;
