@@ -5,6 +5,7 @@ import { Building2, CornerDownLeft, Search } from 'lucide-react'
 import { NAV_ROUTES } from '../data/navigation'
 import { buscarEmpresas, useDebounce, useUltimasVistas } from '../lib/indice'
 import type { EmpresaVista } from '../lib/indice'
+import { Chip } from './ui'
 
 /* ---------------------------------------------------------------------------
    Ir a cualquier lado escribiendo, sin recorrer el menú.
@@ -20,7 +21,16 @@ import type { EmpresaVista } from '../lib/indice'
    que ese navegador había abierto, que son seis: Roberto escribía "ypf" y no
    aparecía nada porque la había cargado Ricardo, en otra máquina. Parecía un
    problema de permisos y era que la búsqueda nunca salía del navegador.
+
+   LAS EMPRESAS DADAS DE BAJA TAMBIÉN APARECEN, AL FINAL Y EN ROJO. Antes
+   desaparecían: Roberto daba de baja una empresa, la buscaba arriba y no
+   estaba, como si se hubiera borrado. Se piden aparte (las activas por un
+   lado y las dadas de baja por otro) para que salgan siempre, aunque haya
+   muchas activas que coincidan: primero las activas, al final las inactivas.
 --------------------------------------------------------------------------- */
+
+/** Una empresa de la lista: las que se dieron de baja se ven, pero marcadas. */
+type EmpresaDePaleta = EmpresaVista & { activa: boolean }
 
 /** Sin acentos y en minúscula: "fórmulas" tiene que encontrarse con "formulas". */
 function plano(t: string): string {
@@ -54,7 +64,7 @@ export default function PaletaRapida({
     Con el campo vacío, las últimas que abrió: es lo que uno busca casi
     siempre y no cuesta un viaje al servidor. Con texto, las 968.
   */
-  const [encontradas, setEncontradas] = useState<EmpresaVista[]>([])
+  const [encontradas, setEncontradas] = useState<EmpresaDePaleta[]>([])
   const buscado = useDebounce(texto.trim(), 250)
 
   useEffect(() => {
@@ -66,18 +76,27 @@ export default function PaletaRapida({
 
     let vigente = true
 
-    buscarEmpresas({ buscar: buscado })
-      .then((r) => {
+    const aLaLista = (activa: boolean) => (e: { id: number; nombre: string }): EmpresaDePaleta => ({
+      id: e.id,
+      nombre: e.nombre,
+      relaciones: [],
+      localidad: null,
+      activa,
+    })
+
+    Promise.all([
+      buscarEmpresas({ buscar: buscado }),
+      // Las dadas de baja van aparte: si esta consulta falla, las activas se muestran igual.
+      buscarEmpresas({ buscar: buscado, inactivas: true }).catch(() => null),
+    ])
+      .then(([activas, dadasDeBaja]) => {
         if (!vigente) return
 
-        setEncontradas(
-          r.data.slice(0, 6).map((e) => ({
-            id: e.id,
-            nombre: e.nombre,
-            relaciones: [],
-            localidad: null,
-          })),
-        )
+        // Seis activas y, al final, hasta tres dadas de baja.
+        setEncontradas([
+          ...activas.data.slice(0, 6).map(aLaLista(true)),
+          ...(dadasDeBaja?.data ?? []).slice(0, 3).map(aLaLista(false)),
+        ])
       })
       // Que falle la búsqueda no puede trabar la paleta: queda el menú.
       .catch(() => vigente && setEncontradas([]))
@@ -87,8 +106,8 @@ export default function PaletaRapida({
     }
   }, [buscado])
 
-  const empresas = useMemo(
-    () => (texto.trim() ? encontradas.slice(0, 6) : ultimas.slice(0, 4)),
+  const empresas = useMemo<EmpresaDePaleta[]>(
+    () => (texto.trim() ? encontradas : ultimas.slice(0, 4).map((e) => ({ ...e, activa: true }))),
     [texto, encontradas, ultimas],
   )
 
@@ -103,6 +122,7 @@ export default function PaletaRapida({
         tipo: 'empresa' as const,
         label: e.nombre,
         to: `/empresas/${e.id}`,
+        activa: e.activa,
         // "visitada" sólo si es de las últimas que abrió esta persona (campo
         // vacío). Lo que devuelve la búsqueda no es "visitado": Roberto veía
         // "visitada" en empresas que nunca había abierto.
@@ -206,9 +226,15 @@ export default function PaletaRapida({
                       <Building2 size={14} strokeWidth={2} className="shrink-0 text-brand-600" />
                     )}
 
-                    <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">
+                    <span
+                      className={`min-w-0 flex-1 truncate text-[13.5px] ${
+                        item.tipo === 'empresa' && !item.activa ? 'text-[#b91c1c]' : 'text-ink'
+                      }`}
+                    >
                       {item.label}
                     </span>
+
+                    {item.tipo === 'empresa' && !item.activa && <Chip tono="rojo">Inactiva</Chip>}
 
                     {item.tipo === 'menu' && item.seccion && (
                       <span className="shrink-0 text-[11.5px] text-faint">{item.seccion}</span>
