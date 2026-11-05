@@ -599,4 +599,36 @@ class EnlazadorDeLineasTest extends TestCase
         // Que el enlazador de hoy dude no quita el sustento: "Niquel 201" esta dicho aunque haya otro "201" cerca.
         $this->assertTrue($e->sostiene(23, 'PIDE NIQUEL BARRA 1" X 100 MM 1 UN NIQUEL 201 BARRA 38.1 X 200 MM'));
     }
+
+    /**
+     * El grado escrito seguido de las medidas no es una medida: «INCONEL 625 X 58 X 275 MM», «HASTELLOY C-276 X 500 MM»,
+     * «AISI 304 X 0.4 X 100 X 5000» o «INCONEL X-750 MM ALAMBRE».
+     *
+     * Hallado en el segundo informe de la limpieza en la VM: sacar las medidas del texto se llevaba tambien el grado y
+     * soltaba unos veinte enlaces buenos.
+     */
+    public function test_el_grado_escrito_antes_de_las_medidas_se_conserva(): void
+    {
+        $e = new EnlazadorDeLineas([
+            [1, 'Hastelloy C-276'], [2, 'Inconel X-750'], [3, 'Inconel 625'], [4, 'Acero AISI 304'], [4, 'AISI 304', true],
+            [5, 'Inconel 601'], [6, 'Aluminio 7075'], [7, 'Monel 60'], [8, 'Monel 400'], [9, 'Acero AISI 317'], [9, 'AISI 317', true],
+            [20, 'Titanio Grado 2'], [21, 'Titanio Grado 5'], [22, 'Niquel 200'], [23, 'Niquel 201'], [24, 'Molibdeno'],
+            [25, 'Tantalio'], [26, 'Niobio'], [27, 'Hafnio'], [28, 'Renio'], [29, 'Plomo'], [30, 'Estano'],
+        ], ruidoExtra: ['cobre', 'plata', 'chapa', 'barra', 'alambre']);
+
+        // El grado va seguido de las medidas: se conserva.
+        $this->assertSame(1, $e->elegir('COTIZADO HASTELLOY C-276 X 500 MM C/U(+IVA)'));
+        $this->assertSame(2, $e->elegir('4-12-3 3 INCONEL X-750 MM ALAMBRE 3.04 X 1000MM C/U (+IVA)'));
+        $this->assertSame(3, $e->elegir('8 INCONEL 625 X 58 X 275 MM C/U (+IVA)'));
+        $this->assertSame(4, $e->elegir('AISI 304 X 0.4 X 100 X 5000 P/M(+IVA)'));
+        $this->assertSame(5, $e->elegir('COTIZADO CHAPA COMPLETA INCONEL 601 X 3 X 1500 X 2159 P/KG(+IVA)'));
+        $this->assertSame(6, $e->elegir('ENCARGO CHAPA ALUMINIO 7075 X 100 X 1230 P/KG(+IVA)'));
+        $this->assertTrue($e->sostiene(3, '4 INCONEL 625 X 116 X 285 MM C/U (+IVA)'));
+
+        // Pero un numero de la medida que coincide con otro grado no lo respalda: no viene despues de la palabra del material.
+        $this->assertFalse($e->sostiene(7, '14.8.96 MONEL 400 Ø 70 X 1050 MM Y 60 X 105 MM P/KG(+IVA)'));
+        $this->assertFalse($e->sostiene(7, 'MONEL 400 Ø 60 X 250 MM C/U (+IVA)'));
+        $this->assertFalse($e->sostiene(9, 'COTIZADO AISI 304 C/CERTIFICADO 1 C/U CHAPA 31.7 X 6.35 X 1500 MM C/U(+IVA)'));
+        $this->assertTrue($e->sostiene(4, 'COTIZADO AISI 304 C/CERTIFICADO 1 C/U CHAPA 31.7 X 6.35 X 1500 MM C/U(+IVA)'));
+    }
 }

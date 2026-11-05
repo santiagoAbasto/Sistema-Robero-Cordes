@@ -350,7 +350,7 @@ class EnlazarLineas extends Command
         $this->newLine();
         $this->line('Materiales que '.($aplicar ? 'se corrigieron' : 'se corregirian').' (agrupados por lo que cambia):');
 
-        foreach (array_slice($grupos, 0, 40, true) as $cambio => $dato) {
+        foreach (array_slice($grupos, 0, 150, true) as $cambio => $dato) {
             $this->line(sprintf('[%s] %s', number_format($dato['n'], 0, ',', '.'), $cambio));
 
             foreach ($dato['ejemplos'] as $ejemplo) {
@@ -358,8 +358,8 @@ class EnlazarLineas extends Command
             }
         }
 
-        if (count($grupos) > 40) {
-            $this->line('... y '.(count($grupos) - 40).' cambios distintos mas.');
+        if (count($grupos) > 150) {
+            $this->line('... y '.(count($grupos) - 150).' cambios distintos mas.');
         }
 
         $this->newLine();

@@ -288,7 +288,7 @@ class EnlazadorDeLineas
           Se decide otra vez sin las medidas, y solo para validar: lo que ya no se enlazaba sigue sin enlazarse
           (sin las medidas se enlazarian unas cuantas mas, y eso se audita aparte).
         */
-        if (! $reglasDeHoy || ! $this->material || $elegido === null) {
+        if (! $reglasDeHoy || ! $this->material || $elegido === null || $this->sostiene($elegido, $descripcion)) {
             return $elegido;
         }
 
@@ -436,15 +436,17 @@ class EnlazadorDeLineas
             return false;
         }
 
-        $texto = $this->material ? $this->sinLasMedidas($descripcion) : $descripcion;
-        $presentes = array_flip($this->tokens($texto));
-        $dichas = array_flip($this->palabras($texto));
-
         foreach ($this->candidatos as $c) {
-            if ($c['id'] === $material
-                && array_diff_key($c['tokens'], $presentes) === []
-                && array_diff_key($c['exige'], $dichas) === []
-                && array_diff_key($c['letras'], $dichas) === []) {
+            if ($c['id'] !== $material) {
+                continue;
+            }
+
+            // Sin las medidas, salvo el numero que es el grado de ESTE nombre: "INCONEL 625 X 58 X 275 MM" dice 625.
+            $texto = $this->material ? $this->sinLasMedidas($descripcion, $c['palabras']) : $descripcion;
+
+            if (array_diff_key($c['tokens'], array_flip($this->tokens($texto))) === []
+                && array_diff_key($c['exige'], $dichasEn = array_flip($this->palabras($texto))) === []
+                && array_diff_key($c['letras'], $dichasEn) === []) {
                 return true;
             }
         }
@@ -479,10 +481,33 @@ class EnlazadorDeLineas
     }
 
     /**
+     * Si el numero que abre una serie, o que va con su "MM", es el grado y no una medida: viene justo despues de la
+     * palabra que lo nombra y los dos son parte del nombre del material. "INCONEL 625", "HASTELLOY C-276", "INCONEL X-750".
+     *
+     * @param  array<string, mixed>  $delNombre  las palabras del nombre del material que se revisa
+     */
+    private function esElGrado(string $sujeto, int $desde, string $numero, array $delNombre): bool
+    {
+        if ($delNombre === [] || ! preg_match('/\d+(?:[.,]\d+)?/', $numero, $n)) {
+            return false;
+        }
+
+        $cifras = preg_replace('/\D/', '', $n[0]);
+
+        if (! preg_match('/(\pL+)[\s.\-]*$/u', substr($sujeto, 0, $desde), $antes)) {
+            return false;
+        }
+
+        $palabra = $this->plano($antes[1]);
+
+        return isset($delNombre[$palabra.$cifras]) || (isset($delNombre[$cifras]) && isset($delNombre[$palabra]));
+    }
+
+    /**
      * El texto sin las medidas: los diametros marcados, las series "25.4 X 1000" y los numeros con su "MM", y la
      * X del precio por unidad ("X C/U", "X KG", "X M"). Queda lo que nombra al material.
      */
-    private function sinLasMedidas(string $texto): string
+    private function sinLasMedidas(string $texto, array $delNombre = []): string
     {
         // Un numero con su unidad de largo si la trae: "50 MM", "1.22M", "3 M".
         $numero = '\d+(?:[.,]\d+)?(?:\s*(?:mm|mts?|mtos?|m)\b)?';
@@ -491,11 +516,28 @@ class EnlazadorDeLineas
 
         // Un diametro marcado, con su serie si la tiene: "Ø 31.75 X 50 MM", "Ø25.4MM X 1000MM".
         $t = preg_replace('/[ØøÝý]\s*'.$numero.'(?:\s*[xX*]\s*'.$numero.')*/iu', $corte, $texto);
-        // Una serie, que no empieza pegada a una letra ("X750" es un grado) ni es una pureza ("ALU 4X9" son cuatro nueves):
-        // "0.46 X 1220 X 1560", "8*2000*6000".
-        $t = preg_replace('/(?<![\pL\d])(?![3-6]\s*[xX]\s*9(?![\d.,]))'.$numero.'(?:\s*[xX*]\s*'.$numero.')+/iu', $corte, $t);
-        // Un numero con su "MM" solo: "60 MM".
-        $t = preg_replace('/(?<![\pL\d])\d+(?:[.,]\d+)?\s*mm\b/iu', $corte, $t);
+
+        /*
+          Una serie, que no empieza pegada a una letra ("X750" es un grado) ni es una pureza ("ALU 4X9" son cuatro nueves):
+          "0.46 X 1220 X 1560", "8*2000*6000". Y un numero con su "MM" solo: "60 MM".
+
+          El primer numero se conserva si es parte del nombre del material que se esta revisando y viene justo despues de
+          la palabra que lo nombra: en "INCONEL 625 X 58 X 275 MM", "HASTELLOY C-276 X 500 MM" o "AISI 304 X 0.4 X 100" es el
+          grado, escrito seguido de las medidas.
+        */
+        $sujeto = $t;
+        $t = preg_replace_callback(
+            '/(?<![\pL\d])(?![3-6]\s*[xX]\s*9(?![\d.,]))('.$numero.')(?:\s*[xX*]\s*'.$numero.')+|(?<![\pL\d])(\d+(?:[.,]\d+)?)\s*mm\b/iu',
+            function (array $m) use ($sujeto, $corte, $delNombre): string {
+                $primero = isset($m[1]) && $m[1][0] !== '' ? $m[1][0] : $m[2][0];
+
+                return $this->esElGrado($sujeto, $m[0][1], $primero, $delNombre) ? $primero.$corte : $corte;
+            },
+            $t,
+            -1,
+            $cuantas,
+            PREG_OFFSET_CAPTURE,
+        );
 
         // La X del precio: "X C/U", "X KG", "X M", "X METRO". "HASTELLOY X CHAPA" sigue diciendo X.
         return preg_replace('~(?<![\pL\d])x\s+(?:c/?u|kgs?|k|m|mts?|mto|metros?|xm|u|un)(?![\pL\d])~iu', $corte, $t);
