@@ -198,7 +198,7 @@ function CompraGuardada({
   )
 }
 
-const SIN_COMPROBANTE: DatosDeComprobante = { tipo: '', numero: '', fecha: '', nota: '' }
+const SIN_COMPROBANTE: DatosDeComprobante = { tipo: '', numero: '', fecha: '', nota: '', importe: '' }
 
 /**
  * Los comprobantes de la compra, uno por renglón y sin tope: factura de
@@ -226,7 +226,17 @@ function Comprobantes({
   const opciones = [...new Set([...tipos, ...(datos.tipo ? [datos.tipo] : [])])].map((t) => ({ valor: t, texto: t }))
 
   function abrir(c?: Comprobante) {
-    setDatos(c ? { tipo: c.tipo, numero: c.numero ?? '', fecha: c.fecha ?? '', nota: c.nota ?? '' } : SIN_COMPROBANTE)
+    setDatos(
+      c
+        ? {
+            tipo: c.tipo,
+            numero: c.numero ?? '',
+            fecha: c.fecha ?? '',
+            nota: c.nota ?? '',
+            importe: c.importe !== null ? String(c.importe).replace('.', ',') : '',
+          }
+        : SIN_COMPROBANTE,
+    )
     setAbierto(c ? c.id : 0)
     setIntentado(false)
   }
@@ -287,6 +297,7 @@ function Comprobantes({
             <Chip tono="neutro">{c.tipo}</Chip>
             <span className="font-semibold tabular-nums text-ink">{c.numero || 'sin número'}</span>
             <span className="text-muted">{c.fecha ? fmtFecha(c.fecha) : 'sin fecha'}</span>
+            {c.importe !== null && <span className="font-semibold tabular-nums text-ink">{plata(c.importe)}</span>}
             {c.nota && <span className="min-w-0 flex-1 truncate text-muted">{c.nota}</span>}
             <span className="ml-auto flex gap-2">
               <Boton variante="texto" onClick={() => abrir(c)}>
@@ -302,7 +313,7 @@ function Comprobantes({
 
       {abierto !== null && (
         <div className="flex flex-col gap-2.5 rounded-[7px] border border-brand-200 bg-[#f3f9fe] p-2.5">
-          <div className="grid items-end gap-3 sm:grid-cols-3">
+          <div className="grid items-end gap-3 sm:grid-cols-4">
             <Lista
               etiqueta="Tipo"
               value={datos.tipo}
@@ -312,6 +323,14 @@ function Comprobantes({
             />
             <Texto etiqueta="Número" placeholder="0001-00001234" value={datos.numero} onChange={(e) => setDatos({ ...datos, numero: e.target.value })} />
             <Texto etiqueta="Fecha" type="date" value={datos.fecha} onChange={(e) => setDatos({ ...datos, fecha: e.target.value })} />
+            <Texto
+              etiqueta="Importe"
+              ayuda="opcional"
+              inputMode="decimal"
+              placeholder="125.000,50"
+              value={datos.importe}
+              onChange={(e) => setDatos({ ...datos, importe: e.target.value })}
+            />
           </div>
           <Texto
             etiqueta="Nota"

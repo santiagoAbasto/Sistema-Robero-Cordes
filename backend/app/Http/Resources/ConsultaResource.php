@@ -98,6 +98,7 @@ class ConsultaResource extends JsonResource
             'comprobantes' => $this->whenLoaded('comprobantes', fn () => $this->comprobantes->map(fn ($c) => [
                 'id' => $c->id, 'tipo' => $c->tipo, 'numero' => $c->numero,
                 'fecha' => $c->fecha?->format('Y-m-d'), 'nota' => $c->nota,
+                'importe' => $c->importe !== null ? (float) $c->importe : null,
             ])),
             'juego_condiciones' => $this->juego_condiciones,
             'condiciones' => $this->whenLoaded('condiciones', fn () => $this->condiciones->map(fn ($c) => [

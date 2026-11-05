@@ -22,9 +22,9 @@ class FirmaDeMailTest extends TestCase
 
     /** El mail que mandó CORDES en su repaso, tal cual. */
     private const MAIL = <<<'TEXTO'
-        From: Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.com.ar>
+        From: Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.example>
         Sent: Friday, September 25, 2026 10:32 AM
-        To: Roberto Cordes <roberto.cordes@cordes.ar>; Lucía Benítez <lbenitez@apex.com.ar>
+        To: Roberto Cordes <roberto.cordes@cordes.ar>; Lucía Benítez <lbenitez@apex.example>
         Cc: ventas@cordes.ar
         Subject: RE: Nuevo Pedido de Cotización - AISI 310S (22/9)
 
@@ -38,7 +38,7 @@ class FirmaDeMailTest extends TestCase
 
         Parque Industrial, Calle 9 esq. 10 | CP 6300
         Santa Rosa, La Pampa, Argentina
-        www.apex.com.ar
+        www.apex.example
         TEXTO;
 
     private function leer(string $texto): array
@@ -53,9 +53,9 @@ class FirmaDeMailTest extends TestCase
         $this->assertSame('Apex Metalurgica', $d['empresa']);
         $this->assertSame('Pablo Ferreyra', $d['contacto']);
         $this->assertSame('Supervisor de Mantenimiento', $d['cargo']);
-        $this->assertSame('pferreyra@apex.com.ar', $d['mail']);
+        $this->assertSame('pferreyra@apex.example', $d['mail']);
         $this->assertSame('+54 9 295441-2233', $d['telefono']);
-        $this->assertSame('www.apex.com.ar', $d['web']);
+        $this->assertSame('www.apex.example', $d['web']);
         $this->assertSame('Parque Industrial, Calle 9 esq. 10', $d['direccion']);
         $this->assertSame('6300', $d['codigo_postal']);
     }
@@ -274,5 +274,77 @@ class FirmaDeMailTest extends TestCase
         $this->assertSame('+54 11 4252-0500', $this->leer("Juan Perez\n+54 11 4252 0500")['telefono']);
         // Un codigo postal o una altura siguen sin serlo.
         $this->assertNull($this->leer("Juan Perez\nAv. Mitre 4252\nB1878")['telefono']);
+    }
+
+    /*
+      El CUIT. Sale impreso en una factura, así que se lee SOLO si el dígito
+      verificador cierra y el prefijo existe. 30-12345678-1 es un número de
+      prueba que cumple la cuenta oficial; no es de ninguna empresa.
+    */
+
+    public function test_lee_el_cuit_con_guiones_y_lo_deja_en_el_formato_que_se_guarda(): void
+    {
+        $this->assertSame('30-12345678-1', $this->leer("Apex SRL\nCUIT: 30-12345678-1\nTel: (2954) 15-412233")['cuit']);
+    }
+
+    public function test_lee_el_cuit_sin_guiones_ni_puntos_y_con_espacios(): void
+    {
+        $this->assertSame('30-12345678-1', $this->leer("Apex SRL\nCUIT 30123456781")['cuit']);
+        $this->assertSame('30-12345678-1', $this->leer("Apex SRL\nC.U.I.T.: 30 12345678 1")['cuit']);
+        $this->assertSame('30-12345678-1', $this->leer("Apex SRL\nCUIT 30.12345678.1")['cuit']);
+    }
+
+    public function test_un_cuit_con_el_digito_verificador_mal_no_se_toma(): void
+    {
+        // Cambia solo el último dígito: antes era 1.
+        $this->assertNull($this->leer("Apex SRL\nCUIT: 30-12345678-2")['cuit']);
+    }
+
+    public function test_un_numero_de_11_digitos_con_prefijo_que_no_existe_no_es_cuit(): void
+    {
+        $this->assertNull($this->leer("Apex SRL\nPedido 99123456781")['cuit']);
+    }
+
+    public function test_un_telefono_largo_no_se_confunde_con_un_cuit(): void
+    {
+        $d = $this->leer("Pablo Ferreyra\nCel: +54 9 11 5555 0100\nTel: 0800 555 0100");
+
+        $this->assertNull($d['cuit']);
+        $this->assertNotNull($d['telefono']);
+    }
+
+    public function test_un_numero_mas_largo_que_un_cuit_no_se_corta_para_encontrarlo(): void
+    {
+        // Trece dígitos seguidos que CONTIENEN un cuit válido: no es un CUIT.
+        $this->assertNull($this->leer("Apex SRL\nNro 3012345678100")['cuit']);
+    }
+
+    public function test_sin_cuit_el_dato_viene_vacio(): void
+    {
+        $this->assertNull($this->leer(self::MAIL)['cuit']);
+    }
+
+    public function test_si_hay_varios_cuit_validos_toma_el_primero(): void
+    {
+        $this->assertSame(
+            '30-12345678-1',
+            $this->leer("Apex SRL CUIT 30-12345678-1\nContador CUIL 20-12345678-6")['cuit'],
+        );
+    }
+
+    public function test_lee_el_cuit_de_una_ficha_de_la_web(): void
+    {
+        $d = $this->leer("EMPRESA: Apex SRL\nNOMBRE: Pablo Ferreyra\nCUIT: 30-12345678-1\nMAIL: pferreyra@apex.example");
+
+        $this->assertSame('30-12345678-1', $d['cuit']);
+        $this->assertSame('Apex SRL', $d['empresa']);
+    }
+
+    public function test_el_digito_verificador_oficial(): void
+    {
+        $this->assertTrue(FirmaDeMail::cuitValido('30123456781'));
+        $this->assertFalse(FirmaDeMail::cuitValido('30123456782'));
+        $this->assertFalse(FirmaDeMail::cuitValido('3012345678'));     // 10 dígitos
+        $this->assertFalse(FirmaDeMail::cuitValido('30-12345678-1')); // con guiones: se limpia antes
     }
 }

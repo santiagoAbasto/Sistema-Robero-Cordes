@@ -28,14 +28,21 @@ import {
   cantidad,
   fecha,
   mensajeDeError,
+  olvidarCatalogos,
   plata,
   restaurarEmpresa,
   traerEmpresa,
+  traerParecidas,
   usarComoBorrador,
   useCarga,
+  useCatalogos,
 } from '../../lib/indice'
+import type { DatosDeLaFirma } from '../../lib/indice'
+import { llenarSoloVacios, pareceDeOtraEmpresa } from '../../lib/firma'
 import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
+import LectorDeFirma from './LectorDeFirma'
+import CombinarFichas from './CombinarFichas'
 import { ModalCampo, ModalContacto, ModalRazonSocial } from './modales'
 import Enlaces from './Enlaces'
 import Revisiones from './Revisiones'
@@ -52,10 +59,13 @@ import type { CampoEmpresa, Consulta, Contacto, Empresa, RazonSocial } from '../
 export default function FichaEmpresa() {
   const { id } = useParams<{ id: string }>()
   const { datos: empresa, cargando, error, recargar } = useCarga(() => traerEmpresa(id!), [id])
+  // Las fichas que parecen ser la misma empresa (y si esta persona puede combinarlas).
+  const { datos: parecidas, recargar: recargarParecidas } = useCarga(() => traerParecidas(id!), [id])
 
   // La solapa abierta va en el #: "/empresas/12#cotizaciones" desde la lista
   // abre directo ahi, y volver atras vuelve a la misma.
-  const { hash } = useLocation()
+  const ubicacion = useLocation()
+  const { hash, state: alLlegar } = ubicacion
   const navigate = useNavigate()
   const solapa = (SOLAPAS.find((s) => `#${s}` === hash) ?? 'cotizaciones') as Solapa
 
@@ -75,11 +85,68 @@ export default function FichaEmpresa() {
   >(null)
   const [archivando, setArchivando] = useState(false)
   const [dandoDeBaja, setDandoDeBaja] = useState(false)
+  const [combinando, setCombinando] = useState(false)
+
+  // Al venir de combinar dos fichas (la que quedó es la otra), el mensaje de "listo".
+  useEffect(() => {
+    const mensaje = (alLlegar as { aviso?: string } | null)?.aviso
+    if (!mensaje) return
+
+    setAviso(mensaje)
+    // Una vez mostrado se saca: si no, un F5 lo vuelve a mostrar.
+    navigate({ pathname: ubicacion.pathname, hash: ubicacion.hash }, { replace: true, state: null })
+  }, [id, alLlegar, navigate, ubicacion.pathname, ubicacion.hash])
 
   function abrirEdicion() {
     setValores(estadoInicial(empresa))
     setErrorForm(null)
+    setLectura(null)
+    setLocalidadesNuevas([])
     setEditando(true)
+  }
+
+  /*
+    El asistente de firma, también al modificar.
+
+    Lo que lee se aplica SOLO a lo que esté vacío (ver llenarSoloVacios): pegar
+    el mail de otro contacto no pisa un dato ya cargado. Nada se guarda hasta
+    apretar "Guardar cambios". Los contactos de la firma no entran por acá: la
+    ficha los carga por su solapa.
+  */
+  const catalogos = useCatalogos()
+  const [localidadesNuevas, setLocalidadesNuevas] = useState<
+    { id: number; nombre: string; provincia_id: number }[]
+  >([])
+  const [lectura, setLectura] = useState<{ texto: string; ojo: boolean } | null>(null)
+
+  function completarDesdeLaFirma(datos: DatosDeLaFirma) {
+    const { valores: nuevos, completados } = llenarSoloVacios(valores, datos)
+    setValores(nuevos)
+
+    // La localidad que agregó Google todavía no está en la lista de la pantalla.
+    if (completados.includes('la localidad') && datos.localidad_id && datos.localidad_nombre
+      && datos.provincia_id && !catalogos?.localidades.some((l) => l.id === datos.localidad_id)) {
+      const nueva = { id: datos.localidad_id, nombre: datos.localidad_nombre, provincia_id: datos.provincia_id }
+      setLocalidadesNuevas((a) => [...a, nueva])
+      olvidarCatalogos()
+    }
+
+    const lista = completados.length > 1
+      ? `${completados.slice(0, -1).join(', ')} y ${completados[completados.length - 1]}`
+      : completados[0]
+    const otra = pareceDeOtraEmpresa(valores.nombre, datos.empresa)
+
+    setLectura({
+      ojo: otra,
+      texto: [
+        completados.length > 0
+          ? `Completé ${lista}. Revisá y apretá "Guardar cambios".`
+          : 'No encontré nada para completar: lo que se leyó ya estaba cargado, o no estaba en el texto.',
+        otra && `OJO: la firma dice "${datos.empresa}" y esta ficha es "${valores.nombre}". Revisá que sea la misma empresa antes de guardar.`,
+        (datos.contacto || datos.mail || datos.telefono)
+          && 'También trae datos de un contacto: para sumarlo usá "Agregar contacto" en la solapa Contactos.',
+      ].filter(Boolean).join(' '),
+    })
   }
 
   async function guardarDatos() {
@@ -160,7 +227,7 @@ export default function FichaEmpresa() {
         titulo="No pudimos abrir la ficha"
         detalle={error ?? 'La empresa no existe o fue archivada.'}
         accion={
-          <Link to="/empresas/registros">
+          <Link to="/buscador">
             <Boton variante="suave">Volver a la lista</Boton>
           </Link>
         }
@@ -179,7 +246,7 @@ export default function FichaEmpresa() {
               Empresas
             </Link>
             <span>›</span>
-            <Link to="/empresas/registros" className="hover:text-brand-600">
+            <Link to="/buscador" className="hover:text-brand-600">
               Cons./Modif. Registros
             </Link>
           </span>
@@ -207,6 +274,11 @@ export default function FichaEmpresa() {
                 Imprimir
               </Boton>
             </Link>
+            {empresa.activa && parecidas?.puede_combinar && (
+              <Boton variante="suave" onClick={() => setCombinando(true)}>
+                Combinar con otra ficha
+              </Boton>
+            )}
             {empresa.activa ? (
               <Boton variante="suave" onClick={() => setDandoDeBaja(true)}>
                 Dar de baja
@@ -232,6 +304,19 @@ export default function FichaEmpresa() {
         }
       />
 
+      {empresa.activa && parecidas?.puede_combinar && parecidas.data.length > 0 && (
+        <Aviso tono="ambar" titulo="¿Es la misma empresa?">
+          <span className="mr-2">
+            Hay {parecidas.data.length === 1 ? 'otra ficha' : `${parecidas.data.length} fichas más`} con un nombre parecido:{' '}
+            {parecidas.data.map((f) => `«${f.nombre}» (${f.cotizaciones} ${f.cotizaciones === 1 ? 'cotización' : 'cotizaciones'})`).join(', ')}.
+            Si son la misma, se pueden juntar en una sola.
+          </span>
+          <button type="button" onClick={() => setCombinando(true)} className="font-semibold text-brand-600 underline">
+            Combinar fichas
+          </button>
+        </Aviso>
+      )}
+
       {!empresa.activa && (
         <Aviso tono="ambar" titulo="Empresa inactiva">
           Se puede ver toda su historia, pero no se le pueden cargar cotizaciones ni pedidos. Si volvió a trabajar con
@@ -240,24 +325,33 @@ export default function FichaEmpresa() {
       )}
 
       {editando ? (
-        <Card className="flex flex-col gap-4 p-[22px]">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="text-[15px] font-semibold text-ink">Modificar los datos</h2>
-            <Chip tono="ambar">estás editando</Chip>
-            <div className="ml-auto flex items-center gap-2.5">
-              <Boton variante="suave" onClick={() => setEditando(false)} disabled={guardando}>
-                Cancelar
-              </Boton>
-              <Boton variante="primario" onClick={guardarDatos} disabled={guardando}>
-                {guardando ? 'Guardando…' : 'Guardar cambios'}
-              </Boton>
+        <>
+          <LectorDeFirma
+            onDatos={completarDesdeLaFirma}
+            onError={setErrorForm}
+            aclaracion="Completa solo lo que esta vacio; lo que ya cargaste no se toca"
+          />
+
+          <Card className="flex flex-col gap-4 p-[22px]">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h2 className="text-[15px] font-semibold text-ink">Modificar los datos</h2>
+              <Chip tono="ambar">estás editando</Chip>
+              <div className="ml-auto flex items-center gap-2.5">
+                <Boton variante="suave" onClick={() => setEditando(false)} disabled={guardando}>
+                  Cancelar
+                </Boton>
+                <Boton variante="primario" onClick={guardarDatos} disabled={guardando}>
+                  {guardando ? 'Guardando…' : 'Guardar cambios'}
+                </Boton>
+              </div>
             </div>
-          </div>
 
-          {errorForm && <Aviso tono="ambar">{errorForm}</Aviso>}
+            {errorForm && <Aviso tono="ambar">{errorForm}</Aviso>}
+            {lectura && <Aviso tono={lectura.ojo ? 'ambar' : 'info'}>{lectura.texto}</Aviso>}
 
-          <EmpresaForm valores={valores} onChange={setValores} />
-        </Card>
+            <EmpresaForm valores={valores} onChange={setValores} localidadesNuevas={localidadesNuevas} />
+          </Card>
+        </>
       ) : (
         <DatosDeLaEmpresa empresa={empresa} onModificar={abrirEdicion}>
           <Enlaces
@@ -349,6 +443,7 @@ export default function FichaEmpresa() {
         abierto={campoEdit !== undefined}
         empresaId={empresa.id}
         campo={campoEdit}
+        otrosCampos={empresa.campos}
         onCerrar={() => setCampoEdit(undefined)}
         onGuardado={(m) => {
           setAviso(m)
@@ -370,10 +465,27 @@ export default function FichaEmpresa() {
         trabajando={archivando}
       />
 
+      <CombinarFichas
+        abierto={combinando}
+        empresa={{ id: empresa.id, nombre: empresa.nombre }}
+        parecidas={parecidas?.data ?? []}
+        onCerrar={() => setCombinando(false)}
+        onCombinada={(empresaId, mensaje) => {
+          if (empresaId === empresa.id) {
+            setAviso(mensaje)
+            recargar()
+            recargarParecidas()
+          } else {
+            // La que quedó es la otra: se va a su ficha, con el mensaje.
+            navigate(`/empresas/${empresaId}`, { state: { aviso: mensaje } })
+          }
+        }}
+      />
+
       <Confirmar
         abierto={dandoDeBaja}
         titulo="Dar de baja la empresa"
-        detalle={`"${empresa.nombre}" queda inactiva: se sigue viendo con toda su historia, pero no se le pueden cargar cotizaciones y deja de salir en los buscadores comunes (se la encuentra en Empresas, tildando "Incluir las inactivas"). No se borra nada y se puede reactivar desde su ficha.`}
+        detalle={`"${empresa.nombre}" queda inactiva: se sigue viendo con toda su historia, pero no se le pueden cargar cotizaciones. En los buscadores de Empresas sigue apareciendo, pero al final de la lista y en rojo. No se borra nada y se puede reactivar desde su ficha.`}
         textoConfirmar="Dar de baja"
         onCerrar={() => setDandoDeBaja(false)}
         onConfirmar={() => cambiarActividad(false)}
@@ -729,7 +841,7 @@ function CondicionesDeTrabajo({
       <div className="flex flex-wrap items-center gap-2.5">
         <h2 className="text-[15px] font-semibold text-ink">Condiciones de trabajo</h2>
         <span className="ml-auto text-[11px] text-faint">
-          Cada empresa arma los campos que necesita
+          Se eligen de la lista de condiciones
         </span>
       </div>
 
@@ -744,7 +856,16 @@ function CondicionesDeTrabajo({
               <Campo
                 etiqueta={c.titulo}
                 valor={c.valor}
-                tag={c.usar_al_cotizar ? <Chip tono="brand">se usa al cotizar</Chip> : undefined}
+                tag={
+                  <>
+                    {c.usar_al_cotizar && <Chip tono="brand">se usa al cotizar</Chip>}
+                    {c.fuera_de_la_lista && (
+                      <span title="Se escribió a mano, antes de la lista de condiciones. Al modificarla se elige de la lista.">
+                        <Chip tono="violeta">fuera de la lista</Chip>
+                      </span>
+                    )}
+                  </>
+                }
               />
               <div className="absolute right-1.5 top-0 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                 <Accion onClick={() => onModificar(c)}>Modificar</Accion>
@@ -765,7 +886,7 @@ function CondicionesDeTrabajo({
       <div className="flex flex-wrap items-center gap-3.5">
         <Accion onClick={onAgregar}>+ Agregar campo</Accion>
         <span className="ml-auto text-[11px] text-faint">
-          Se escribe el título y abajo el dato. Los que no se usan no aparecen.
+          Se elige la condición y su dato de la lista. Los que no se usan no aparecen.
         </span>
       </div>
     </Card>

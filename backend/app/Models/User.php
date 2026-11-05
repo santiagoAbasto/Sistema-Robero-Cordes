@@ -7,6 +7,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -71,7 +72,7 @@ class User extends Authenticatable
         ];
     }
 
-    public function permiso(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function permiso(): HasOne
     {
         return $this->hasOne(Permiso::class);
     }
@@ -89,5 +90,30 @@ class User extends Authenticatable
     public function puedeModificarCotizaciones(): bool
     {
         return $this->role === 'Administrador' || ($this->permiso?->puede_modificar ?? true);
+    }
+
+    /**
+     * Si puede archivar y combinar fichas ("Archiva" en Quién ve qué).
+     *
+     * Combinar dos fichas mueve cotizaciones y contactos de una a otra y deja
+     * archivada a la sobrante: es más que modificar un dato. A diferencia de
+     * modificar, SIN permiso cargado no puede: se le da a quien corresponde. Los
+     * administradores siempre.
+     */
+    public function puedeArchivar(): bool
+    {
+        return $this->role === 'Administrador' || ($this->permiso?->puede_archivar ?? false);
+    }
+
+    /**
+     * Si ve los importes (precios, totales, lo facturado), según "Quién ve qué".
+     *
+     * Los administradores siempre. Sin permiso cargado, ve: es lo que viene
+     * haciendo el sistema. Lo aplica el buscador único; el resto de las pantallas
+     * todavía no lo controlan.
+     */
+    public function veImportes(): bool
+    {
+        return $this->role === 'Administrador' || ($this->permiso?->ve_importes ?? true);
     }
 }

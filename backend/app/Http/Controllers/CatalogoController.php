@@ -48,7 +48,17 @@ class CatalogoController extends Controller
             'estados' => \App\Models\Consulta::ESTADOS,
             'estados_de_cierre' => \App\Models\Consulta::ESTADOS_DE_CIERRE,
             'solicitud_vias' => \App\Models\Consulta::VIAS,
+            // Las razones sociales (sólo cuatro, así las guarda su columna).
             'condiciones_iva' => ['Resp. Inscripto', 'Monotributo', 'Exento', 'Consumidor Final'],
+            // La ficha de la empresa guarda otras seis: de ésas depende si la hoja sale con IVA o sin él.
+            'condiciones_iva_empresa' => \App\Models\Empresa::CONDICIONES_IVA,
+            // Las condiciones de trabajo que se pueden cargar en una ficha, con sus datos: la ficha sólo elige de acá.
+            'condiciones_de_la_ficha' => \App\Models\TipoDeCondicion::where('activo', true)->orderBy('orden')->orderBy('nombre')
+                ->with(['opciones' => fn ($q) => $q->where('activo', true)])->get()
+                ->map(fn ($t) => [
+                    'id' => $t->id, 'nombre' => $t->nombre, 'proponer_al_cotizar' => $t->proponer_al_cotizar,
+                    'opciones' => $t->opciones->map(fn ($o) => ['id' => $o->id, 'texto' => $o->texto])->values(),
+                ])->values(),
             'iibb_condiciones' => ['No inscripto', 'Local', 'Convenio multilateral'],
             'vias_envio' => ['Impresora', 'PDF', 'Correo', 'WhatsApp'],
             'ajuste_dif_cambio' => ['A fecha de pago', 'A fecha de factura', 'Otro'],

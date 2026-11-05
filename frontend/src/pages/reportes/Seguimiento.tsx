@@ -28,7 +28,8 @@ import {
 const HOY = hoy()
 const ENERO = `${HOY.slice(0, 4)}-01-01`
 
-export default function Reportes() {
+/** El balance de seguimiento. Dentro de Reportes (`embebido`) no repite el título de la página. */
+export default function ReporteDeSeguimiento({ embebido = false }: { embebido?: boolean }) {
   const [desde, setDesde] = useState(ENERO)
   const [hasta, setHasta] = useState(HOY)
 
@@ -39,10 +40,12 @@ export default function Reportes() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        titulo="Reporte de seguimiento"
-        bajada="Qué quedó abierto, qué se cerró y por qué, en el período elegido."
-      />
+      {!embebido && (
+        <PageHeader
+          titulo="Reporte de seguimiento"
+          bajada="Qué quedó abierto, qué se cerró y por qué, en el período elegido."
+        />
+      )}
 
       <Card>
         <CardHeader

@@ -98,9 +98,55 @@ class FirmaDeMail
             'direccion_completa' => $calle === null ? null
                 : collect($renglones)->first(fn ($r) => str_contains($r, $calle)),
             'codigo_postal' => $this->codigoPostal($texto),
+            'cuit' => $this->cuit($texto),
         ];
 
         return $datos + $this->deDonde($texto);
+    }
+
+    /**
+     * El CUIT (o CUIL) que aparezca escrito: 11 dígitos, con o sin guiones.
+     *
+     * Se acepta SOLO si el dígito verificador cierra y el prefijo es de los que
+     * existen: un teléfono largo o un número de pedido con 11 dígitos no puede
+     * pasar por CUIT, que después sale impreso en una factura. Queda en el
+     * formato en que se guarda: 30-12345678-9.
+     */
+    private function cuit(string $texto): ?string
+    {
+        preg_match_all('/(?<!\d)(\d{2})[\s.\-]?(\d{8})[\s.\-]?(\d)(?!\d)/', $texto, $encontrados, PREG_SET_ORDER);
+
+        foreach ($encontrados as [, $prefijo, $cuerpo, $verificador]) {
+            if (in_array($prefijo, ['20', '23', '24', '27', '30', '33', '34'], true)
+                && self::cuitValido($prefijo.$cuerpo.$verificador)) {
+                return "{$prefijo}-{$cuerpo}-{$verificador}";
+            }
+        }
+
+        return null;
+    }
+
+    /** El dígito verificador oficial (módulo 11, pesos 5-4-3-2-7-6-5-4-3-2). */
+    public static function cuitValido(string $digitos): bool
+    {
+        if (! preg_match('/^\d{11}$/', $digitos)) {
+            return false;
+        }
+
+        $suma = 0;
+
+        foreach ([5, 4, 3, 2, 7, 6, 5, 4, 3, 2] as $i => $peso) {
+            $suma += (int) $digitos[$i] * $peso;
+        }
+
+        $verificador = 11 - ($suma % 11);
+
+        // 11 se escribe 0; 10 no existe: ese número no puede ser un CUIT.
+        if ($verificador === 10) {
+            return false;
+        }
+
+        return ($verificador === 11 ? 0 : $verificador) === (int) $digitos[10];
     }
 
     /**
@@ -152,6 +198,7 @@ class FirmaDeMail
             'direccion' => $this->soloLaCalle($ficha['direccion'] ?? null),
             'direccion_completa' => $ficha['direccion'] ?? null,
             'codigo_postal' => $ficha['codigo_postal'] ?? $this->codigoPostal($texto),
+            'cuit' => $this->cuit($texto),
         ];
 
         /*
@@ -219,7 +266,7 @@ class FirmaDeMail
                 continue;
             }
 
-            // "Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.com.ar>"
+            // "Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.example>"
             $sinMail = trim(preg_replace('/<[^>]*>/', '', $m[2]) ?? '');
             $partes = preg_split('/\s+[-–|]\s+/', $sinMail) ?: [];
 
@@ -244,7 +291,7 @@ class FirmaDeMail
             return null;
         }
 
-        // De apex.com.ar sale Apex. Los dominios de correo de siempre no
+        // De apex.example sale Apex. Los dominios de correo de siempre no
         // dicen nada de la empresa.
         $dominio = mb_strtolower(explode('@', $mail)[1] ?? '');
         $genericos = ['gmail', 'hotmail', 'yahoo', 'outlook', 'live', 'icloud', 'speedy', 'fibertel'];

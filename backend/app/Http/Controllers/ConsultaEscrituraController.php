@@ -20,6 +20,7 @@ use App\Models\Observacion;
 use App\Models\Unidad;
 use App\Services\CalculadoraDePeso;
 use App\Services\CalculadoraFactor;
+use App\Services\CondicionesDeLaFicha;
 use App\Services\InterpreteIA;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -742,8 +743,12 @@ class ConsultaEscrituraController extends Controller
             'numero' => ['nullable', 'string', 'max:60'],
             'fecha' => ['nullable', 'date'],
             'nota' => ['nullable', 'string', 'max:500'],
+            // Lo que dice el comprobante, en la moneda de la cotización. Opcional.
+            'importe' => ['nullable', 'numeric', 'min:0', 'max:999999999999.99'],
         ], [
             'tipo.required' => 'Elegí qué tipo de comprobante es.',
+            'importe.numeric' => 'El importe tiene que ser un número, por ejemplo 125000,50.',
+            'importe.min' => 'El importe no puede ser negativo: una nota de crédito se carga con su importe en positivo.',
         ]);
     }
 
@@ -1598,16 +1603,13 @@ class ConsultaEscrituraController extends Controller
      *
      * Se copia el texto, no una referencia: cambiar la plantilla manana no
      * puede cambiar lo que decia una cotizacion que ya se mando.
+     *
+     * Lo que la empresa tiene cargado en su ficha manda sobre el juego cuando
+     * hablan de lo mismo: ver CondicionesDeLaFicha.
      */
     private function condicionesPorDefecto(Consulta $consulta): array
     {
-        return CondicionHabitual::delJuego($consulta->juego_condiciones)
-            ->map(fn (CondicionHabitual $c) => [
-                'titulo' => $c->titulo,
-                'texto' => $c->texto,
-                'origen' => 'Automatica',
-            ])
-            ->all();
+        return CondicionesDeLaFicha::para($consulta);
     }
 
     private function recargar(Consulta $consulta): Consulta

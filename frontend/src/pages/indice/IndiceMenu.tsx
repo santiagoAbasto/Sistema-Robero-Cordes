@@ -17,35 +17,36 @@ import { useUltimasVistas } from '../../lib/indice'
 /**
  * El menú del Índice Telefónico.
  *
- * Son las cinco opciones que ya conocen, con los mismos nombres del sistema
- * viejo. Arriba, un buscador único que encuentra por nombre, teléfono, CUIT
- * o material — por eso ya no hace falta la pantalla de buscar por teléfono.
+ * Arriba, un buscador único que encuentra por nombre, teléfono, CUIT o material.
+ * Las opciones de abajo son entradas directas al Buscador, que reemplazó a los
+ * cuatro buscadores de antes (Cons./Modif. Registros, Busq. Registros p/Cond.,
+ * Consultas por fecha y Busq. Consultas p/Cond.).
  */
 
 const OPCIONES = [
   {
-    to: '/empresas/registros',
+    to: '/buscador',
     icono: Users,
-    titulo: 'Cons./Modif. Registros',
-    detalle: 'Buscar una empresa y entrar a su ficha, sus cotizaciones o imprimir.',
+    titulo: 'Buscar empresas',
+    detalle: 'Entrar a una ficha, a sus cotizaciones o imprimir. Por nombre, teléfono, CUIT o material.',
   },
   {
-    to: '/empresas/condicion',
-    icono: ListFilter,
-    titulo: 'Busq. Registros p/Cond.',
-    detalle: 'Armar listas de empresas por rubro, localidad o por lo que se les cotizó.',
-  },
-  {
-    to: '/consultas/fecha',
-    icono: CalendarRange,
-    titulo: 'Consultas por fecha',
-    detalle: 'Todo lo que se cotizó o se vendió en un período, por material y proveedor.',
-  },
-  {
-    to: '/consultas/condicion',
+    to: '/buscador?grano=consultas',
     icono: FileSearch,
-    titulo: 'Busq. Consultas p/Cond.',
-    detalle: 'Buscar cotizaciones, no empresas: se llega por el material.',
+    titulo: 'Buscar cotizaciones',
+    detalle: 'Por número, empresa, fecha, estado, orden de compra o compra parcial.',
+  },
+  {
+    to: '/buscador?grano=renglones',
+    icono: ListFilter,
+    titulo: 'A quién le cotizamos un material',
+    detalle: 'Escribí el material y mirá a qué empresas se lo cotizamos, cuándo y a cuánto.',
+  },
+  {
+    to: '/buscador?grano=comprobantes',
+    icono: CalendarRange,
+    titulo: 'Facturas y remitos',
+    detalle: 'Buscar por número, tipo o fecha, y ver de qué cotización salieron.',
   },
   {
     to: '/imprimir',
@@ -63,7 +64,7 @@ export default function IndiceMenu() {
   function buscar(e: React.FormEvent) {
     e.preventDefault()
     const q = texto.trim()
-    navigate(q ? `/empresas/registros?buscar=${encodeURIComponent(q)}` : '/empresas/registros')
+    navigate(q ? `/buscador?q=${encodeURIComponent(q)}` : '/buscador')
   }
 
   return (
@@ -71,7 +72,7 @@ export default function IndiceMenu() {
       <PageHeader
         breadcrumb="Empresas"
         titulo="Indice Telefonico"
-        bajada="Es el mismo índice de siempre. Cada opción hace lo que ya hacía, y el buscador de arriba encuentra por nombre, teléfono, CUIT o material."
+        bajada="Los cuatro buscadores de antes ahora son uno solo, el Buscador. Desde acá se entra directo a lo que se busca más seguido."
         acciones={
           <Link to="/empresas/nueva">
             <span className="inline-flex h-[38px] items-center gap-2 rounded-lg bg-brand px-[15px] text-[13px] font-semibold text-white transition-colors hover:bg-brand-600">
@@ -116,7 +117,7 @@ export default function IndiceMenu() {
         </form>
       </Card>
 
-      {/* Las cinco opciones */}
+      {/* Entradas directas al Buscador */}
       <div className="grid gap-[14px] sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         {OPCIONES.map((op, i) => {
           const Icono = op.icono

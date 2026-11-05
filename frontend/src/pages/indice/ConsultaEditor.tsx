@@ -69,6 +69,11 @@ type CondicionForm = {
    */
   plantilla?: string
   aMano?: boolean
+  /**
+   * Vino de la ficha de la empresa y no del juego de Configuración. Se guarda
+   * como origen "De la ficha" (y se conserva al editar la cotización).
+   */
+  deLaFicha?: boolean
 }
 
 /** Completa la fecha hasta la que vale la oferta. */
@@ -93,7 +98,10 @@ import Revisiones from './Revisiones'
 import Versiones from './Versiones'
 import HojaPrevia from './HojaPrevia'
 import { A_MILIMETROS, UNIDADES_MEDIDA, aMilimetros, calcularPeso } from '../../lib/calculadora'
-import { armarDescripcion, armarDimensiones } from '../../lib/descripcion'
+import { armarDescripcion, armarDimensiones, camposEnOrden } from '../../lib/descripcion'
+import { condicionesConLaFicha } from '../../lib/condiciones'
+import { sinFormato } from '../../lib/formato'
+import { AreaConFormato } from '../../components/TextoConFormato'
 import type { Catalogos, Consulta, ConsultaLinea, Empresa, Forma } from '../../types/indice'
 
 /* ---------------------------------------------------------------------------
@@ -571,7 +579,14 @@ export default function ConsultaEditor() {
     setCondiciones(
       (existente.condiciones ?? [])
         .filter((c) => c.titulo !== null || c.origen !== 'Automatica')
-        .map((c) => ({ titulo: c.titulo ?? '', texto: c.texto, imprime: c.imprime, aMano: true })),
+        .map((c) => ({
+          titulo: c.titulo ?? '',
+          texto: c.texto,
+          imprime: c.imprime,
+          aMano: true,
+          // Sin esto, editar una cotización degradaría "De la ficha" a "Manual".
+          deLaFicha: c.origen === 'De la ficha',
+        })),
     )
     condicionesPropuestas.current = existente.juego_condiciones ?? null
     // Recien cargado no hay nada cambiado: esta es la foto contra la que se
@@ -617,23 +632,34 @@ export default function ConsultaEditor() {
   useEffect(() => {
     if (!catalogos || !cabecera.juego_condiciones) return
     if (condicionesPropuestas.current === cabecera.juego_condiciones) return
+    // La ficha de la empresa manda sobre el juego cuando hablan de lo mismo
+    // (es la misma regla que aplica el servidor): hace falta tenerla cargada.
+    if (!empresa) return
 
-    const delJuego = (catalogos.condiciones_habituales ?? []).filter(
-      (c) => c.por_defecto && c.juego === cabecera.juego_condiciones,
+    const bloques = condicionesConLaFicha(
+      (catalogos.condiciones_habituales ?? []).filter(
+        (c) => c.por_defecto && c.juego === cabecera.juego_condiciones,
+      ),
+      {
+        campos: empresa.campos ?? [],
+        pagoDeLaCotizacion: cabecera.condicion_pago,
+        pagoDeLaEmpresa: empresa.condicion_pago ?? '',
+      },
     )
 
-    if (delJuego.length === 0) return
+    if (bloques.length === 0) return
 
     condicionesPropuestas.current = cabecera.juego_condiciones
     setCondiciones(
-      delJuego.map((c) => ({
-        titulo: c.titulo ?? '',
-        texto: conLaFecha(c.texto, venceComoSeEscribe),
+      bloques.map((b) => ({
+        titulo: b.titulo,
+        texto: conLaFecha(b.texto, venceComoSeEscribe),
         imprime: true,
-        plantilla: c.texto,
+        plantilla: b.plantilla,
+        deLaFicha: b.deLaFicha,
       })),
     )
-  }, [catalogos, cabecera.juego_condiciones])
+  }, [catalogos, cabecera.juego_condiciones, empresa])
 
   /*
     Cambiar los días de validez actualiza la fecha escrita en las condiciones.
@@ -783,8 +809,14 @@ export default function ConsultaEditor() {
       })),
       juego_condiciones: cabecera.juego_condiciones || null,
       condiciones: condiciones
-        .filter((c) => c.texto.trim())
-        .map((c) => ({ titulo: c.titulo.trim() || null, texto: c.texto, imprime: c.imprime })),
+        .filter((c) => sinFormato(c.texto).trim())
+        .map((c) => ({
+          titulo: c.titulo.trim() || null,
+          texto: c.texto,
+          imprime: c.imprime,
+          // Lo que vino de la ficha se guarda como tal; el resto, como siempre.
+          ...(c.deLaFicha ? { origen: 'De la ficha' } : {}),
+        })),
     }
 
     try {
@@ -1063,6 +1095,8 @@ export default function ConsultaEditor() {
         transporte: l.transporte ?? null,
         plazo_dias: l.plazo_dias ?? null,
         caracteristicas: l.caracteristicas ?? null,
+        // La posición que el cliente le puso al renglón en su tabla ("10", "20").
+        item_cliente: esAlternativa ? null : (l.item_cliente ?? null),
         descripcion: l.descripcion,
         material_id: l.material_id,
         forma_id: l.forma_id,
@@ -1192,7 +1226,7 @@ export default function ConsultaEditor() {
         titulo="No encontramos la empresa"
         detalle="Volvé a la lista y entrá desde la ficha."
         accion={
-          <Link to="/empresas/registros">
+          <Link to="/buscador">
             <Boton variante="suave">Volver a la lista</Boton>
           </Link>
         }
@@ -1258,7 +1292,11 @@ export default function ConsultaEditor() {
             </Chip>
           )
         }
-        bajada="Se carga lo que pidió el cliente y lo que se le cotiza. Cuando es lo mismo, se completa solo. Lo que se escribe en NOTA y en las observaciones queda para adentro."
+        bajada={
+          tipo === 'Observacion'
+            ? 'Una anotación en el historial de la empresa: lo que pasó y no es una cotización. No se emite ni se imprime.'
+            : 'Se carga lo que pidió el cliente y lo que se le cotiza. Cuando es lo mismo, se completa solo. Lo que se escribe en NOTA y en las observaciones queda para adentro.'
+        }
         acciones={
           emitida ? (
             /*
@@ -3138,7 +3176,7 @@ function MedidasDeLaForma({
   piezasAparte: boolean
 }) {
   const forma = catalogos?.formas.find((f) => f.id === linea.forma_id) ?? null
-  const campos = forma?.campos ?? []
+  const campos = camposEnOrden(forma?.campos ?? [])
   const cano = catalogos?.canos?.find((c) => c.id === linea.calc.canoId) ?? null
 
   // Una reducción: entra un caño y sale otro, cada uno de la tabla.
@@ -3602,7 +3640,7 @@ function LineaFila({
   // siempre es la misma, y así las medidas de lo pedido salen con sus campos
   // (Diametro, Largo, Piezas) y no como una caja de texto suelta.
   const formaPedida = formaDeLoPedido(linea, catalogos)
-  const camposDeLoPedido = formaPedida?.campos ?? []
+  const camposDeLoPedido = camposEnOrden(formaPedida?.campos ?? [])
 
   /*
     Cuántas columnas de medidas lleva la línea: las mismas en lo pedido y en
@@ -4332,12 +4370,12 @@ function LineaFila({
       </div>
 
       <div className="mt-1.5">
-        <AreaTexto
+        <AreaConFormato
           etiqueta="Nota del articulo — sale impresa"
           ayuda="plano, posicion, tratamiento: lo que haya que aclarar de este item"
           rows={2}
           value={linea.nota ?? ''}
-          onChange={(e) => onCambio({ nota: e.target.value || null })}
+          onTexto={(v) => onCambio({ nota: sinFormato(v) ? v : null })}
           placeholder="Por ejemplo: plano SUO1413884/1, posición 21."
         />
       </div>
@@ -4582,6 +4620,10 @@ function Condiciones({
           <h2 className="text-[15px] font-semibold text-ink">Condiciones</h2>
           <span className="ml-auto text-[11px] text-faint">Estas sí salen en el papel</span>
         </div>
+        <p className="-mt-1 text-[11.5px] text-muted">
+          Para resaltar algo: ponelo entre asteriscos, así: *esto*. Sale en negrita, y abajo del
+          cuadro elegís el color.
+        </p>
 
         {/*
           Importación o stock: cambian el plazo de entrega y la forma de pago,
@@ -4629,11 +4671,12 @@ function Condiciones({
                 value={condicion.titulo}
                 onChange={(e) => cambiar(i, 'titulo', e.target.value)}
               />
-              <AreaTexto
+              <AreaConFormato
                 aria-label={`Condicion ${i + 1}`}
                 rows={condicion.texto.length > 220 ? 5 : 2}
                 value={condicion.texto}
-                onChange={(e) => cambiar(i, 'texto', e.target.value)}
+                onTexto={(v) => cambiar(i, 'texto', v)}
+                barra="al-tocar"
               />
               {!condicion.imprime && (
                 <span className="text-[11px] text-warning-ink">

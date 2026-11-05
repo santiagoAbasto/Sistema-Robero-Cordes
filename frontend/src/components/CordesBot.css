@@ -1,0 +1,374 @@
+/* ---------------------------------------------------------------------------
+   Cordes IA — escena 3D del robot (ver CordesBot.tsx).
+
+   --u es cuántos píxeles mide una unidad del dibujo (el SVG es de 200 de ancho):
+   así la profundidad de cada capa crece y se achica con el tamaño del robot.
+   --px y --py (-1 a 1) son hacia dónde mira, y los pone el componente.
+--------------------------------------------------------------------------- */
+
+.bot {
+  --px: 0;
+  --py: 0;
+  position: relative;
+  flex-shrink: 0;
+  perspective: calc(var(--u) * 520px);
+  user-select: none;
+}
+
+/* Flota arriba y abajo, y se mece un poco. */
+.bot__flota {
+  position: absolute;
+  inset: 0;
+  animation: bot-flotar 4.4s ease-in-out infinite;
+}
+
+/* La escena se inclina hacia donde mira. */
+.bot__escena {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateX(calc(var(--py) * -9deg)) rotateY(calc(var(--px) * 14deg));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bot__capa {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* La profundidad de cada parte: la sombra al fondo, la antena al frente. */
+.bot__capa--piso {
+  transform: translateZ(calc(var(--u) * -34px)) scale(1.08);
+}
+.bot__capa--cuerpo {
+  transform: translateZ(calc(var(--u) * -6px));
+}
+.bot__capa--cabeza {
+  transform: translateZ(calc(var(--u) * 20px));
+  transform-origin: 50% 70%;
+}
+.bot__capa--cara {
+  transform: translateZ(calc(var(--u) * 34px));
+}
+.bot__capa--antena {
+  transform: translateZ(calc(var(--u) * 26px));
+}
+
+/* La sombra se achica cuando el robot sube. */
+.bot__sombra {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-sombra 4.4s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------ ojos */
+
+.bot__ojos {
+  /* Las pupilas siguen al cursor: un poco más que la cabeza, para que se note. */
+  transform: translate(calc(var(--px) * 5px), calc(var(--py) * 3.5px));
+  transition: transform 0.25s ease-out;
+}
+
+.bot__ojo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-parpadeo 5.2s infinite;
+}
+.bot__ojo--der {
+  animation-delay: 0.04s;
+}
+
+.bot__ojos-contentos,
+.bot__barras,
+.bot__mejilla,
+.bot__duda,
+.bot__brillos {
+  opacity: 0;
+}
+
+.bot__sonrisa {
+  transition: opacity 0.2s;
+}
+
+/* ------------------------------------------------------- antena y lucecitas */
+
+.bot__bulbo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-latido 2.6s ease-in-out infinite;
+}
+.bot__halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-halo 2.6s ease-in-out infinite;
+}
+.bot__onda {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+}
+
+.bot__luz {
+  animation: bot-luz 3.4s ease-in-out infinite;
+}
+.bot__luz--2 {
+  animation-delay: 0.6s;
+}
+.bot__luz--3 {
+  animation-delay: 1.2s;
+}
+.bot__luz--oreja {
+  animation-delay: 0.3s;
+}
+
+/* ================================================================ estados */
+
+/* Pensando: los ojos escanean, la antena emite ondas y el visor muestra barras. */
+.bot--pensando .bot__ojos {
+  animation: bot-escanear 1.5s ease-in-out infinite;
+  transition: none;
+}
+.bot--pensando .bot__ojo {
+  animation: none;
+}
+.bot--pensando .bot__sonrisa {
+  opacity: 0;
+}
+.bot--pensando .bot__barras {
+  opacity: 1;
+}
+.bot--pensando .bot__barra {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: bot-barra 0.7s ease-in-out infinite;
+}
+.bot--pensando .bot__bulbo,
+.bot--pensando .bot__halo {
+  animation-duration: 0.7s;
+}
+.bot--pensando .bot__onda {
+  animation: bot-onda 1.5s ease-out infinite;
+}
+.bot--pensando .bot__onda--2 {
+  animation-delay: 0.75s;
+}
+.bot--pensando .bot__luz {
+  animation-duration: 0.9s;
+}
+
+/* Contento: arcos en lugar de ojos, mejillas, brillitos y un saltito. */
+.bot--contento .bot__ojos-normales {
+  opacity: 0;
+}
+.bot--contento .bot__ojos-contentos {
+  opacity: 1;
+}
+.bot--contento .bot__mejilla {
+  opacity: 0.55;
+}
+.bot--contento .bot__brillos {
+  opacity: 1;
+}
+.bot--contento .bot__brillo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-brillar 1.4s ease-in-out infinite;
+}
+.bot--contento .bot__brillo--2 {
+  animation-delay: 0.5s;
+}
+.bot--contento .bot__flota {
+  animation: bot-saltito 0.9s ease-out 1, bot-flotar 4.4s ease-in-out 0.9s infinite;
+}
+
+/* Confundido: un ojo más grande que el otro, la cabeza ladeada y la duda. */
+.bot--confundido .bot__ojo--izq {
+  transform: scale(1.18);
+  animation: none;
+}
+.bot--confundido .bot__ojo--der {
+  transform: scale(0.72) translateY(3px);
+  animation: none;
+}
+.bot--confundido .bot__sonrisa {
+  d: path('M92 122 Q100 118 108 123');
+}
+.bot--confundido .bot__capa--cabeza,
+.bot--confundido .bot__capa--cara {
+  transform: translateZ(calc(var(--u) * 20px)) rotateZ(-5deg);
+}
+.bot--confundido .bot__capa--cara {
+  transform: translateZ(calc(var(--u) * 34px)) rotateZ(-5deg);
+}
+.bot--confundido .bot__duda {
+  opacity: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-duda 1.8s ease-in-out infinite;
+}
+
+/* Preguntando: no está perdido, está esperando que elijas: cabeza ladeada para el otro lado y el "?". */
+.bot--preguntando .bot__capa--cabeza {
+  transform: translateZ(calc(var(--u) * 20px)) rotateZ(4deg);
+}
+.bot--preguntando .bot__capa--cara {
+  transform: translateZ(calc(var(--u) * 34px)) rotateZ(4deg);
+}
+.bot--preguntando .bot__duda {
+  opacity: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-duda 1.8s ease-in-out infinite;
+}
+
+/* ============================================================ animaciones */
+
+@keyframes bot-flotar {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(calc(var(--u) * -6px)) rotate(0.8deg);
+  }
+}
+
+@keyframes bot-sombra {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.86);
+    opacity: 0.7;
+  }
+}
+
+@keyframes bot-parpadeo {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.08);
+  }
+}
+
+@keyframes bot-latido {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes bot-halo {
+  0%,
+  100% {
+    transform: scale(0.9);
+    opacity: 0.2;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.42;
+  }
+}
+
+@keyframes bot-onda {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(3.1);
+    opacity: 0;
+  }
+}
+
+@keyframes bot-luz {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes bot-escanear {
+  0%,
+  100% {
+    transform: translate(-9px, 0);
+  }
+  50% {
+    transform: translate(9px, 0);
+  }
+}
+
+@keyframes bot-barra {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(2.1);
+  }
+}
+
+@keyframes bot-saltito {
+  0% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(calc(var(--u) * -14px));
+  }
+  60% {
+    transform: translateY(0);
+  }
+  78% {
+    transform: translateY(calc(var(--u) * -4px));
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes bot-brillar {
+  0%,
+  100% {
+    transform: scale(0.4) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1) rotate(25deg);
+    opacity: 1;
+  }
+}
+
+@keyframes bot-duda {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(8deg);
+  }
+}
+
+/* Quien pidió menos movimiento, lo tiene: el robot queda quieto (y mirando de frente). */
+@media (prefers-reduced-motion: reduce) {
+  .bot *,
+  .bot__flota,
+  .bot__escena {
+    animation: none !important;
+    transition: none !important;
+  }
+}

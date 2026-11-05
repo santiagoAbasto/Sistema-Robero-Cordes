@@ -2,10 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Consulta;
 use App\Models\Empresa;
+use App\Services\FusionDeEmpresas;
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -34,15 +33,12 @@ class FusionarEmpresasDuplicadas extends Command
 
     protected $description = 'Fusiona empresas con el nombre exactamente igual: mueve todo a una y archiva las demas';
 
-    /** Datos de identidad que se completan en la que sobrevive si los tiene vacios. */
-    private const ESCALARES = [
-        'cuit', 'codigo_indice', 'codigo_isis', 'direccion', 'codigo_postal',
-        'localidad_id', 'provincia_id', 'pais_id', 'rubro_id',
-        'condicion_iva', 'condicion_pago',
-    ];
+    private FusionDeEmpresas $fusion;
 
     public function handle(): int
     {
+        $this->fusion = new FusionDeEmpresas;
+
         $base = DB::connection()->getDatabaseName();
         $aplicar = (bool) $this->option('aplicar');
 
@@ -70,7 +66,7 @@ class FusionarEmpresasDuplicadas extends Command
         // Plan por grupo (se arma una vez y se reusa al aplicar).
         $plan = [];
         foreach ($grupos as $nombre => $empresas) {
-            $sobrevive = $this->elegirSobreviviente($empresas);
+            $sobrevive = $this->fusion->elegirSobreviviente($empresas);
             $duplicadas = $empresas->reject(fn (Empresa $e) => $e->id === $sobrevive->id)->values();
             $plan[] = compact('nombre', 'sobrevive', 'duplicadas');
 
@@ -81,7 +77,7 @@ class FusionarEmpresasDuplicadas extends Command
                     : "  → se archiva, todo pasa a #{$sobrevive->id}";
                 $this->line(sprintf(
                     '   #%-8d cotizaciones=%-4d contactos=%-3d razones=%-2d%s',
-                    $e->id, $this->contarConsultas($e->id), $e->contactos()->count(),
+                    $e->id, $this->fusion->contarConsultas($e->id), $e->contactos()->count(),
                     $e->razonesSociales()->count(), $marca,
                 ));
             }
@@ -116,9 +112,14 @@ class FusionarEmpresasDuplicadas extends Command
         // no frena los demas.
         foreach ($plan as $i => $p) {
             try {
-                DB::transaction(function () use ($p, &$r) {
-                    $this->fusionarGrupo($p['sobrevive'], $p['duplicadas'], $r);
-                });
+                $parcial = DB::transaction(
+                    fn () => $this->fusion->fusionar($p['sobrevive'], $p['duplicadas']),
+                );
+
+                foreach ($parcial as $clave => $cuanto) {
+                    $r[$clave] += $cuanto;
+                }
+
                 $r['grupos']++;
             } catch (\Throwable $e) {
                 $fallidos[] = "{$p['nombre']}: ".$e->getMessage();
@@ -145,105 +146,5 @@ class FusionarEmpresasDuplicadas extends Command
         }
 
         return self::SUCCESS;
-    }
-
-    /** La que mas cotizaciones tiene (incluida la papelera); desempata la mas vieja. */
-    private function elegirSobreviviente(Collection $empresas): Empresa
-    {
-        $conteos = $empresas->mapWithKeys(fn (Empresa $e) => [$e->id => $this->contarConsultas($e->id)]);
-
-        return $empresas->sort(fn (Empresa $a, Empresa $b) => ($conteos[$b->id] <=> $conteos[$a->id]) ?: ($a->id <=> $b->id))->first();
-    }
-
-    private function contarConsultas(int $empresaId): int
-    {
-        return Consulta::withTrashed()->where('empresa_id', $empresaId)->count();
-    }
-
-    private function fusionarGrupo(Empresa $sobrevive, Collection $duplicadas, array &$r): void
-    {
-        foreach ($duplicadas as $dup) {
-            // 1) Completar los datos vacios de la que sobrevive, sin pisar; lo
-            //    que entra en conflicto o sobra va a la observacion, no se pierde.
-            $this->traspasarEscalares($sobrevive, $dup);
-
-            // 2) Mover lo que cuelga. Updates crudos a proposito: mueven tambien
-            //    las cotizaciones de la papelera (soft-deleted) y no disparan el
-            //    historial por cada fila.
-            $r['consultas'] += DB::table('consultas')->where('empresa_id', $dup->id)->update(['empresa_id' => $sobrevive->id]);
-            $r['contactos'] += DB::table('contactos')->where('empresa_id', $dup->id)->update(['empresa_id' => $sobrevive->id]);
-            $r['razones'] += DB::table('razones_sociales')->where('empresa_id', $dup->id)->update(['empresa_id' => $sobrevive->id]);
-            $r['enlaces'] += DB::table('empresa_enlaces')->where('empresa_id', $dup->id)->update(['empresa_id' => $sobrevive->id]);
-            $r['campos'] += DB::table('empresa_campos')->where('empresa_id', $dup->id)->update(['empresa_id' => $sobrevive->id]);
-            DB::table('historial_cambios')->where('empresa_id', $dup->id)->update(['empresa_id' => $sobrevive->id]);
-
-            // 3) Relaciones: hay unique(empresa_id, relacion). La que la que
-            //    sobrevive ya tiene no se puede mover (chocaria el unique); se
-            //    descarta la de la duplicada —la relacion igual queda en la que
-            //    sobrevive, no se pierde informacion.
-            $yaTiene = DB::table('empresa_relacion')->where('empresa_id', $sobrevive->id)->pluck('relacion')->all();
-            foreach (DB::table('empresa_relacion')->where('empresa_id', $dup->id)->get() as $rel) {
-                if (in_array($rel->relacion, $yaTiene, true)) {
-                    DB::table('empresa_relacion')->where('id', $rel->id)->delete();
-                } else {
-                    DB::table('empresa_relacion')->where('id', $rel->id)->update(['empresa_id' => $sobrevive->id]);
-                    $yaTiene[] = $rel->relacion;
-                }
-            }
-
-            // 4) Archivar la duplicada ya vacia. NO se borra: queda reversible.
-            DB::table('empresas')->where('id', $dup->id)->update([
-                'activa' => false,
-                'nombre' => mb_substr($dup->nombre." (fusionada en #{$sobrevive->id})", 0, 150),
-                'updated_at' => Carbon::now(),
-            ]);
-            $r['archivadas']++;
-        }
-
-        // 5) Que quede un solo principal y una sola habitual en la que sobrevive.
-        $this->dejarUnoSolo('contactos', $sobrevive->id, 'principal');
-        $this->dejarUnoSolo('razones_sociales', $sobrevive->id, 'habitual');
-    }
-
-    /** Completa escalares vacios en la que sobrevive; lo que choca o sobra va a la observacion. */
-    private function traspasarEscalares(Empresa $sobrevive, Empresa $dup): void
-    {
-        $extra = [];
-        foreach (self::ESCALARES as $campo) {
-            $valDup = $dup->$campo;
-            if ($valDup === null || $valDup === '') {
-                continue;
-            }
-            if ($sobrevive->$campo === null || $sobrevive->$campo === '') {
-                $sobrevive->$campo = $valDup;
-            } elseif ((string) $sobrevive->$campo !== (string) $valDup) {
-                $extra[] = "{$campo}={$valDup}";
-            }
-        }
-
-        $notas = [];
-        $obsDup = trim((string) $dup->observacion_general);
-        if ($obsDup !== '' && $obsDup !== trim((string) $sobrevive->observacion_general)) {
-            $notas[] = $obsDup;
-        }
-        if ($extra !== []) {
-            $notas[] = 'Datos: '.implode('; ', $extra);
-        }
-        if ($notas !== []) {
-            $marca = "[Ficha fusionada #{$dup->id}] ".implode(' · ', $notas);
-            $sobrevive->observacion_general = trim(((string) $sobrevive->observacion_general)."\n".$marca);
-        }
-
-        $sobrevive->save();
-    }
-
-    /** Deja el flag en TRUE solo en la fila mas vieja; el resto en FALSE. */
-    private function dejarUnoSolo(string $tabla, int $empresaId, string $flag): void
-    {
-        $conFlag = DB::table($tabla)->where('empresa_id', $empresaId)->where($flag, true)->orderBy('id')->pluck('id');
-        if ($conFlag->count() <= 1) {
-            return;
-        }
-        DB::table($tabla)->whereIn('id', $conFlag->slice(1)->all())->update([$flag => false]);
     }
 }

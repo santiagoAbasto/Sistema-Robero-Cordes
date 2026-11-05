@@ -29,6 +29,24 @@ class EvaluadorDeFormulas
         'sqrt' => 'sqrt',
     ];
 
+    /** Sólo para las cuentas sueltas de Cordes IA (cuántas piezas salen de una chapa): las fórmulas guardadas de las formas no las usan. */
+    private const REDONDEOS = [
+        'floor' => 'floor',
+        'ceil' => 'ceil',
+        'round' => 'round',
+    ];
+
+    private bool $conRedondeos = false;
+
+    /** Una copia que además entiende floor(), ceil() y round(). */
+    public function conRedondeos(): static
+    {
+        $copia = clone $this;
+        $copia->conRedondeos = true;
+
+        return $copia;
+    }
+
     /**
      * @param  array<string, float>  $valores  Las medidas, ya en milimetros.
      *
@@ -245,11 +263,13 @@ class EvaluadorDeFormulas
 
             $this->esperar(')');
 
-            if (! isset(self::FUNCIONES[$nombre])) {
+            $funcion = self::FUNCIONES[$nombre] ?? ($this->conRedondeos ? (self::REDONDEOS[$nombre] ?? null) : null);
+
+            if ($funcion === null) {
                 throw new \InvalidArgumentException('Funcion no permitida: '.$nombre);
             }
 
-            return (float) (self::FUNCIONES[$nombre])(...$argumentos);
+            return (float) $funcion(...$argumentos);
         }
 
         if ($nombre === 'pi') {

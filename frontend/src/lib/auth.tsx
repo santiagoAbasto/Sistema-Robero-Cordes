@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { olvidarConversacion } from './cordesStore'
 import api, { getToken, setToken } from './api'
 import type { User } from '../types'
 
@@ -56,6 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // ignore network errors on logout
     }
     setToken(null)
+    // La conversación con Cordes tiene datos de clientes: no se queda para quien entre después.
+    olvidarConversacion()
     setUser(null)
   }
 

@@ -4,18 +4,23 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\EmpresaResource;
 use App\Models\Contacto;
-use App\Services\FirmaDeMail;
-use App\Services\InterpreteIA;
 use App\Models\ContactoMedio;
 use App\Models\Empresa;
 use App\Models\EmpresaCampo;
 use App\Models\EmpresaEnlace;
 use App\Models\EmpresaRelacion;
+use App\Models\Localidad;
+use App\Models\OpcionDeCondicion;
 use App\Models\RazonSocial;
+use App\Models\TipoDeCondicion;
+use App\Services\CatalogoDeCondiciones;
+use App\Services\FirmaDeMail;
+use App\Services\InterpreteIA;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Alta y modificación de la ficha.
@@ -43,8 +48,8 @@ class EmpresaEscrituraController extends Controller
         $contacto = $request->validate([
             'contacto' => ['nullable', 'array'],
             'contacto.nombre' => ['required_with:contacto', 'string', 'max:120'],
-            'contacto.cargo' => ['nullable', 'string', 'max:60'],
-            'contacto.sector' => ['nullable', 'string', 'max:60'],
+            'contacto.cargo' => ['nullable', 'string', 'max:150'],
+            'contacto.sector' => ['nullable', 'string', 'max:150'],
             'contacto.medios' => ['array'],
             'contacto.medios.*.tipo_medio_id' => ['required', 'exists:tipos_medio,id'],
             'contacto.medios.*.valor' => ['required', 'string', 'max:120'],
@@ -245,7 +250,7 @@ class EmpresaEscrituraController extends Controller
         // Con su nombre: si la acaba de agregar Google, la pantalla todavia no
         // la tiene en su lista y el desplegable diria "Sin elegir".
         $leido['localidad_nombre'] = $leido['localidad_id']
-            ? \App\Models\Localidad::whereKey($leido['localidad_id'])->value('nombre')
+            ? Localidad::whereKey($leido['localidad_id'])->value('nombre')
             : null;
 
         // El tipo de telefono dice que es el telefono, y los enlaces repiten
@@ -278,8 +283,8 @@ class EmpresaEscrituraController extends Controller
     {
         $datos = $request->validate([
             'nombre' => ['required', 'string', 'max:120'],
-            'sector' => ['nullable', 'string', 'max:60'],
-            'cargo' => ['nullable', 'string', 'max:60'],
+            'sector' => ['nullable', 'string', 'max:150'],
+            'cargo' => ['nullable', 'string', 'max:150'],
             'principal' => ['boolean'],
             'observacion' => ['nullable', 'string'],
             'activo' => ['boolean'],
@@ -520,25 +525,57 @@ class EmpresaEscrituraController extends Controller
 
     // ----------------------------------------------------- campos de la ficha
 
+    /**
+     * Cargar o modificar una condición de trabajo de la ficha.
+     *
+     * Sólo se elige de la lista (Configuración > Condiciones de la ficha): el título y el dato salen de
+     * ahí, no se escriben. Si el dato no está, se puede agregar uno nuevo, que entra a la lista (sin
+     * repetir uno que ya esté escrito de otra forma). El campo guarda además el texto de los dos, que es
+     * el que usa la cotización.
+     */
     public function guardarCampo(Request $request, Empresa $empresa, ?EmpresaCampo $campo = null)
     {
         $datos = $request->validate([
-            'titulo' => ['required', 'string', 'max:60'],
-            'valor' => ['nullable', 'string'],
-            'orden' => ['nullable', 'integer', 'min:0'],
+            'tipo_de_condicion_id' => ['required', 'integer', Rule::exists('tipos_de_condicion', 'id')->where('activo', true)],
+            'opcion_de_condicion_id' => ['nullable', 'integer'],
+            'opcion_nueva' => ['nullable', 'string', 'max:255'],
             'usar_al_cotizar' => ['boolean'],
         ]);
 
-        // El orden sólo se calcula al crear: modificar un campo no lo mueve de lugar.
-        if (! $campo?->exists) {
-            $datos['orden'] ??= ($empresa->campos()->max('orden') ?? 0) + 1;
-        } else {
-            unset($datos['orden']);
+        $catalogo = app(CatalogoDeCondiciones::class);
+        $tipo = TipoDeCondicion::findOrFail($datos['tipo_de_condicion_id']);
+
+        // Cada empresa tiene una sola vez cada condición (también cuenta una vieja escrita a mano igual).
+        $repetida = $empresa->campos->first(fn (EmpresaCampo $c) => $c->id !== $campo?->id
+            && ($c->tipo_de_condicion_id === $tipo->id || CatalogoDeCondiciones::clave((string) $c->titulo) === CatalogoDeCondiciones::clave($tipo->nombre)));
+
+        if ($repetida !== null) {
+            throw ValidationException::withMessages(['tipo_de_condicion_id' => "Esta empresa ya tiene cargado «{$tipo->nombre}»: modificalo en vez de agregarlo de nuevo."]);
         }
 
+        if (filled($datos['opcion_de_condicion_id'] ?? null)) {
+            $opcion = OpcionDeCondicion::where('id', $datos['opcion_de_condicion_id'])
+                ->where('tipo_de_condicion_id', $tipo->id)->where('activo', true)->first();
+
+            $opcion ?? throw ValidationException::withMessages(['opcion_de_condicion_id' => 'Ese dato no es de esa condición.']);
+        } elseif (filled($datos['opcion_nueva'] ?? null)) {
+            $opcion = $catalogo->opcion($tipo, $datos['opcion_nueva']);
+        } else {
+            throw ValidationException::withMessages(['opcion_de_condicion_id' => 'Elegí un dato de la lista, o agregá uno nuevo.']);
+        }
+
+        $guardar = [
+            'titulo' => $tipo->nombre,
+            'valor' => $opcion->texto,
+            'tipo_de_condicion_id' => $tipo->id,
+            'opcion_de_condicion_id' => $opcion->id,
+            'usar_al_cotizar' => (bool) ($datos['usar_al_cotizar'] ?? false),
+        ];
+
+        // El orden sólo se calcula al crear: modificar un campo no lo mueve de lugar.
         $campo = $campo?->exists
-            ? tap($campo)->update($datos)
-            : $empresa->campos()->create($datos);
+            ? tap($campo)->update($guardar)
+            : $empresa->campos()->create($guardar + ['orden' => ($empresa->campos()->max('orden') ?? 0) + 1]);
 
         return response()->json(['id' => $campo->id, 'mensaje' => 'Campo guardado.']);
     }

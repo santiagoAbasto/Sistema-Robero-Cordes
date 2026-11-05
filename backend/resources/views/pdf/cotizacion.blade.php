@@ -231,7 +231,8 @@
         @foreach ($condiciones->whereNotNull('titulo') as $condicion)
             <div class="condicion">
                 <span class="condicion-tit">{{ $condicion->titulo }}:</span>
-                {!! nl2br(e($condicion->texto)) !!}
+                {{-- Con negritas y colores si los tiene (App\Services\FormatoDeTexto): sale escapado. --}}
+                {!! \App\Services\FormatoDeTexto::html($condicion->texto) !!}
             </div>
         @endforeach
 
@@ -239,7 +240,7 @@
         @if ($sueltas->isNotEmpty())
             <ul style="margin:4pt 0 0 12pt; padding:0">
                 @foreach ($sueltas as $condicion)
-                    <li>{{ $condicion->texto }}</li>
+                    <li>{!! \App\Services\FormatoDeTexto::html($condicion->texto) !!}</li>
                 @endforeach
             </ul>
         @endif

@@ -87,6 +87,10 @@ class EmpresaResource extends JsonResource
                 'titulo' => $c->titulo,
                 'valor' => $c->valor,
                 'usar_al_cotizar' => $c->usar_al_cotizar,
+                'tipo_de_condicion_id' => $c->tipo_de_condicion_id,
+                'opcion_de_condicion_id' => $c->opcion_de_condicion_id,
+                // Escrito a mano, de antes de la lista: se ve igual, pero marcado para revisarlo.
+                'fuera_de_la_lista' => $c->opcion_de_condicion_id === null && filled($c->valor),
             ])->values(),
 
             // El historial va separado en tres secciones, como en la ficha.

@@ -66,16 +66,20 @@ class EnlazadorDeLineas
     private array $ruido;
 
     /**
-     * @param  array<int, array{0: int, 1: string}>  $entradas  id y texto: nombres y alias
+     * Las entradas pueden marcarse como alias con un tercer valor true: en un empate, el nombre
+     * propio de un material le gana al alias de otro ("Monel 400" es un material y también un
+     * alias de "Monel": la línea "MONEL 400 …" es del primero).
+     *
+     * @param  array<int, array{0: int, 1: string, 2?: bool}>  $entradas  id, texto y si es alias: nombres y alias
      * @param  bool  $material  true para el catalogo de materiales, false para formas
      * @param  float  $exigencia  que parte del peso maximo posible tiene que
-     *                             alcanzar el ganador, entre 0 y 1. Va en
-     *                             proporcion y no en un numero fijo porque el
-     *                             peso depende del tamaño del catalogo: con
-     *                             2.000 entradas el maximo es log(2.000)=7,6
-     *                             y con 13 es log(13)=2,6, asi que un umbral
-     *                             fijo de 3,9 no deja pasar nada en el
-     *                             segundo.
+     *                            alcanzar el ganador, entre 0 y 1. Va en
+     *                            proporcion y no en un numero fijo porque el
+     *                            peso depende del tamaño del catalogo: con
+     *                            2.000 entradas el maximo es log(2.000)=7,6
+     *                            y con 13 es log(13)=2,6, asi que un umbral
+     *                            fijo de 3,9 no deja pasar nada en el
+     *                            segundo.
      * @param  array<int, string>  $ruidoExtra  palabras que en este lado no
      *                                          identifican nada. Buscando
      *                                          material se le pasan los
@@ -100,14 +104,15 @@ class EnlazadorDeLineas
 
         $frecuencia = [];
 
-        foreach ($entradas as [$id, $texto]) {
+        foreach ($entradas as $entrada) {
+            [$id, $texto] = $entrada;
             $tokens = $this->tokens($texto);
 
             if ($tokens === [] || ! $this->sirveParaBuscar($tokens)) {
                 continue;
             }
 
-            $this->candidatos[] = ['id' => (int) $id, 'tokens' => array_flip($tokens)];
+            $this->candidatos[] = ['id' => (int) $id, 'tokens' => array_flip($tokens), 'palabras' => array_flip($this->palabras($texto)), 'alias' => (bool) ($entrada[2] ?? false)];
 
             foreach ($tokens as $t) {
                 $frecuencia[$t] = ($frecuencia[$t] ?? 0) + 1;
@@ -133,9 +138,9 @@ class EnlazadorDeLineas
             return null;
         }
 
-        $mejor = null;
+        // Los que llegan al mejor puntaje (casi siempre uno solo).
+        $mejores = [];
         $puntajeMejor = 0.0;
-        $empatado = false;
 
         foreach ($this->candidatos as $c) {
             // Se le exige que TODOS sus tokens esten en la descripcion.
@@ -150,16 +155,26 @@ class EnlazadorDeLineas
             }
 
             if ($puntaje > $puntajeMejor + 0.01) {
-                [$mejor, $puntajeMejor, $empatado] = [$c, $puntaje, false];
-            } elseif (abs($puntaje - $puntajeMejor) <= 0.01 && $mejor && $c['id'] !== $mejor['id']) {
-                // Dos materiales distintos empatados: no se adivina.
-                $empatado = true;
+                [$mejores, $puntajeMejor] = [[$c], $puntaje];
+            } elseif ($mejores !== [] && abs($puntaje - $puntajeMejor) <= 0.01) {
+                $mejores[] = $c;
             }
         }
 
-        if ($mejor === null || $empatado || $puntajeMejor < $this->minimo) {
+        if ($mejores === [] || $puntajeMejor < $this->minimo) {
             return null;
         }
+
+        // Dos materiales distintos empatados: no se adivina, salvo que haya una razón objetiva.
+        if (count(array_unique(array_column($mejores, 'id'))) > 1) {
+            $mejores = $this->desempatar($mejores, $descripcion);
+
+            if ($mejores === null) {
+                return null;
+            }
+        }
+
+        $mejor = $mejores[0];
 
         /*
           La guarda de precision, y solo para el material.
@@ -181,6 +196,47 @@ class EnlazadorDeLineas
         }
 
         return $mejor['id'];
+    }
+
+    /**
+     * Entre candidatos empatados de ids distintos, las dos únicas razones para elegir uno:
+     *
+     *  1. Uno tiene palabras propias que la línea no dice. "TUBO EN U" se reduce al token "tubo"
+     *     ("en" y "u" no cuentan), igual que "TUBO": pero una línea que dice "TUBO 26.67 X 2.87"
+     *     no dice "en", así que no es la forma en U. Si los dos entran completos, sigue el empate.
+     *  2. Uno es nombre propio y el otro un alias: "Monel 400" es un material y a la vez un alias
+     *     de "Monel"; la línea "MONEL 400 …" es del primero.
+     *
+     * Si después de eso quedan ids distintos, es empate y no se adivina.
+     *
+     * @param  list<array<string, mixed>>  $empatados
+     * @return list<array<string, mixed>>|null
+     */
+    private function desempatar(array $empatados, string $descripcion): ?array
+    {
+        $dichas = array_flip($this->palabras($descripcion));
+
+        $faltan = array_map(fn (array $c) => count(array_diff_key($c['palabras'], $dichas)), $empatados);
+        $menos = min($faltan);
+        $quedan = array_values(array_filter($empatados, fn ($c, $i) => $faltan[$i] === $menos, ARRAY_FILTER_USE_BOTH));
+
+        if (count(array_unique(array_column($quedan, 'id'))) > 1) {
+            $quedan = array_values(array_filter($quedan, fn ($c) => ! $c['alias']));
+        }
+
+        return count(array_unique(array_column($quedan, 'id'))) === 1 ? $quedan : null;
+    }
+
+    /**
+     * Todas las palabras de un texto, también las que no cuentan como token ("en", "u", "de").
+     *
+     * @return array<int, string>
+     */
+    private function palabras(string $texto): array
+    {
+        preg_match_all('/[a-z0-9]+/', $this->plano($texto), $m);
+
+        return array_values(array_unique($m[0]));
     }
 
     /**

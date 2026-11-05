@@ -17,6 +17,8 @@ return [
         'key' => env('OPENAI_API_KEY'),
         'url' => env('OPENAI_URL', 'https://api.openai.com/v1'),
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+        // Cordes IA razona con herramientas: usa un modelo más capaz que el de leer pedidos (si la cuenta no lo tiene, cae al de arriba).
+        'modelo_cordes' => env('OPENAI_MODELO_CORDES', 'gpt-4o'),
         // La segunda lectura de una imagen, con otro modelo: si las dos no
         // coinciden en el mail o el telefono, se avisa cual revisar.
         'modelo_control' => env('OPENAI_MODELO_CONTROL', 'gpt-4.1-mini'),

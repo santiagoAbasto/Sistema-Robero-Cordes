@@ -1,0 +1,93 @@
+/* Cordes IA: los movimientos que no se pueden hacer con clases sueltas. Todos se apagan con "reducir movimiento". */
+
+/* El cursor mientras escribe. */
+.cordes-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: #7c3aed;
+  animation: cordes-parpadeo 0.9s steps(2, start) infinite;
+}
+
+/* El latido del paso en el que está trabajando. */
+.cordes-latido {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #7c3aed;
+}
+.cordes-latido::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(124, 58, 237, 0.45);
+  animation: cordes-onda 1.4s ease-out infinite;
+}
+
+/* Un brillo que recorre una barra mientras piensa. */
+.cordes-brillo {
+  background: linear-gradient(90deg, #ece6fa 0%, #c9b6f5 40%, #ece6fa 80%);
+  background-size: 220% 100%;
+  animation: cordes-recorrido 1.5s linear infinite;
+}
+
+/* El borde del campo, que se mueve mientras trabaja. */
+.cordes-borde-vivo {
+  background: linear-gradient(90deg, #c4b5fd, #7c3aed, #22d3ee, #c4b5fd);
+  background-size: 300% 100%;
+  animation: cordes-recorrido 2.4s linear infinite;
+}
+
+/* Un destello suave cuando aparece una respuesta. */
+.cordes-destello {
+  animation: cordes-destello 1.2s ease-out 1;
+}
+
+@keyframes cordes-parpadeo {
+  to {
+    visibility: hidden;
+  }
+}
+@keyframes cordes-onda {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+@keyframes cordes-recorrido {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@keyframes cordes-destello {
+  0% {
+    box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.35);
+  }
+  100% {
+    box-shadow: 0 0 0 14px rgba(124, 58, 237, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cordes-cursor,
+  .cordes-latido::after,
+  .cordes-brillo,
+  .cordes-borde-vivo,
+  .cordes-destello {
+    animation: none;
+  }
+  .cordes-cursor {
+    display: none;
+  }
+}

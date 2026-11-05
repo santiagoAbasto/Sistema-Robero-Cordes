@@ -323,7 +323,8 @@ export function PageHeader({
 }) {
   return (
     <header className="flex flex-wrap items-start gap-4">
-      <div className="min-w-0 flex-1">
+      {/* Base de 16rem: en una pantalla angosta los botones bajan en vez de aplastar el título. */}
+      <div className="min-w-0 flex-[1_1_16rem]">
         {breadcrumb && (
           <div className="mb-1 text-[11px] font-medium text-faint">{breadcrumb}</div>
         )}

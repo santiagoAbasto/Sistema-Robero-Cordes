@@ -99,7 +99,15 @@ export default function PaletaRapida({
 
   const todo = useMemo(
     () => [
-      ...empresas.map((e) => ({ tipo: 'empresa' as const, label: e.nombre, to: `/empresas/${e.id}` })),
+      ...empresas.map((e) => ({
+        tipo: 'empresa' as const,
+        label: e.nombre,
+        to: `/empresas/${e.id}`,
+        // "visitada" sólo si es de las últimas que abrió esta persona (campo
+        // vacío). Lo que devuelve la búsqueda no es "visitado": Roberto veía
+        // "visitada" en empresas que nunca había abierto.
+        reciente: !texto.trim(),
+      })),
       ...resultados.map((d) => ({
         tipo: 'menu' as const,
         label: d.label,
@@ -107,7 +115,7 @@ export default function PaletaRapida({
         to: d.to,
       })),
     ],
-    [empresas, resultados],
+    [empresas, resultados, texto],
   )
 
   useEffect(() => {
@@ -205,7 +213,7 @@ export default function PaletaRapida({
                     {item.tipo === 'menu' && item.seccion && (
                       <span className="shrink-0 text-[11.5px] text-faint">{item.seccion}</span>
                     )}
-                    {item.tipo === 'empresa' && (
+                    {item.tipo === 'empresa' && item.reciente && (
                       <span className="shrink-0 text-[11.5px] text-faint">visitada</span>
                     )}
 

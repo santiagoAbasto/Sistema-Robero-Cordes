@@ -64,4 +64,47 @@ class BuscadorDeEmpresasTest extends TestCase
             'la que sólo matchea por una línea de cotización va después de la que coincide por nombre',
         );
     }
+
+    /**
+     * Las empresas que cerraron se ven igual (con su historia), pero SIEMPRE al
+     * final: aunque les toque antes por el abecedario o coincidan mejor.
+     */
+    public function test_las_inactivas_van_al_final_aunque_toquen_antes(): void
+    {
+        Sanctum::actingAs(User::factory()->create(['role' => 'Administrador']));
+
+        Empresa::create(['nombre' => 'AAA CERRADA SA', 'activa' => false]);
+        Empresa::create(['nombre' => 'MMM ACTIVA SA']);
+        Empresa::create(['nombre' => 'ZZZ ACTIVA SA']);
+
+        $nombres = array_column($this->getJson('/api/empresas?con_inactivas=1')->assertOk()->json('data'), 'nombre');
+
+        $this->assertSame(['MMM ACTIVA SA', 'ZZZ ACTIVA SA', 'AAA CERRADA SA'], $nombres);
+    }
+
+    public function test_con_texto_la_inactiva_que_coincide_mejor_igual_va_al_final(): void
+    {
+        Sanctum::actingAs(User::factory()->create(['role' => 'Administrador']));
+
+        // La cerrada EMPIEZA con lo buscado (mejor coincidencia); la activa solo lo contiene.
+        Empresa::create(['nombre' => 'ZORBA CERRADA', 'activa' => false]);
+        Empresa::create(['nombre' => 'BAZOR ACTIVA']);
+
+        $datos = $this->getJson('/api/empresas?buscar=zor&con_inactivas=1')->assertOk()->json('data');
+
+        $this->assertSame(['BAZOR ACTIVA', 'ZORBA CERRADA'], array_column($datos, 'nombre'));
+        $this->assertFalse($datos[1]['activa']);
+    }
+
+    public function test_sin_pedirlas_las_inactivas_siguen_sin_aparecer(): void
+    {
+        Sanctum::actingAs(User::factory()->create(['role' => 'Administrador']));
+
+        Empresa::create(['nombre' => 'AAA CERRADA SA', 'activa' => false]);
+        Empresa::create(['nombre' => 'BBB ACTIVA SA']);
+
+        $nombres = array_column($this->getJson('/api/empresas')->assertOk()->json('data'), 'nombre');
+
+        $this->assertSame(['BBB ACTIVA SA'], $nombres);
+    }
 }

@@ -9,7 +9,7 @@ import type { Empresa, Relacion } from '../../types/indice'
 
 const RELACIONES: Relacion[] = ['Cliente', 'Proveedor', 'Servicio', 'Empleado', 'Agenda general']
 
-/* Las mismas que acepta el servidor (Empresa::CONDICIONES_IVA). */
+/* Respaldo: las mismas que acepta el servidor (Empresa::CONDICIONES_IVA), que las manda en /catalogos. */
 const CONDICIONES_IVA = ['Responsable Inscripto', 'Consumidor Final', 'Monotributo', 'Exento', 'Liberado', 'Exportación']
 
 export interface EstadoEmpresaForm extends DatosEmpresa {
@@ -187,7 +187,7 @@ export default function EmpresaForm({
           ayuda="decide si la cotización sale más IVA o con IVA incluido"
           value={valores.condicion_iva ?? ''}
           onChange={(e) => set('condicion_iva', e.target.value)}
-          opciones={CONDICIONES_IVA.map((c) => ({ valor: c, texto: c }))}
+          opciones={(catalogos?.condiciones_iva_empresa ?? CONDICIONES_IVA).map((c) => ({ valor: c, texto: c }))}
         />
         <Combo
           id="condicion-pago-de-la-empresa"

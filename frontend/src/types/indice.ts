@@ -60,6 +60,19 @@ export interface CampoEmpresa {
   titulo: string
   valor: string | null
   usar_al_cotizar: boolean
+  /** La condición y el dato de la lista de la que salen el título y el dato. */
+  tipo_de_condicion_id: number | null
+  opcion_de_condicion_id: number | null
+  /** Escrito a mano, de antes de la lista: se ve igual pero hay que elegirlo de la lista. */
+  fuera_de_la_lista: boolean
+}
+
+/** Una condición de trabajo que se puede cargar en una ficha, con sus datos posibles. */
+export interface CondicionDeLaFicha {
+  id: number
+  nombre: string
+  proponer_al_cotizar: boolean
+  opciones: { id: number; texto: string }[]
 }
 
 export interface LineaPedida {
@@ -422,6 +435,8 @@ export interface Comprobante {
   numero: string | null
   fecha: string | null
   nota: string | null
+  /** Lo que dice el comprobante, en la moneda de la cotización. Sin cargar: null. */
+  importe: number | null
 }
 
 export interface Catalogos {
@@ -434,7 +449,12 @@ export interface Catalogos {
   tipos_comprobante: string[]
   estados: EstadoConsulta[]
   solicitud_vias: string[]
+  /** Las de las razones sociales (4): así las guarda su columna. */
   condiciones_iva: string[]
+  /** Las de la ficha de la empresa (6): de ellas depende si la hoja sale más IVA o con IVA incluido. */
+  condiciones_iva_empresa: string[]
+  /** La lista de condiciones de trabajo de la ficha: la ficha sólo elige de acá. */
+  condiciones_de_la_ficha: CondicionDeLaFicha[]
   iibb_condiciones: string[]
   vias_envio: string[]
   ajuste_dif_cambio: string[]
@@ -530,6 +550,8 @@ export interface LineaInterpretada {
   igual_a_lo_pedido: boolean
   /** Con o sin costura, la norma: lo que ya venía escrito en el renglón. */
   caracteristicas?: string | null
+  /** Su número de ítem ("Posición 10" en la tabla del cliente): sale impreso como "Su item". */
+  item_cliente?: string | null
   /**
    * Las variantes que pidió el cliente son líneas aparte: la primera es la
    * madre y cada otra cuelga de ella. `alternativa_de` es la posición de su

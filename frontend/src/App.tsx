@@ -9,7 +9,6 @@ import { NAV_ROUTES } from './data/navigation'
 
 // Módulo 1 — Índice Telefónico
 import IndiceMenu from './pages/indice/IndiceMenu'
-import Empresas from './pages/indice/Empresas'
 import NuevaEmpresa from './pages/indice/NuevaEmpresa'
 import FichaEmpresa from './pages/indice/FichaEmpresa'
 import ConsultaEditor from './pages/indice/ConsultaEditor'
@@ -22,31 +21,39 @@ import QuienVeQue from './pages/indice/QuienVeQue'
 import FormasYFormulas from './pages/indice/FormasYFormulas'
 import ListasEditables from './pages/indice/ListasEditables'
 import CondicionesHabituales from './pages/indice/CondicionesHabituales'
+import CatalogoDeCondiciones from './pages/indice/CatalogoDeCondiciones'
 import DatosDelSistemaAnterior from './pages/indice/DatosDelSistemaAnterior'
 // TEMPORAL: se saca junto con la pantalla cuando CORDES revise la carga.
 import AntesYAhora from './pages/indice/AntesYAhora'
 import Seguimiento from './pages/indice/Seguimiento'
-import Reportes from './pages/indice/Reportes'
+import Reportes from './pages/reportes/Reportes'
 import EnvioDeCotizaciones from './pages/indice/EnvioDeCotizaciones'
-import { BuscarConsultas, ConsultasPorFecha, EmpresasPorCondicion } from './pages/indice/Busquedas'
+import Buscador from './pages/buscador/Buscador'
+import RedirigirAlBuscador, {
+  DESDE_BUSCADOR_IA,
+  DESDE_BUSCAR_MATERIAL,
+  DESDE_CONSULTAS_POR_CONDICION,
+  DESDE_CONSULTAS_POR_FECHA,
+  DESDE_EMPRESAS_POR_CONDICION,
+  DESDE_REGISTROS,
+} from './pages/buscador/Redirigir'
 
 /** Las que ya están hechas: el resto sigue mostrando el placeholder. */
 const HECHAS = [
+  '/buscador',
+  '/cotizaciones/buscar',
   '/config/antes-y-ahora',
   '/config/condiciones',
+  '/config/condiciones-de-la-ficha',
   '/config/envios',
   '/config/formas',
   '/config/listas',
   '/config/migracion',
   '/config/usuarios',
-  '/consultas/condicion',
-  '/consultas/fecha',
   '/cotizaciones/seguimiento',
   '/dashboard',
   '/empresas',
-  '/empresas/condicion',
   '/empresas/nueva',
-  '/empresas/registros',
   '/imprimir',
   '/reportes',
 ]
@@ -62,10 +69,16 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route path="/dashboard" element={<Dashboard />} />
 
+              {/* Buscador */}
+              <Route path="/buscador" element={<Buscador />} />
+              <Route path="/ia" element={<RedirigirAlBuscador traducir={DESDE_BUSCADOR_IA} />} />
+              <Route path="/cotizaciones/buscar" element={<RedirigirAlBuscador traducir={DESDE_BUSCAR_MATERIAL} />} />
+
               {/* Empresas */}
               <Route path="/empresas" element={<IndiceMenu />} />
-              <Route path="/empresas/registros" element={<Empresas />} />
-              <Route path="/empresas/condicion" element={<EmpresasPorCondicion />} />
+              {/* Los cuatro buscadores viejos son el Buscador: sus direcciones siguen andando. */}
+              <Route path="/empresas/registros" element={<RedirigirAlBuscador traducir={DESDE_REGISTROS} />} />
+              <Route path="/empresas/condicion" element={<RedirigirAlBuscador traducir={DESDE_EMPRESAS_POR_CONDICION} />} />
               {/* "nueva" va antes que ":id": si no, entra por la ficha. */}
               <Route path="/empresas/nueva" element={<NuevaEmpresa />} />
               <Route path="/empresas/:id" element={<FichaEmpresa />} />
@@ -73,8 +86,8 @@ export default function App() {
               <Route path="/empresas/:id/cambios" element={<ControlDeCambios />} />
 
               {/* Consultas */}
-              <Route path="/consultas/fecha" element={<ConsultasPorFecha />} />
-              <Route path="/consultas/condicion" element={<BuscarConsultas />} />
+              <Route path="/consultas/fecha" element={<RedirigirAlBuscador traducir={DESDE_CONSULTAS_POR_FECHA} />} />
+              <Route path="/consultas/condicion" element={<RedirigirAlBuscador traducir={DESDE_CONSULTAS_POR_CONDICION} />} />
               <Route path="/consultas/eliminados" element={<BorradoresEliminados />} />
               <Route path="/consultas/:consultaId" element={<ConsultaEditor />} />
               <Route path="/consultas/:consultaId/copiar" element={<CopiarCotizacion />} />
@@ -86,6 +99,7 @@ export default function App() {
               <Route path="/config/formas" element={<FormasYFormulas />} />
               <Route path="/config/listas" element={<ListasEditables />} />
               <Route path="/config/condiciones" element={<CondicionesHabituales />} />
+              <Route path="/config/condiciones-de-la-ficha" element={<CatalogoDeCondiciones />} />
               <Route path="/config/envios" element={<EnvioDeCotizaciones />} />
               <Route path="/config/migracion" element={<DatosDelSistemaAnterior />} />
               <Route path="/cotizaciones/seguimiento" element={<Seguimiento />} />

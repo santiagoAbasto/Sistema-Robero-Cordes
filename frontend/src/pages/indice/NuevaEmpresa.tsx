@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Wand2, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Boton, Card, PageHeader, Aviso } from '../../components/ui'
-import { AreaTexto, Guardado, Lista, Texto } from '../../components/ui/form'
+import { Guardado, Lista, Texto } from '../../components/ui/form'
 import EmpresaForm, { estadoInicial } from './EmpresaForm'
 import type { EstadoEmpresaForm } from './EmpresaForm'
-import { crearEmpresa, imagenPegada, leerFirmaDeMail, mensajeDeError, olvidarCatalogos, useCatalogos } from '../../lib/indice'
-import type { EnlaceLeido } from '../../lib/indice'
+import LectorDeFirma from './LectorDeFirma'
+import { crearEmpresa, mensajeDeError, olvidarCatalogos, useCatalogos } from '../../lib/indice'
+import type { DatosDeLaFirma, EnlaceLeido } from '../../lib/indice'
 
 /** Alta de una empresa nueva. Antes era una pantalla aparte del índice. */
 /** El primer contacto de la empresa, tal como se lo carga en esta pantalla. */
@@ -72,66 +73,51 @@ export default function NuevaEmpresa() {
     Lo que vuelve es una propuesta: sólo completa lo que esté vacío, así
     pegar un segundo mail no pisa lo que ya se corrigió a mano.
   */
-  const [firma, setFirma] = useState('')
-  const [leyendo, setLeyendo] = useState(false)
+  function alLeerLaFirma(datos: DatosDeLaFirma, mensaje: string) {
+    setValores((v) => ({
+      ...v,
+      nombre: v.nombre || (datos.empresa ?? ''),
+      direccion: v.direccion || (datos.direccion ?? ''),
+      codigo_postal: v.codigo_postal || (datos.codigo_postal ?? ''),
+      cuit: v.cuit || (datos.cuit ?? ''),
+      // El pais de la firma le gana al de por defecto.
+      pais_id: datos.pais_id ?? v.pais_id,
+      provincia_id: v.provincia_id ?? datos.provincia_id,
+      localidad_id: v.localidad_id ?? datos.localidad_id,
+    }))
 
-  async function leerLaFirma(entrada: string | File = firma) {
-    setLeyendo(true)
-    setError(null)
+    // La persona que firma es el primer contacto. Solo lo vacio.
+    setContacto((c) => ({
+      nombre: c.nombre || (datos.contacto ?? ''),
+      cargo: c.cargo || (datos.cargo ?? ''),
+      // Todos los teléfonos que leyó (fijo y celular). Si ya se cargó alguno
+      // a mano, no se pisa; si vino solo el viejo `telefono`, se usa ese.
+      telefonos: tieneTelefono(c.telefonos)
+        ? c.telefonos
+        : datos.telefonos?.length
+          ? datos.telefonos.map((t) => ({ valor: t.valor, tipo: t.tipo }))
+          : datos.telefono
+            ? [{ valor: datos.telefono, tipo: datos.tipo_telefono ?? 'Telefono' }]
+            : c.telefonos,
+      mail: c.mail || (datos.mail ?? ''),
+    }))
 
-    try {
-      const { datos, mensaje, texto } = await leerFirmaDeMail(entrada)
-      // Lo que copio la IA de la imagen queda a la vista para revisarlo.
-      if (entrada instanceof File) setFirma(texto)
-
-      setValores((v) => ({
-        ...v,
-        nombre: v.nombre || (datos.empresa ?? ''),
-        direccion: v.direccion || (datos.direccion ?? ''),
-        codigo_postal: v.codigo_postal || (datos.codigo_postal ?? ''),
-        // El pais de la firma le gana al de por defecto.
-        pais_id: datos.pais_id ?? v.pais_id,
-        provincia_id: v.provincia_id ?? datos.provincia_id,
-        localidad_id: v.localidad_id ?? datos.localidad_id,
-      }))
-
-      // La persona que firma es el primer contacto. Solo lo vacio.
-      setContacto((c) => ({
-        nombre: c.nombre || (datos.contacto ?? ''),
-        cargo: c.cargo || (datos.cargo ?? ''),
-        // Todos los teléfonos que leyó (fijo y celular). Si ya se cargó alguno
-        // a mano, no se pisa; si vino solo el viejo `telefono`, se usa ese.
-        telefonos: tieneTelefono(c.telefonos)
-          ? c.telefonos
-          : datos.telefonos?.length
-            ? datos.telefonos.map((t) => ({ valor: t.valor, tipo: t.tipo }))
-            : datos.telefono
-              ? [{ valor: datos.telefono, tipo: datos.tipo_telefono ?? 'Telefono' }]
-              : c.telefonos,
-        mail: c.mail || (datos.mail ?? ''),
-      }))
-
-      // La localidad que agregó Google al leer el mail todavía no está en la
-      // lista de esta pantalla: se la suma, y la próxima pantalla la trae.
-      if (datos.localidad_id && datos.localidad_nombre && datos.provincia_id
-        && !catalogos?.localidades.some((l) => l.id === datos.localidad_id)) {
-        const nueva = { id: datos.localidad_id, nombre: datos.localidad_nombre, provincia_id: datos.provincia_id }
-        setLocalidadesNuevas((a) => [...a, nueva])
-        olvidarCatalogos()
-      }
-
-      // Se suman a los que ya habia, sin repetir.
-      setEnlaces((actuales) => [
-        ...actuales,
-        ...(datos.enlaces ?? []).filter((e) => !actuales.some((a) => a.url === e.url)),
-      ])
-
-      setAviso(mensaje)
-    } catch (err) {
-      setError(mensajeDeError(err))
-    } finally {
-      setLeyendo(false)
+    // La localidad que agregó Google al leer el mail todavía no está en la
+    // lista de esta pantalla: se la suma, y la próxima pantalla la trae.
+    if (datos.localidad_id && datos.localidad_nombre && datos.provincia_id
+      && !catalogos?.localidades.some((l) => l.id === datos.localidad_id)) {
+      const nueva = { id: datos.localidad_id, nombre: datos.localidad_nombre, provincia_id: datos.provincia_id }
+      setLocalidadesNuevas((a) => [...a, nueva])
+      olvidarCatalogos()
     }
+
+    // Se suman a los que ya habia, sin repetir.
+    setEnlaces((actuales) => [
+      ...actuales,
+      ...(datos.enlaces ?? []).filter((e) => !actuales.some((a) => a.url === e.url)),
+    ])
+
+    setAviso(mensaje)
   }
 
   async function guardar() {
@@ -195,7 +181,7 @@ export default function NuevaEmpresa() {
               Empresas
             </Link>
             <span>›</span>
-            <Link to="/empresas/registros" className="hover:text-brand-600">
+            <Link to="/buscador" className="hover:text-brand-600">
               Cons./Modif. Registros
             </Link>
           </span>
@@ -204,7 +190,7 @@ export default function NuevaEmpresa() {
         bajada="Se carga con lo que haya. Lo único imprescindible es el nombre; el resto se completa cuando aparezca."
         acciones={
           <>
-            <Link to="/empresas/registros">
+            <Link to="/buscador">
               <Boton variante="suave">Cancelar</Boton>
             </Link>
             <Boton variante="primario" onClick={guardar} disabled={guardando}>
@@ -216,61 +202,7 @@ export default function NuevaEmpresa() {
 
       {error && <Aviso tono="ambar">{error}</Aviso>}
 
-      <Card className="flex flex-col gap-3 border-brand-200 bg-[#f3f9fe] p-[22px]">
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/*
-            Dice las dos cosas que entran: si dijera solo "mail", nadie pegaria
-            aca la ficha de una consulta de la web, que es lo que mas llega.
-          */}
-          <h2 className="text-[15px] font-semibold text-brand-600">
-            Pega el pie de un mail o la ficha de la web
-          </h2>
-          <span className="ml-auto text-[11px] text-[#6c93ae]">
-            Completa lo que esta vacio; lo que ya cargaste no se toca
-          </span>
-        </div>
-
-        <AreaTexto
-          etiqueta="Tal cual llego"
-          ayuda="el mail con su firma, o la consulta de la web entera: de ahi salen la empresa, la direccion y el contacto"
-          filas={4}
-          value={firma}
-          onChange={(e) => setFirma(e.target.value)}
-          onPaste={(e) => {
-            const imagen = imagenPegada(e)
-            if (imagen) {
-              e.preventDefault()
-              void leerLaFirma(imagen)
-            }
-          }}
-          placeholder={'From: Pablo Ferreyra - Apex Metalurgica <pferreyra@apex.com.ar>\n\nPablo Ferreyra\nSupervisor de Mantenimiento\nCel: (2954) 15-412233\nParque Industrial, Calle 9 esq. 10 | CP 6300\nSanta Rosa, La Pampa, Argentina'}
-        />
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Boton variante="primario" onClick={() => leerLaFirma()} disabled={leyendo || !firma.trim()}>
-            <Wand2 size={15} strokeWidth={2.2} />
-            {leyendo ? 'Leyendo…' : 'Completar con estos datos'}
-          </Boton>
-          <label className="cursor-pointer text-[12px] text-brand-600 underline">
-            o elegí una imagen
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const imagen = e.target.files?.[0]
-                e.target.value = ''
-                if (imagen) void leerLaFirma(imagen)
-              }}
-            />
-          </label>
-          <p className="min-w-[280px] flex-1 text-[11.5px] leading-relaxed text-[#6c93ae]">
-            El texto se lee sin IA. Una imagen (Ctrl+V o elegida) la copia la IA y se lee con las
-            mismas reglas; lo que las reglas no encuentran lo completa la IA, solo si está
-            escrito. Si la localidad no está en la lista, se ubica con Google.
-          </p>
-        </div>
-      </Card>
+      <LectorDeFirma onDatos={alLeerLaFirma} onError={setError} />
 
       <Card className="p-[22px]">
         <EmpresaForm
@@ -309,7 +241,7 @@ export default function NuevaEmpresa() {
             etiqueta="Mail"
             value={contacto.mail}
             onChange={(e) => setContacto({ ...contacto, mail: e.target.value })}
-            placeholder="pferreyra@apex.com.ar"
+            placeholder="pferreyra@apex.example"
           />
         </div>
 

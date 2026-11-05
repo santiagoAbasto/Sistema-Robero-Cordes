@@ -175,6 +175,48 @@ class EnlazadorDeLineasTest extends TestCase
         $this->assertNull($enlazador->elegir('BRONCE FOSFOROSO ALAMBRE 1.5 MM'));
     }
 
+    /** "Monel 400" es un material y a la vez un alias de "Monel": la línea es del que lleva ese nombre. */
+    public function test_el_nombre_propio_le_gana_al_alias_de_otro_material(): void
+    {
+        // Con el relleno del catálogo de prueba: sin él los pesos son casi cero y nada llega al mínimo.
+        $enlazador = new EnlazadorDeLineas([
+            [1, 'Acero Inoxidable F138'], [2, 'Acero Inoxidable'], [4, 'Titanio'], [5, 'Acero AISI 316'],
+            [7, 'Hastelloy C-276'], [8, 'Inconel X-750'], [30, 'Acero Inoxidable 303'], [31, 'Acero Inoxidable 310'],
+            [3, 'Monel'],
+            [39, 'Monel 400'],
+            [3, 'MONEL 400', true],
+        ]);
+
+        $this->assertSame(39, $enlazador->elegir('MONEL 400 BAR RED Ø 15.88 X 4900 C/U(+IVA)'));
+        $this->assertSame(3, $enlazador->elegir('MONEL BARRA 10 MM'));
+    }
+
+    /** "TUBO EN U" se reduce a "tubo" como "TUBO": la línea que no dice "en" es del tubo común. */
+    public function test_el_que_pide_palabras_que_la_linea_no_dice_no_empata(): void
+    {
+        $formas = new EnlazadorDeLineas([
+            [5, 'TUBO'], [249, 'TUBO EN U'], [206, 'TUBO ALETADO'], [225, 'TUBO ESPIRALADO'], [226, 'TUBO ROLLO'],
+            [20, 'BARRA REDONDA'], [21, 'CHAPA'], [22, 'ALAMBRE'], [23, 'PERFIL'], [24, 'BRIDA'], [25, 'DISCO'], [26, 'ANILLO'],
+            [27, 'ANGULO'], [28, 'PLANCHUELA'], [29, 'CODO'], [30, 'CUPLA'], [31, 'FLEJE'], [32, 'MALLA'], [33, 'RESORTE'],
+            [34, 'ARANDELA'], [35, 'JUNTA'], [36, 'BUJE'], [37, 'NIPLE'], [38, 'VALVULA'], [39, 'TAPON'], [40, 'REMACHE'],
+        ], material: false, exigencia: 0.42);
+
+        $this->assertSame(5, $formas->elegir('1 C/U TUBO 26.67 X 2.87 X 100 MM, (+IVA)'));
+        // Si la línea dice todo, los dos entran completos y sigue el empate: no se adivina.
+        $this->assertNull($formas->elegir('1 TUBO EN U 3/4'));
+    }
+
+    /** Dos alias iguales de materiales distintos siguen siendo un empate: no se adivina. */
+    public function test_dos_alias_iguales_de_materiales_distintos_siguen_empatados(): void
+    {
+        $enlazador = new EnlazadorDeLineas([
+            [11, 'Bronce Fosforoso', true],
+            [12, 'Bronce Fosforoso', true],
+        ]);
+
+        $this->assertNull($enlazador->elegir('BRONCE FOSFOROSO ALAMBRE 1.5 MM'));
+    }
+
     /** Buscando forma, el nombre de la forma NO es ruido. */
     public function test_la_forma_se_busca_con_su_propio_vocabulario(): void
     {

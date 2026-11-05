@@ -58,7 +58,7 @@
         {{-- La nota del articulo si sale impresa; la NOTA de la cotizacion es
              interna y va aparte. --}}
         @if ($linea->nota)
-            <div class="nota-linea">{!! nl2br(e($linea->nota)) !!}</div>
+            <div class="nota-linea">{!! \App\Services\FormatoDeTexto::html($linea->nota) !!}</div>
         @endif
         {{-- Cuando se cotizo otra cosa, en la hoja sale aclarado. --}}
         @if (! $esAlternativa && ! $linea->igual_a_lo_pedido && $linea->pedido_texto)

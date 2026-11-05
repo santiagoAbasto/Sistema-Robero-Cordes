@@ -12,7 +12,7 @@ class ConsultaComprobante extends Model
 
     protected $guarded = [];
 
-    protected $casts = ['fecha' => 'date'];
+    protected $casts = ['fecha' => 'date', 'importe' => 'decimal:2'];
 
     public function consulta(): BelongsTo
     {

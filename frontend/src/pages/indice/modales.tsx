@@ -542,36 +542,85 @@ export function ModalRazonSocial({
 
 /* --------------------------------------------------- condición de trabajo */
 
+/**
+ * Cargar o modificar una condición de trabajo de la ficha.
+ *
+ * Todo se ELIGE de la lista (Configuración > Condiciones de la ficha): primero la condición, después su
+ * dato. Si el dato no está se puede agregar uno nuevo, que queda en la lista para las demás fichas; así
+ * lo que se escribe es siempre de la tabla y nunca cualquier cosa.
+ */
 export function ModalCampo({
   abierto,
   empresaId,
   campo,
+  otrosCampos,
   onCerrar,
   onGuardado,
 }: {
   abierto: boolean
   empresaId: number
   campo?: CampoEmpresa | null
+  /** Los demás campos de la ficha: cada condición se carga una sola vez. */
+  otrosCampos: CampoEmpresa[]
   onCerrar: () => void
   onGuardado: (mensaje: string) => void
 }) {
-  const [titulo, setTitulo] = useState('')
-  const [valor, setValor] = useState('')
+  const catalogos = useCatalogos()
+  const lista = catalogos?.condiciones_de_la_ficha ?? []
+  const [tipoId, setTipoId] = useState('')
+  const [opcionId, setOpcionId] = useState('')
+  const [nueva, setNueva] = useState('')
+  const [agregando, setAgregando] = useState(false)
   const [usar, setUsar] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const clave = (t: string) => t.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, ' ').trim()
+
+  // Una condición vieja, escrita a mano, se reconoce por su título (y su dato, si coincide con uno de la lista).
   useEffect(() => {
     if (!abierto) return
-    setTitulo(campo?.titulo ?? '')
-    setValor(campo?.valor ?? '')
+    const tipo = campo
+      ? lista.find((t) => t.id === campo.tipo_de_condicion_id) ?? lista.find((t) => clave(t.nombre) === clave(campo.titulo))
+      : undefined
+    const opcion = campo
+      ? tipo?.opciones.find((o) => o.id === campo.opcion_de_condicion_id) ?? tipo?.opciones.find((o) => clave(o.texto) === clave(campo.valor ?? ''))
+      : undefined
+
+    setTipoId(tipo ? String(tipo.id) : '')
+    setOpcionId(opcion ? String(opcion.id) : '')
+    setNueva('')
+    setAgregando(false)
     setUsar(campo?.usar_al_cotizar ?? false)
     setError(null)
-  }, [abierto, campo])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto, campo, catalogos])
+
+  // Las que ya tiene la ficha no se ofrecen de nuevo (salvo la que se está modificando).
+  const yaCargadas = new Set(
+    otrosCampos.filter((c) => c.id !== campo?.id).flatMap((c) => [c.tipo_de_condicion_id, ...lista.filter((t) => clave(t.nombre) === clave(c.titulo)).map((t) => t.id)]),
+  )
+  const disponibles = lista.filter((t) => !yaCargadas.has(t.id))
+  const tipo = lista.find((t) => String(t.id) === tipoId)
+
+  function elegirCondicion(id: string) {
+    setTipoId(id)
+    setOpcionId('')
+    setNueva('')
+    setAgregando(false)
+    // Al cargar una nueva, la condición dice si por lo general se propone al cotizar.
+    if (!campo) setUsar(lista.find((t) => String(t.id) === id)?.proponer_al_cotizar ?? false)
+  }
 
   async function guardar() {
-    if (!titulo.trim()) {
-      setError('Falta el título del campo.')
+    if (!tipo) {
+      setError('Elegí la condición.')
+
+      return
+    }
+
+    if (!opcionId && !nueva.trim()) {
+      setError('Elegí el dato de la lista, o agregá uno nuevo.')
 
       return
     }
@@ -580,8 +629,17 @@ export function ModalCampo({
     setError(null)
 
     try {
-      await guardarCampo(empresaId, { titulo, valor: valor || null, usar_al_cotizar: usar }, campo?.id)
-      onGuardado(campo ? 'Campo modificado.' : 'Campo agregado.')
+      await guardarCampo(
+        empresaId,
+        {
+          tipo_de_condicion_id: tipo.id,
+          opcion_de_condicion_id: nueva.trim() ? null : Number(opcionId),
+          opcion_nueva: nueva.trim() || null,
+          usar_al_cotizar: usar,
+        },
+        campo?.id,
+      )
+      onGuardado(campo ? 'Condición modificada.' : 'Condición agregada.')
       onCerrar()
     } catch (err) {
       setError(mensajeDeError(err))
@@ -593,8 +651,8 @@ export function ModalCampo({
   return (
     <Modal
       abierto={abierto}
-      titulo={campo ? 'Modificar condicion' : 'Agregar condicion de trabajo'}
-      bajada="Se escribe el título y abajo el dato. Cada empresa arma los campos que necesita."
+      titulo={campo ? 'Modificar condición' : 'Agregar condición de trabajo'}
+      bajada="Se elige de la lista: primero la condición y después su dato."
       onCerrar={onCerrar}
       onGuardar={guardar}
       guardando={guardando}
@@ -603,20 +661,72 @@ export function ModalCampo({
       <div className="flex flex-col gap-4">
         {error && <Aviso tono="ambar">{error}</Aviso>}
 
-        <Texto
-          etiqueta="Titulo"
-          obligatorio
-          value={titulo}
-          onChange={(e) => setTitulo(e.target.value)}
-          placeholder="Tipo de pago, Flete, Como lo retira…"
+        {catalogos && lista.length === 0 && (
+          <Aviso tono="ambar">
+            Todavía no hay condiciones en la lista. Un administrador las arma en Configuración &gt; Condiciones de la ficha.
+          </Aviso>
+        )}
+
+        {campo?.fuera_de_la_lista && (
+          <Aviso tono="violeta" titulo="Fuera de la lista">
+            Esta condición se escribió a mano, antes de la lista: «{campo.valor}». Elegí el dato que corresponda, o agregalo si no está.
+          </Aviso>
+        )}
+
+        <Lista
+          etiqueta="Condición *"
+          vacio="Elegí una…"
+          value={tipoId}
+          onChange={(e) => elegirCondicion(e.target.value)}
+          opciones={[...disponibles, ...(tipo && !disponibles.includes(tipo) ? [tipo] : [])].map((t) => ({ valor: t.id, texto: t.nombre }))}
         />
-        <AreaTexto
-          etiqueta="Dato"
-          filas={2}
-          value={valor}
-          onChange={(e) => setValor(e.target.value)}
-          placeholder="50% anticipo, saldo contra entrega"
-        />
+
+        {tipo && (
+          <>
+            <Lista
+              etiqueta="Dato"
+              ayuda={tipo.opciones.length === 0 ? 'todavía no hay datos: agregá uno' : undefined}
+              vacio="Elegí uno…"
+              value={nueva.trim() ? '' : opcionId}
+              disabled={nueva.trim() !== ''}
+              onChange={(e) => setOpcionId(e.target.value)}
+              opciones={tipo.opciones.map((o) => ({ valor: o.id, texto: o.texto }))}
+            />
+
+            {!agregando ? (
+              <button
+                type="button"
+                onClick={() => setAgregando(true)}
+                className="-mt-1.5 self-start text-[12px] font-semibold text-brand-600 hover:text-brand-700"
+              >
+                + Mi dato no está en la lista: agregarlo
+              </button>
+            ) : (
+              <div className="-mt-1 flex flex-col gap-1.5 rounded-lg border border-[#e4dcf7] bg-[#fbfafe] p-3">
+                <Texto
+                  etiqueta="Dato nuevo"
+                  value={nueva}
+                  maxLength={255}
+                  onChange={(e) => setNueva(e.target.value)}
+                  placeholder="Escribilo como querés que salga en la cotización"
+                />
+                <p className="text-[11px] leading-relaxed text-faint">
+                  Va a quedar en la lista de «{tipo.nombre}» para las demás empresas. Si ya hay uno escrito parecido, se usa ese.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAgregando(false)
+                    setNueva('')
+                  }}
+                  className="self-start text-[11.5px] font-semibold text-muted hover:text-ink"
+                >
+                  Mejor elijo uno de la lista
+                </button>
+              </div>
+            )}
+          </>
+        )}
 
         <Casilla marcada={usar} onChange={setUsar}>
           Proponerlo al cotizar

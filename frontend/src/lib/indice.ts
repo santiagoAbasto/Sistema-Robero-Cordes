@@ -36,6 +36,19 @@ function limpiar<T extends object>(params: T): Record<string, string> {
   return salida
 }
 
+/**
+ * Qué empresas se muestran en los buscadores. Por defecto TODAS: las que
+ * cerraron salen igual, al final y en rojo, para que se vea su historia.
+ */
+export type MostrarEmpresas = '' | 'activas' | 'inactivas'
+
+export function filtroDeActivas(mostrar: MostrarEmpresas) {
+  return { con_inactivas: mostrar === '', inactivas: mostrar === 'inactivas' }
+}
+
+/** Las filas de una empresa que cerró se pintan de rojo. */
+export const FILA_INACTIVA = 'bg-[#fef6f6] hover:bg-[#fdeaea]'
+
 export async function buscarEmpresas(filtros: FiltrosEmpresas) {
   const { data } = await api.get<Paginado<EmpresaLista>>('/empresas', {
     params: limpiar(filtros),
@@ -280,6 +293,8 @@ export interface DatosDeLaFirma {
   web: string | null
   direccion: string | null
   codigo_postal: string | null
+  /** Solo si el dígito verificador cierra; ya en el formato guardado (30-12345678-1). */
+  cuit?: string | null
   pais_id: number | null
   provincia_id: number | null
   localidad_id: number | null
@@ -429,12 +444,20 @@ export function tituloDeConsulta(c: {
   emitida?: boolean
 }): string {
   const clase = c.tipo === 'Pedido' ? 'PEDIDO' : c.tipo === 'Observacion' ? 'OBSERVACIÓN' : 'COTIZACIÓN'
+  const empresa = c.empresa?.nombre
+
+  // Una observación es una anotación: no se emite ni lleva número ni estado, así
+  // que el título es solo "OBSERVACIÓN · EMPRESA". (Antes decía "FALTA EMISIÓN":
+  // este título no le contaba a estadoDeConsulta que era una observación.)
+  if (c.tipo === 'Observacion') return [clase, empresa].filter(Boolean).join(' · ')
+
   // Con número va el número (2026-0011 R0). Sin número, el estado real: una
   // confirmada sin emitir es "FALTA EMISIÓN", no "BORRADOR".
   const nro =
     c.numero_con_revision ??
-    (c.estado ? estadoDeConsulta({ estado: c.estado, emitida: c.emitida }).texto.toUpperCase() : 'BORRADOR')
-  const empresa = c.empresa?.nombre
+    (c.estado
+      ? estadoDeConsulta({ estado: c.estado, tipo: c.tipo, emitida: c.emitida }).texto.toUpperCase()
+      : 'BORRADOR')
 
   return [`${clase} ${nro}`, empresa].filter(Boolean).join(' · ')
 }
@@ -579,6 +602,49 @@ export async function restaurarEmpresa(id: number) {
   await api.post(`/empresas/${id}/restaurar`)
 }
 
+/* --------------------------------------------------- combinar dos fichas */
+
+/** Lo que hay en una ficha, para compararla con otra antes de combinarlas. */
+export interface ResumenDeFicha {
+  id: number
+  nombre: string
+  cuit: string | null
+  direccion: string | null
+  localidad: string | null
+  activa: boolean
+  /** Las que se ven en la ficha (sin borradores). */
+  cotizaciones: number
+  /** Todo lo que cuelga: cotizaciones, pedidos, observaciones y borradores. */
+  consultas: number
+  ultima: string | null
+  contactos: number
+  razones_sociales: number
+}
+
+/** Las fichas que parecen ser la misma empresa. Sin permiso, no trae ninguna. */
+export async function traerParecidas(id: number | string) {
+  const { data } = await api.get<{ puede_combinar: boolean; data: ResumenDeFicha[] }>(
+    `/empresas/${id}/parecidas`,
+  )
+
+  return data
+}
+
+export async function compararFichas(id: number | string, otraId: number | string) {
+  const { data } = await api.get<{ esta: ResumenDeFicha; otra: ResumenDeFicha; recomendada: number }>(
+    `/empresas/${id}/combinar/${otraId}`,
+  )
+
+  return data
+}
+
+/** `queda` dice cuál de las dos sigue viva; la otra se archiva, sin borrar nada. */
+export async function combinarFichas(id: number | string, datos: { otra_id: number; queda: 'esta' | 'otra' }) {
+  const { data } = await api.post<{ empresa_id: number; mensaje: string }>(`/empresas/${id}/combinar`, datos)
+
+  return data
+}
+
 export interface DatosContacto {
   nombre: string
   sector?: string | null
@@ -632,15 +698,22 @@ export async function archivarRazonSocial(id: number) {
   await api.post(`/razones-sociales/${id}/archivar`)
 }
 
+/** Una condición de trabajo de la ficha: se elige de la lista, no se escribe. */
 export interface DatosCampo {
-  titulo: string
-  valor?: string | null
+  tipo_de_condicion_id: number
+  /** Un dato de la lista... */
+  opcion_de_condicion_id?: number | null
+  /** ...o uno nuevo, que entra a la lista (sin repetir uno que ya esté escrito parecido). */
+  opcion_nueva?: string | null
   usar_al_cotizar?: boolean
 }
 
 export async function guardarCampo(empresaId: number, datos: DatosCampo, campoId?: number) {
   const url = campoId ? `/empresas/${empresaId}/campos/${campoId}` : `/empresas/${empresaId}/campos`
   const { data } = campoId ? await api.put(url, datos) : await api.post(url, datos)
+
+  // Un dato nuevo entró a la lista: la próxima vez que se abra la ventana tiene que estar.
+  if (datos.opcion_nueva) olvidarCatalogos()
 
   return data
 }
@@ -970,6 +1043,8 @@ export interface DatosDeComprobante {
   numero: string
   fecha: string
   nota: string
+  /** Como se escribe acá: "125.000,50". */
+  importe: string
 }
 
 const comprobante = (d: DatosDeComprobante) => ({
@@ -977,6 +1052,7 @@ const comprobante = (d: DatosDeComprobante) => ({
   numero: oNulo(d.numero),
   fecha: oNulo(d.fecha),
   nota: oNulo(d.nota),
+  importe: numeroComoSeEscribe(d.importe),
 })
 
 export async function agregarComprobante(consultaId: number, datos: DatosDeComprobante) {

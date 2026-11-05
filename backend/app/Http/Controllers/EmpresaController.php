@@ -62,6 +62,9 @@ class EmpresaController extends Controller
             // Los borradores no cuentan: todavia no figuran en el historial.
             ->withCount(['consultas as consultas_count' => fn ($q) => $q->where('tipo', 'Cotizacion')
                 ->where('estado', '!=', 'Borrador')])
+            // Las inactivas (si se pidieron) van siempre al final, aunque
+            // coincidan mejor o les toque antes por el abecedario.
+            ->orderByDesc('activa')
             // Con búsqueda, primero las que coinciden por NOMBRE (empieza con,
             // después contiene); las que sólo matchean por un contacto, una
             // razón social o una línea de cotización van al final. Sin esto,

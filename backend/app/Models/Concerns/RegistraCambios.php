@@ -18,6 +18,8 @@ trait RegistraCambios
     private const CAMPOS_INTERNOS = [
         'updated_at', 'created_at', 'creada_por', 'modificada_por',
         'remember_token', 'password', 'orden', 'vence_el',
+        // Los vínculos con la lista de condiciones: lo que se lee es el título y el dato, no su número.
+        'tipo_de_condicion_id', 'opcion_de_condicion_id',
         /*
           La foto del calculo de peso. Es como quedo la calculadora, no una
           decision comercial: en el historial son doscientos caracteres de

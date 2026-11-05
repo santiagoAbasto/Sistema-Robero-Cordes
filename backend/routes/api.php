@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\AlternativaController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BuscadorController;
+use App\Http\Controllers\CordesController;
 use App\Http\Controllers\CatalogoController;
 use App\Http\Controllers\CondicionesController;
 use App\Http\Controllers\ConsultaController;
@@ -9,13 +11,16 @@ use App\Http\Controllers\ConsultaEscrituraController;
 use App\Http\Controllers\DireccionController;
 use App\Http\Controllers\EmpresaController;
 use App\Http\Controllers\EmpresaEscrituraController;
+use App\Http\Controllers\EmpresaFusionController;
 use App\Http\Controllers\EnviosController;
 use App\Http\Controllers\FormaController;
 use App\Http\Controllers\ListasController;
 use App\Http\Controllers\HistorialController;
 use App\Http\Controllers\PdfController;
 use App\Http\Controllers\PermisoController;
+use App\Http\Controllers\ReportesController;
 use App\Http\Controllers\ResumenController;
+use App\Http\Controllers\TiposDeCondicionController;
 use App\Http\Controllers\UsuarioController;
 use Illuminate\Support\Facades\Route;
 
@@ -72,6 +77,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/config/condiciones/orden', [CondicionesController::class, 'ordenar']);
     Route::put('/config/condiciones/{condicion}', [CondicionesController::class, 'update']);
     Route::delete('/config/condiciones/{condicion}', [CondicionesController::class, 'destroy']);
+    // La lista de condiciones de trabajo de la ficha ("Tipo de pago", "Flete") y los datos de cada una.
+    Route::get('/config/condiciones-de-la-ficha', [TiposDeCondicionController::class, 'index']);
+    Route::post('/config/condiciones-de-la-ficha', [TiposDeCondicionController::class, 'store']);
+    Route::post('/config/condiciones-de-la-ficha/orden', [TiposDeCondicionController::class, 'ordenar']);
+    Route::post('/config/condiciones-de-la-ficha/adoptar', [TiposDeCondicionController::class, 'adoptar']);
+    Route::put('/config/condiciones-de-la-ficha/{tipo}', [TiposDeCondicionController::class, 'update']);
+    Route::post('/config/condiciones-de-la-ficha/{tipo}/unir', [TiposDeCondicionController::class, 'unir']);
+    Route::delete('/config/condiciones-de-la-ficha/{tipo}', [TiposDeCondicionController::class, 'destroy']);
+    Route::post('/config/condiciones-de-la-ficha/{tipo}/opciones', [TiposDeCondicionController::class, 'storeOpcion']);
+    Route::put('/config/opciones-de-condicion/{opcion}', [TiposDeCondicionController::class, 'updateOpcion']);
+    Route::post('/config/opciones-de-condicion/{opcion}/unir', [TiposDeCondicionController::class, 'unirOpcion']);
+    Route::delete('/config/opciones-de-condicion/{opcion}', [TiposDeCondicionController::class, 'destroyOpcion']);
     // El texto que acompaña la hoja y la casilla desde la que sale el correo.
     Route::get('/config/envios', [EnviosController::class, 'index']);
     Route::put('/config/envios', [EnviosController::class, 'guardar']);
@@ -94,6 +111,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/empresas/{empresa}', [EmpresaEscrituraController::class, 'update']);
     Route::post('/empresas/{empresa}/archivar', [EmpresaEscrituraController::class, 'archivar']);
     Route::post('/empresas/{empresa}/restaurar', [EmpresaEscrituraController::class, 'restaurar']);
+
+    // Combinar dos fichas de la misma empresa: las parecidas, compararlas y juntarlas.
+    Route::get('/empresas/{empresa}/parecidas', [EmpresaFusionController::class, 'parecidas']);
+    Route::get('/empresas/{empresa}/combinar/{otra}', [EmpresaFusionController::class, 'comparar']);
+    Route::post('/empresas/{empresa}/combinar', [EmpresaFusionController::class, 'combinar']);
 
     Route::get('/empresas/{empresa}/historial', [HistorialController::class, 'deEmpresa']);
     // Las revisiones de UNA cotizacion: un renglon por guardado, no por campo.
@@ -146,6 +168,20 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/seguimiento/pendientes', [\App\Http\Controllers\SeguimientoController::class, 'pendientes']);
     // El balance del periodo, con su fecha de generacion.
     Route::get('/reportes/seguimiento', [\App\Http\Controllers\SeguimientoController::class, 'reporte']);
+
+    // Los reportes: por material, por empresa (o por año), compras y comprobantes, ranking y vencimientos.
+    // (El de seguimiento, de más arriba, se registró antes y es el que atiende /reportes/seguimiento.)
+    Route::get('/reportes/{reporte}/exportar', [ReportesController::class, 'exportar']);
+    Route::get('/reportes/{reporte}', [ReportesController::class, 'show']);
+
+    // El buscador único (reemplaza a los cuatro del menú). El Excel va antes: es otra ruta, no un id.
+    Route::get('/buscar/exportar', [BuscadorController::class, 'exportar']);
+    // Cordes IA: cuesta una consulta a la IA por pregunta, así que tiene tope por minuto.
+    Route::post('/buscar/interpretar', [BuscadorController::class, 'interpretar'])->middleware('throttle:30,1');
+    // Cordes IA: contesta con los datos del sistema. Cada pregunta puede costar varias consultas a la IA: tope por minuto.
+    Route::post('/cordes/preguntar', [CordesController::class, 'preguntar'])->middleware('throttle:20,1');
+    Route::post('/cordes/analizar', [CordesController::class, 'analizar'])->middleware('throttle:60,1');
+    Route::get('/buscar', [BuscadorController::class, 'buscar']);
 
     Route::get('/consultas', [ConsultaController::class, 'index']);
     // La papelera: borradores descartados que se pueden restaurar (solo admin).

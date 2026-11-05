@@ -7,7 +7,7 @@ import {
   Boxes,
   Mail,
   Upload,
-  Zap,
+  Search,
   BarChart3,
   SlidersHorizontal,
 } from 'lucide-react'
@@ -19,6 +19,8 @@ import type { NavNode } from '../types'
  */
 export const NAVIGATION: NavNode[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutGrid, to: '/dashboard' },
+  // Reemplaza a los cuatro buscadores de Empresas: Cons./Modif. Registros, Busq. Registros p/Cond., Consultas por fecha y Busq. Consultas p/Cond.
+  { key: 'buscador', label: 'Buscador', icon: Search, to: '/buscador', badge: 'IA' },
   {
     key: 'empresas',
     label: 'Empresas',
@@ -26,10 +28,6 @@ export const NAVIGATION: NavNode[] = [
     children: [
       // Los nombres son los mismos del Indice Telefonico que ya usan.
       { key: 'indice', label: 'Indice Telefonico', to: '/empresas' },
-      { key: 'registros', label: 'Cons./Modif. Registros', to: '/empresas/registros' },
-      { key: 'condicion', label: 'Busq. Registros p/Cond.', to: '/empresas/condicion' },
-      { key: 'cons_fecha', label: 'Consultas por fecha', to: '/consultas/fecha' },
-      { key: 'cons_cond', label: 'Busq. Consultas p/Cond.', to: '/consultas/condicion' },
       { key: 'imprimir', label: 'Imprimir Indice / Cons.', to: '/imprimir' },
     ],
   },
@@ -102,7 +100,6 @@ export const NAVIGATION: NavNode[] = [
       { key: 'historial', label: 'Historial', to: '/importaciones/historial' },
     ],
   },
-  { key: 'ia', label: 'Buscador IA', icon: Zap, to: '/ia', badge: 'IA' },
   { key: 'reportes', label: 'Reportes', icon: BarChart3, to: '/reportes' },
   {
     key: 'config',
@@ -119,6 +116,12 @@ export const NAVIGATION: NavNode[] = [
         label: 'Condiciones de cotización',
         to: '/config/condiciones',
         ayuda: 'Los párrafos de Importación, Stock y Reventa que salen al pie de la cotización',
+      },
+      {
+        key: 'condiciones_ficha',
+        label: 'Condiciones de la ficha',
+        to: '/config/condiciones-de-la-ficha',
+        ayuda: 'La lista de condiciones de trabajo (tipo de pago, flete…) que se eligen en la ficha de cada empresa',
       },
       {
         key: 'listas',

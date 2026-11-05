@@ -70,7 +70,7 @@ class ContactosTest extends TestCase
                 'cargo' => 'Supervisor de Mantenimiento',
                 'medios' => [
                     ['tipo_medio_id' => $this->tipo('Celular'), 'valor' => '(2954) 15-412233'],
-                    ['tipo_medio_id' => $this->tipo('Mail'), 'valor' => 'pferreyra@apex.com.ar'],
+                    ['tipo_medio_id' => $this->tipo('Mail'), 'valor' => 'pferreyra@apex.example'],
                 ],
             ],
         ])->assertCreated();

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { Aviso, Boton, Card, Cargando, PageHeader } from '../../components/ui'
-import { AreaTexto, Casilla, Guardado, Texto } from '../../components/ui/form'
+import { Casilla, Guardado, Texto } from '../../components/ui/form'
+import { AreaConFormato } from '../../components/TextoConFormato'
 import { mensajeDeError, useCarga } from '../../lib/indice'
 import {
   borrarCondicion,
@@ -164,12 +165,12 @@ function Parrafo({
           placeholder="Entrega, Pago, Origen…"
           onChange={(e) => setD({ ...d, titulo: e.target.value })}
         />
-        <AreaTexto
+        <AreaConFormato
           etiqueta="Texto"
-          ayuda="sale impreso así"
+          ayuda="sale impreso así; se puede resaltar en negrita o color"
           filas={3}
           value={d.texto}
-          onChange={(e) => setD({ ...d, texto: e.target.value })}
+          onTexto={(v) => setD({ ...d, texto: v })}
         />
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-2">

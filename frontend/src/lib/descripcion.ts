@@ -64,8 +64,10 @@ export function armarDimensiones(
   */
   const escrito = (clave: string) => (campos.some((c) => c.clave === clave) ? (medidas[clave]?.valor ?? '').trim() : '')
   const nominal = (dn: string, sch: string) => [escrito(dn), escrito(sch) && `SCH ${escrito(sch)}`].filter(Boolean).join(' ')
+  // La rosca es una medida, no una aclaración: va adelante, como en "16 X 100 MM".
+  const rosca = escrito('thread')
   const resto = campos
-    .filter((c) => c.tipo === 'texto' && !['dn', 'dn2', 'schedule', 'schedule2'].includes(c.clave))
+    .filter((c) => c.tipo === 'texto' && !['dn', 'dn2', 'schedule', 'schedule2', 'thread'].includes(c.clave))
     .map((c) => escrito(c.clave))
 
   // Con un caño comercial la medida es su nombre y su schedule, no el
@@ -78,6 +80,7 @@ export function armarDimensiones(
       `${cano.nombre} SCH ${cano.schedule}`,
       salida ? `X ${salida}` : '',
       largo?.valor ? `X ${texto('length', largo)} ${largo.unidad.toUpperCase()}` : '',
+      rosca,
       ...resto,
     ]
       .filter(Boolean)
@@ -101,11 +104,21 @@ export function armarDimensiones(
         : cargadas.map((x) => `${texto(x.clave, x.m)} ${x.m.unidad.toUpperCase()}`).join(' X ')
 
   return [
-    [nominal('dn', 'schedule'), nominal('dn2', 'schedule2'), enMedidas].filter(Boolean).join(' X '),
+    [nominal('dn', 'schedule'), nominal('dn2', 'schedule2'), rosca, enMedidas].filter(Boolean).join(' X '),
     ...resto,
   ]
     .filter(Boolean)
     .join(' ')
+}
+
+/**
+ * Los campos de una forma en el orden en que se leen: la rosca primero, antes que el largo.
+ * Es el mismo orden del texto impreso ("16 X 100 MM"), así las casillas y la descripción coinciden.
+ */
+export function camposEnOrden<T extends { clave: string }>(campos: T[]): T[] {
+  const rosca = campos.find((c) => c.clave === 'thread')
+
+  return rosca ? [rosca, ...campos.filter((c) => c !== rosca)] : campos
 }
 
 /**

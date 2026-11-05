@@ -60,7 +60,7 @@ class EnlazarLineas extends Command
         $materiales = new EnlazadorDeLineas(
             [
                 ...Material::query()->get(['id', 'nombre'])->map(fn ($m) => [$m->id, $m->nombre])->all(),
-                ...MaterialAlias::query()->get(['material_id', 'alias'])->map(fn ($a) => [$a->material_id, $a->alias])->all(),
+                ...MaterialAlias::query()->get(['material_id', 'alias'])->map(fn ($a) => [$a->material_id, $a->alias, true])->all(),
             ],
             material: true,
             ruidoExtra: $formas->vocabulario(),

@@ -3,14 +3,19 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import {
   ArrowRight,
+  BarChart3,
   Briefcase,
+  CalendarClock,
   CalendarRange,
   CheckCircle2,
   FileText,
   Inbox,
+  MessageCircleQuestion,
   Plus,
   Printer,
+  RefreshCw,
   Search,
+  Sparkles,
   Trash2,
   TrendingDown,
   TrendingUp,
@@ -72,11 +77,19 @@ const ESTADOS: Record<string, { dot: string; bg: string; fg: string }> = {
   Vendida: { dot: 'bg-success', bg: 'bg-success-bg', fg: 'text-success-ink' },
 }
 
-const QUICK: { label: string; to: string; icon: LucideIcon; fg: string }[] = [
-  { label: 'Nueva empresa', to: '/empresas/nueva', icon: Briefcase, fg: 'text-[#7c3aed]' },
-  { label: 'Buscar cotizacion', to: '/consultas/condicion', icon: Search, fg: 'text-brand' },
-  { label: 'Consultas por fecha', to: '/consultas/fecha', icon: CalendarRange, fg: 'text-[#0d9488]' },
-  { label: 'Imprimir', to: '/imprimir', icon: Printer, fg: 'text-[#d97706]' },
+/*
+  Accesos rápidos. Los cuatro de siempre siguen en su lugar (la gente ya sabe
+  dónde están); los que se suman van al final.
+*/
+const QUICK: { label: string; to: string; icon: LucideIcon; fg: string; ayuda: string }[] = [
+  { label: 'Nueva empresa', to: '/empresas/nueva', icon: Briefcase, fg: 'text-[#7c3aed]', ayuda: 'Dar de alta una empresa' },
+  { label: 'Buscar cotizacion', to: '/buscador?grano=consultas', icon: Search, fg: 'text-brand', ayuda: 'Buscar entre las cotizaciones' },
+  { label: 'Consultas por fecha', to: '/consultas/fecha', icon: CalendarRange, fg: 'text-[#0d9488]', ayuda: 'Ver las cotizaciones de un período' },
+  { label: 'Imprimir', to: '/imprimir', icon: Printer, fg: 'text-[#d97706]', ayuda: 'Imprimir una cotización' },
+  { label: 'Preguntale a Cordes', to: '/buscador', icon: Sparkles, fg: 'text-ia', ayuda: 'Escribir lo que buscás con tus palabras' },
+  { label: 'Reportes', to: '/reportes', icon: BarChart3, fg: 'text-[#0369a1]', ayuda: 'Por material, por empresa, ventas y vencimientos' },
+  { label: 'Sin respuesta', to: '/buscador?grano=consultas&sin_respuesta=1', icon: MessageCircleQuestion, fg: 'text-[#b45309]', ayuda: 'Cotizaciones que nadie contestó' },
+  { label: 'Vencen esta semana', to: '/buscador?grano=consultas&por_vencer=7', icon: CalendarClock, fg: 'text-[#be123c]', ayuda: 'Cotizaciones por vencer en los próximos 7 días' },
 ]
 
 function EstadoPill({
@@ -157,17 +170,96 @@ function Variacion({ ahora, antes }: { ahora: number; antes: number }) {
   )
 }
 
+/** El título y los dos botones de siempre. Están aunque el resumen no haya llegado. */
+function Encabezado({ periodo }: { periodo?: string }) {
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h1 className="text-[26px] font-bold tracking-tight text-ink">Dashboard</h1>
+        <p className="mt-1 text-[14px] text-muted">
+          Resumen de actividad comercial{periodo ? ` · ${periodo}` : ''}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2.5">
+        <Link
+          to="/empresas/nueva"
+          className="flex items-center gap-2 rounded-lg border border-line-strong bg-white px-4 py-2.5 text-[13.5px] font-semibold text-ink transition-colors hover:bg-app"
+        >
+          <Plus size={17} strokeWidth={2.2} /> Nueva empresa
+        </Link>
+        <Link
+          to="/buscador"
+          className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_2px_8px_rgba(0,125,195,0.3)] transition-colors hover:bg-brand-600"
+        >
+          <Plus size={17} strokeWidth={2.2} /> Nueva cotización
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+/** Los atajos a lo que más se hace. No dependen de los números: andan siempre. */
+function AccesosRapidos() {
+  return (
+    <div className="rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)]">
+      <h2 className="text-[16px] font-semibold text-ink">Accesos rápidos</h2>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        {QUICK.map((q) => {
+          const Icon = q.icon
+
+          return (
+            <Link
+              key={q.label}
+              to={q.to}
+              title={q.ayuda}
+              className="group flex flex-col gap-3 rounded-xl border border-line bg-white p-4 outline-none transition-colors hover:border-brand-200 hover:bg-brand-50 focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/30"
+            >
+              <Icon size={20} strokeWidth={2} className={`${q.fg} transition-transform duration-150 group-hover:scale-110`} />
+              <span className="text-[13px] font-medium text-ink">{q.label}</span>
+            </Link>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { user } = useAuth()
   const esAdmin = user?.role === 'Administrador'
-  const { datos, cargando } = useCarga(
+  const { datos, cargando, recargar } = useCarga(
     () => api.get<Resumen>('/resumen').then((r) => r.data),
     [],
   )
   const [pagina, setPagina] = useState(1)
 
   if (cargando) return <Cargando texto="Armando el resumen…" />
-  if (!datos) return null
+  // Antes esto era `return null`: si el resumen fallaba, la pantalla quedaba en blanco,
+  // sin los accesos ni nada. Ahora se ve lo que no depende de los números y se puede reintentar.
+  if (!datos) {
+    return (
+      <div className="flex flex-col gap-6">
+        <Encabezado />
+        <NecesitaAtencion />
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
+          <div className="rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)] lg:col-span-2">
+            <h2 className="text-[16px] font-semibold text-ink">No pudimos armar el resumen</h2>
+            <p className="mt-1.5 max-w-[560px] text-[13.5px] leading-relaxed text-muted">
+              Los números no llegaron. Podés seguir trabajando con los accesos de al lado, o probar de nuevo.
+            </p>
+            <button
+              type="button"
+              onClick={recargar}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg border border-line-strong bg-white px-4 py-2.5 text-[13.5px] font-semibold text-ink transition-colors hover:bg-app"
+            >
+              <RefreshCw size={16} strokeWidth={2.2} /> Reintentar
+            </button>
+          </div>
+          <AccesosRapidos />
+        </div>
+      </div>
+    )
+  }
 
   const { totales, ultimas, materiales } = datos
   const masCotizado = materiales[0]?.veces ?? 1
@@ -181,29 +273,7 @@ export default function Dashboard() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* encabezado */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-[26px] font-bold tracking-tight text-ink">Dashboard</h1>
-          <p className="mt-1 text-[14px] text-muted">
-            Resumen de actividad comercial · {datos.periodo}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Link
-            to="/empresas/nueva"
-            className="flex items-center gap-2 rounded-lg border border-line-strong bg-white px-4 py-2.5 text-[13.5px] font-semibold text-ink transition-colors hover:bg-app"
-          >
-            <Plus size={17} strokeWidth={2.2} /> Nueva empresa
-          </Link>
-          <Link
-            to="/empresas/registros"
-            className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_2px_8px_rgba(0,125,195,0.3)] transition-colors hover:bg-brand-600"
-          >
-            <Plus size={17} strokeWidth={2.2} /> Nueva cotización
-          </Link>
-        </div>
-      </div>
+      <Encabezado periodo={datos.periodo} />
 
       {/*
         Lo que hay que hacer hoy va antes que los números del mes: los KPIs
@@ -262,7 +332,7 @@ export default function Dashboard() {
               <p className="mt-0.5 text-[12.5px] text-faint">Lo último que se cargó</p>
             </div>
             <Link
-              to="/consultas/fecha"
+              to="/buscador?grano=consultas"
               className="flex items-center gap-1 text-[13px] font-semibold text-brand hover:text-brand-600"
             >
               Ver todas <ArrowRight size={15} strokeWidth={2.2} />
@@ -369,7 +439,7 @@ export default function Dashboard() {
         <div className="flex flex-col gap-5">
           {/* Borradores: lo que quedó a medias, para abrirlos todos de una. */}
           <Link
-            to="/consultas/condicion?estado=Borrador"
+            to="/buscador?grano=consultas&estado=Borrador"
             className="group rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-colors hover:border-brand-200 hover:bg-brand-50"
           >
             <div className="flex items-start justify-between">
@@ -389,7 +459,7 @@ export default function Dashboard() {
 
           {/* Lo vendido: tiene su acceso, igual que los borradores. */}
           <Link
-            to="/consultas/condicion?estado=Vendida"
+            to="/buscador?grano=consultas&estado=Vendida"
             className="group rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-colors hover:border-brand-200 hover:bg-brand-50"
           >
             <div className="flex items-start justify-between">
@@ -429,25 +499,7 @@ export default function Dashboard() {
           </Link>
           )}
 
-          <div className="rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)]">
-            <h2 className="text-[16px] font-semibold text-ink">Accesos rápidos</h2>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {QUICK.map((q) => {
-                const Icon = q.icon
-
-                return (
-                  <Link
-                    key={q.label}
-                    to={q.to}
-                    className="flex flex-col gap-3 rounded-xl border border-line bg-white p-4 transition-colors hover:border-brand-200 hover:bg-brand-50"
-                  >
-                    <Icon size={20} strokeWidth={2} className={q.fg} />
-                    <span className="text-[13px] font-medium text-ink">{q.label}</span>
-                  </Link>
-                )
-              })}
-            </div>
-          </div>
+          <AccesosRapidos />
 
           <div className="rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)]">
             <h2 className="text-[16px] font-semibold text-ink">Materiales más cotizados</h2>
