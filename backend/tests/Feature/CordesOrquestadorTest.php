@@ -381,6 +381,25 @@ class CordesOrquestadorTest extends TestCase
         $this->assertNotNull($r['pedido']);
     }
 
+    /**
+     * Sin unidad cargada se dice, igual que en el precio.
+     *
+     * En la VM la evolución del Monel 400 mostraba dos bloques seguidos titulados «En DOLAR BILLETE BNA VENDEDOR»: uno por UN y otro
+     * sin unidad, que no decía nada. Dos bloques de la misma moneda no pueden llamarse igual.
+     */
+    public function test_la_evolucion_dice_sin_unidad_cargada_cuando_no_hay_unidad(): void
+    {
+        $this->monel();
+        $e = Empresa::create(['nombre' => 'ALFA SA', 'activa' => true]);
+        $this->cotizado($e, '2024-05-10', 300);
+        $this->cotizado($e, '2025-02-01', 360);
+        ConsultaLinea::query()->update(['unidad_venta_id' => null]);
+
+        $r = (new Cordes($this->admin))->responder('cómo viene el precio del monel por año');
+
+        $this->assertStringContainsString('En **DOLAR BILLETE BNA VENDEDOR** (sin unidad cargada):', $r['mensaje']);
+    }
+
     public function test_la_evolucion_distingue_subio_de_bajo_y_no_mezcla_monedas(): void
     {
         $this->monel();

@@ -747,7 +747,8 @@ final class Redactor
             $ordenados = $g->sortBy('periodo')->values()->take(-8);
             $primero = $ordenados->first();
             $ultimo = $ordenados->last();
-            $u = $primero['unidad'] !== '—' ? " por {$primero['unidad']}" : '';
+            // Igual que en el precio: sin unidad cargada se dice, para que dos bloques de la misma moneda no tengan el mismo título.
+            $u = $primero['unidad'] !== '—' ? " por {$primero['unidad']}" : ' (sin unidad cargada)';
             $lineas = $ordenados->map(fn ($p) => "- **{$p['periodo']}**: promedio **{$this->n($p['promedio'])}** (entre **{$this->n($p['minimo'])}** y **{$this->n($p['maximo'])}**, {$p['renglones']} ".($p['renglones'] === 1 ? 'renglón' : 'renglones').')')->implode("\n");
             $variacion = '';
 

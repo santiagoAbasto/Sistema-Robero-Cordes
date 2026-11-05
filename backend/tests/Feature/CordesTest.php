@@ -641,6 +641,39 @@ class CordesTest extends TestCase
         $this->postJson('/api/cordes/preguntar', ['texto' => str_repeat('a', 401)])->assertUnprocessable();
     }
 
+    /**
+     * Una respuesta larga en la conversación no tiene que romper las preguntas que vienen después.
+     *
+     * Pasó en la VM el 05-11-2026: la respuesta de la evolución de precios (más de 1.500 caracteres) viajaba en el historial y el
+     * servidor devolvía 422; la pantalla decía «Escribí la pregunta con un poco más de detalle» en las seis preguntas siguientes,
+     * hasta que esa respuesta salió de la ventana. El historial se recorta, no se rechaza.
+     */
+    public function test_un_historial_con_respuestas_largas_o_de_mas_no_rompe_la_pregunta(): void
+    {
+        $this->monel();
+        $this->barra();
+
+        $historial = [];
+
+        foreach (range(1, 20) as $i) {
+            $historial[] = ['rol' => $i % 2 ? 'usuario' : 'cordes', 'texto' => $i === 7 ? str_repeat('Así se movió el precio. ', 220) : "vuelta {$i}"];
+        }
+
+        $pregunta = ['texto' => 'cuánto pesa una barra de monel de 20 x 1000 mm', 'historial' => $historial];
+
+        $r = $this->postJson('/api/cordes/preguntar', $pregunta)->assertOk();
+        $this->assertStringContainsString('**2,7646 kg**', $r->json('mensaje'));
+
+        // Y también en vivo, que es como la usa la pantalla.
+        $this->post('/api/cordes/preguntar', $pregunta + ['stream' => true])->assertOk();
+    }
+
+    /** El contexto de la pantalla con una vista que no existe se ignora: no es motivo para no contestar. */
+    public function test_una_vista_desconocida_en_el_contexto_se_ignora(): void
+    {
+        $this->postJson('/api/cordes/preguntar', ['texto' => 'cuántas empresas hay', 'contexto' => ['vista' => 'vista-vieja', 'filtros' => []]])->assertOk();
+    }
+
     public function test_sin_ia_el_codigo_contesta_el_peso_por_su_cuenta(): void
     {
         $this->monel();

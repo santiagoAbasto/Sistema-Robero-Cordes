@@ -22,11 +22,15 @@ class CordesController extends Controller
     {
         $d = $request->validate([
             'texto' => ['required', 'string', 'min:2', 'max:400'],
-            'historial' => ['nullable', 'array', 'max:12'],
+            // El historial se RECORTA, no se rechaza: una respuesta larga en la conversación (la evolución de precios pasa
+            // de 1.500 caracteres) no puede dejar sin contestar las preguntas que vienen después. Los topes de acá son solo
+            // contra abusos; el recorte de verdad está más abajo.
+            'historial' => ['nullable', 'array', 'max:200'],
             'historial.*.rol' => ['required', 'in:usuario,cordes'],
-            'historial.*.texto' => ['required', 'string', 'max:1500'],
+            'historial.*.texto' => ['required', 'string', 'max:100000'],
             'contexto' => ['nullable', 'array'],
-            'contexto.vista' => ['nullable', 'in:'.implode(',', Filtros::GRANOS)],
+            // Una vista que no existe (un enlace viejo) se ignora más abajo: no es motivo para no contestar.
+            'contexto.vista' => ['nullable', 'string', 'max:40'],
             'contexto.filtros' => ['nullable', 'array'],
             'stream' => ['nullable', 'boolean'],
         ]);
@@ -35,8 +39,17 @@ class CordesController extends Controller
         set_time_limit(90);
 
         $cordes = new Cordes($request->user());
-        $historial = $d['historial'] ?? [];
+        // Las últimas vueltas, cada una con a lo sumo 1.500 caracteres: lo que Cordes necesita para seguir el hilo.
+        $historial = collect($d['historial'] ?? [])
+            ->take(-12)
+            ->map(fn (array $h) => ['rol' => $h['rol'], 'texto' => mb_substr($h['texto'], 0, 1500)])
+            ->values()
+            ->all();
         $contexto = $d['contexto'] ?? [];
+
+        if (isset($contexto['vista']) && ! in_array($contexto['vista'], Filtros::GRANOS, true)) {
+            unset($contexto['vista']);
+        }
 
         if (! $request->boolean('stream')) {
             return response()->json($cordes->responder($d['texto'], $historial, $contexto));

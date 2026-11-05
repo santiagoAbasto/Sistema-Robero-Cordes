@@ -36,6 +36,9 @@ export interface ContextoDeCordes {
   filtros: Record<string, string | number | boolean>
 }
 
+/** Cuánto de cada vuelta se manda: una respuesta larga (la evolución de precios) no tiene que ocupar todo el hilo. */
+const TOPE_DE_UNA_VUELTA = 1200
+
 /** Lo que se le manda de la conversación: las últimas vueltas, sólo con su texto. */
 export function historialParaCordes(turnos: Turno[]): { rol: 'usuario' | 'cordes'; texto: string }[] {
   const salida: { rol: 'usuario' | 'cordes'; texto: string }[] = []
@@ -45,7 +48,7 @@ export function historialParaCordes(turnos: Turno[]): { rol: 'usuario' | 'cordes
       salida.push({ rol: 'usuario', texto: t.texto })
     } else if (t.rol === 'cordes') {
       const texto = t.respuesta.verificada ? (t.respuesta.mensaje ?? t.respuesta.analisis?.titulo ?? '') : ''
-      if (texto) salida.push({ rol: 'cordes', texto })
+      if (texto) salida.push({ rol: 'cordes', texto: texto.length > TOPE_DE_UNA_VUELTA ? `${texto.slice(0, TOPE_DE_UNA_VUELTA)}…` : texto })
     }
   }
 
@@ -92,7 +95,14 @@ export async function preguntarEnVivo(
   }
 
   if (!respuesta.ok) {
-    throw new ErrorDeCordes(respuesta.status === 422 ? 'Escribí la pregunta con un poco más de detalle.' : 'No pude pensar ahora. Probá de nuevo, o buscá con los filtros de abajo.')
+    // Con el historial recortado, un 422 solo puede ser una pregunta demasiado larga (el servidor acepta 400 caracteres).
+    throw new ErrorDeCordes(
+      respuesta.status === 422
+        ? cuerpo.texto.length > 400
+          ? 'La pregunta es muy larga: acortala un poco y probá de nuevo.'
+          : 'No pude entender el pedido. Probá de nuevo, o buscá con los filtros de abajo.'
+        : 'No pude pensar ahora. Probá de nuevo, o buscá con los filtros de abajo.',
+    )
   }
 
   let final: RespuestaDeCordes | null = null
