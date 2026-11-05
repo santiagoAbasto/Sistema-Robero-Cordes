@@ -229,4 +229,83 @@ class EnlazadorDeLineasTest extends TestCase
         $this->assertSame(21, $formas->elegir('AISI 316 CHAPA 1 X 1000 X 2000 P/KG'));
         $this->assertSame(22, $formas->elegir('INCONEL X-750 ALAMBRE 3.96 MM'));
     }
+
+    /**
+     * Un catalogo con familias, para probar lo que pasa cuando una linea nombra dos materiales.
+     *
+     * Tiene que tener varias aleaciones de aluminio y varios hastelloy: es lo que hace que
+     * "aluminio" y "hastelloy" pesen poco, como en el catalogo real.
+     */
+    private function catalogoConFamilias(): EnlazadorDeLineas
+    {
+        $entradas = [
+            [1, 'Aluminio'], [2, 'Aluminio 6061'], [3, 'Aluminio 1100'], [4, 'Aluminio 7075'],
+            [5, 'Berilio'],
+            [6, 'Hastelloy C-276'], [7, 'Hastelloy X'], [8, 'Hastelloy W'], [9, 'Hastelloy B-2'],
+            [10, 'Acero Corten A'], [11, 'Acero Corten B'],
+            [12, 'Monel 400'], [13, 'Platino'], [14, 'Cobalto'],
+            [15, 'Carburo de Tungsteno'],
+        ];
+
+        // Relleno: entradas sueltas para que el catalogo tenga el tamaño en que los pesos se parecen a los reales.
+        foreach (['Plomo', 'Zinc', 'Estaño', 'Litio', 'Telurio', 'Bismuto', 'Cadmio', 'Galio', 'Indio', 'Niobio', 'Tantalio', 'Circonio'] as $i => $nombre) {
+            $entradas[] = [100 + $i, $nombre];
+        }
+
+        return new EnlazadorDeLineas($entradas);
+    }
+
+    /**
+     * Una aleacion de aluminio con berilio no es berilio.
+     *
+     * Ganaba el berilio por ser la palabra mas rara y la linea quedaba en el historial de precios del
+     * berilio. Si hay otro material nombrado con firmeza, es una duda y no se enlaza.
+     */
+    public function test_dos_materiales_nombrados_con_firmeza_no_se_adivinan(): void
+    {
+        $e = $this->catalogoConFamilias();
+
+        $this->assertNull($e->elegir('QUIEREN HACER 300 KG DE ALEACION DE ALUMINIO CON 0.04-0.07% DE BERILIO'));
+        $this->assertNull($e->elegir('MUESTRA RECIBIDA 1 M ALAMBRE PLATINO 0.3 MM ENTREGADA 1 MONEL 400 CHAPA 0.101'));
+        // Uno solo, sigue enlazando.
+        $this->assertSame(5, $e->elegir('BERILIO LINGOTE 2 KG P/KG'));
+        $this->assertSame(12, $e->elegir('MONEL 400 CHAPA 0.46 X 1220 X 1560 MM'));
+    }
+
+    /** Un material mas general dentro del especifico no es "otro material". */
+    public function test_el_general_dentro_del_especifico_no_es_otro_material(): void
+    {
+        $this->assertSame(3, $this->elige('10 UN TIT GR2 BARRA 1.60 X 915 MM, C/U (+IVA)'));
+        $this->assertSame(1, $this->elige('6.038 M ACE INOX F138 BARRA 3.00 MM P/M (+IVA)'));
+    }
+
+    /**
+     * Entre dos grados que solo se distinguen por una letra, esa letra cuenta si esta dicha.
+     *
+     * "Hastelloy X" y "Hastelloy W" se reducen al mismo token. "HASTELLOY B Ø 31.75 X 70 MM" traia una "x"
+     * —la de las medidas— que le daba la victoria a la X, y era un Hastelloy B.
+     */
+    public function test_la_x_de_las_medidas_no_es_el_grado_x(): void
+    {
+        $e = $this->catalogoConFamilias();
+
+        $this->assertNull($e->elegir('HASTELLOY B Ø 31.75 X 70 MM 1 C/U(+IVA)'));
+        $this->assertNull($e->elegir('HASTELLOY Ø 50 X 200 MM P/KG(+IVA)'));
+        $this->assertNull($e->elegir('COTIZADO HASTELLOY 50.8 X 497 MM C/U'));
+        // La X que viene despues de una unidad tambien separa medidas.
+        $this->assertNull($e->elegir('HASTELLOY C=276 Ø 25,4 MM X 2 MTS. EL METRO (+IVA)'));
+        $this->assertNull($e->elegir('HASTELLOY 2-276: TUBO 12,7 X 0,89 MM X 400 MM EL METRO'));
+        // Si el grado esta dicho, se enlaza.
+        $this->assertSame(7, $e->elegir('HASTELLOY X CHAPA 4.76 X 600 X 740MM, 1 C/U'));
+        $this->assertSame(8, $e->elegir('HASTELLOY W VARILLA 1.6 X 915 MM C/U'));
+    }
+
+    /** La letra que distingue de verdad sigue valiendo: Corten A y Corten B. */
+    public function test_una_letra_dicha_distingue_el_grado(): void
+    {
+        $e = $this->catalogoConFamilias();
+
+        $this->assertSame(11, $e->elegir('1920 KG ACERO CORTEN B CHAPA 8 MM EUROS P/KG(+IVA)'));
+        $this->assertSame(10, $e->elegir('1920 KG ACERO CORTEN A CHAPA 8 MM EUROS P/KG(+IVA)'));
+    }
 }

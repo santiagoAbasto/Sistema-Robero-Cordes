@@ -23,8 +23,10 @@ namespace App\Services\Migracion;
  *
  * Y SOBRE TODO: no enlaza cuando no esta seguro. Una linea sin material se
  * completa despues; una enlazada al material equivocado ensucia el historial
- * de precios sobre el que se cotiza y nadie la revisa. Medido sobre muestras
- * al azar de las lineas reales, acierta 39 de cada 40 de las que enlaza.
+ * de precios sobre el que se cotiza y nadie la revisa. Auditado el 05-11-2026
+ * contra las 13.071 lineas locales: de 557 enlaces, 14 eran erroneos o dudosos
+ * —una aleacion de aluminio con berilio enlazada al berilio, diez Hastelloy sin
+ * grado que caian en el X— y ahora quedan sin enlazar.
  */
 class EnlazadorDeLineas
 {
@@ -64,6 +66,13 @@ class EnlazadorDeLineas
     private float $minimo;
 
     private array $ruido;
+
+    /**
+     * Los juegos de tokens de cada entrada, por id: "Acero Inoxidable" y "ACE INOX" son del mismo material.
+     *
+     * @var array<int, list<array<string, true>>>
+     */
+    private array $familias = [];
 
     /**
      * Las entradas pueden marcarse como alias con un tercer valor true: en un empate, el nombre
@@ -114,6 +123,8 @@ class EnlazadorDeLineas
 
             $this->candidatos[] = ['id' => (int) $id, 'tokens' => array_flip($tokens), 'palabras' => array_flip($this->palabras($texto)), 'alias' => (bool) ($entrada[2] ?? false)];
 
+            $this->familias[(int) $id][] = array_flip($tokens);
+
             foreach ($tokens as $t) {
                 $frecuencia[$t] = ($frecuencia[$t] ?? 0) + 1;
             }
@@ -141,6 +152,8 @@ class EnlazadorDeLineas
         // Los que llegan al mejor puntaje (casi siempre uno solo).
         $mejores = [];
         $puntajeMejor = 0.0;
+        // Todos los que entran completos, con su puntaje: sirve para ver si hay otro material firme.
+        $completos = [];
 
         foreach ($this->candidatos as $c) {
             // Se le exige que TODOS sus tokens esten en la descripcion.
@@ -153,6 +166,8 @@ class EnlazadorDeLineas
             foreach (array_keys($c['tokens']) as $t) {
                 $puntaje += $this->peso[$t] ?? 0;
             }
+
+            $completos[] = [$c, $puntaje];
 
             if ($puntaje > $puntajeMejor + 0.01) {
                 [$mejores, $puntajeMejor] = [[$c], $puntaje];
@@ -177,6 +192,33 @@ class EnlazadorDeLineas
         $mejor = $mejores[0];
 
         /*
+          Dos materiales distintos nombrados con firmeza: no se adivina.
+
+          "ALEACION DE ALUMINIO CON 0.04% DE BERILIO" nombra al aluminio y al
+          berilio. Ganaba el berilio por ser la palabra mas rara, y la linea
+          quedaba en el historial de precios del berilio cuando es una
+          aleacion de aluminio. Si otro material —que no sea una version mas
+          general del ganador— tambien llega al puntaje minimo, la linea es
+          ambigua y se deja sin enlazar: se completa despues a mano.
+
+          El umbral es el 75% del minimo y no el minimo entero: "aluminio" pesa
+          poco porque el catalogo tiene decenas de aleaciones de aluminio, y aun
+          asi nombrarlo con otro material es una duda que vale la pena.
+
+          Un material mas general no cuenta: "Titanio" dentro de "TIT GR2" es
+          el mismo material dicho con menos detalle.
+        */
+        if ($this->material) {
+            foreach ($completos as [$otro, $puntaje]) {
+                if ($otro['id'] !== $mejor['id']
+                    && $puntaje >= $this->minimo * 0.75
+                    && ! $this->esVersionGeneral($otro['id'], $mejor['id'])) {
+                    return null;
+                }
+            }
+        }
+
+        /*
           La guarda de precision, y solo para el material.
 
           Si la descripcion nombra una designacion que el ganador no cubre, no
@@ -196,6 +238,27 @@ class EnlazadorDeLineas
         }
 
         return $mejor['id'];
+    }
+
+    /**
+     * Si el material $general es la version menos detallada del material $especifico.
+     *
+     * "Acero Inoxidable" es la version general de "Acero Inoxidable F138", y "Titanio" la de
+     * "Titanio Grado 2": nombrar uno dentro del otro no es nombrar dos materiales. Se compara con
+     * todos los nombres y alias de cada uno, no solo con el que casó: "ACE F138" no dice "inox"
+     * pero es el mismo material que "Acero Inoxidable F138".
+     */
+    private function esVersionGeneral(int $general, int $especifico): bool
+    {
+        foreach ($this->familias[$general] ?? [] as $menos) {
+            foreach ($this->familias[$especifico] ?? [] as $mas) {
+                if (array_diff_key($menos, $mas) === []) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -234,7 +297,21 @@ class EnlazadorDeLineas
      */
     private function palabras(string $texto): array
     {
-        preg_match_all('/[a-z0-9]+/', $this->plano($texto), $m);
+        /*
+          La X entre dos numeros separa medidas, no nombra nada.
+
+          "Hastelloy X" y "Hastelloy W" se reducen al mismo token, y la
+          descripcion "HASTELLOY B Ø 31.75 X 70 MM" traia una "x" —la de las
+          medidas— que le daba la victoria a la X. Entre dos grados que solo
+          se distinguen por una letra, esa letra cuenta solo si esta dicha:
+          "HASTELLOY X CHAPA 4.76 X 600" nombra el grado X; "HASTELLOY Ø 50 X
+          200" no nombra ninguno y la linea queda sin enlazar.
+        */
+        // Entre dos numeros ("10X20"), o una X suelta que va antes de un numero ("MM X 2 MTS").
+        // "X-750" no: ahi la X es parte del nombre del grado.
+        $plano = preg_replace('/(?<=\d)\s*x\s*(?=\d)|(?<![a-z0-9])x(?=\s+\d)/', ' ', $this->plano($texto));
+
+        preg_match_all('/[a-z0-9]+/', $plano, $m);
 
         return array_values(array_unique($m[0]));
     }

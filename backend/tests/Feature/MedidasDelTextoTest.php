@@ -19,7 +19,7 @@ class MedidasDelTextoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->medidor = new MedidasDelTexto();
+        $this->medidor = new MedidasDelTexto;
     }
 
     public function test_un_redondo_es_diametro_y_largo(): void
@@ -128,5 +128,86 @@ class MedidasDelTextoTest extends TestCase
             ['diameter' => 4.75],
             $this->medidor->leer('KANTHAL, ALAMBRE Ø 4,75 MM OFRECE UN ROLLO', 'ALAMBRE'),
         );
+    }
+
+    /**
+     * Un caño en pulgadas con schedule no tiene exterior y pared en milimetros.
+     *
+     * `CAÑO 2" SCH 40 X 760MM` se leia como exterior 40 y pared 760: el 40 es la serie y el 760
+     * el largo. Era lo mas comun del archivo y el peso que se factura sale de esa medida.
+     */
+    public function test_un_cano_en_pulgadas_con_schedule_no_se_lee(): void
+    {
+        foreach ([
+            '1 CU CAÑO SMLS 2" SCH 40 X 760MM C/U',
+            '1 CU CAÑO WLD 2" S10 X 400MM C/U',
+            'CAÑO C/C 2" SCH. 10 X 400MM, 1 C/U',
+            'CAÑO 1" S40 X 6.000 MM C/U',
+        ] as $texto) {
+            $this->assertSame([], $this->medidor->leer($texto, 'CAÑO'), "se leyo algo en: {$texto}");
+        }
+    }
+
+    /** El ultimo numero se lee entero aunque caiga lejos de la forma. */
+    public function test_el_ultimo_numero_no_se_corta(): void
+    {
+        $this->assertSame(
+            ['outer' => 114.3, 'wall' => 6.07, 'length' => 1524.0],
+            $this->medidor->leer('TITANIO, CAÑO SIN COSTURA Ø114,3 X 6,07 X 1524 MM C/U(+IVA)', 'CAÑO'),
+        );
+        $this->assertSame(
+            ['outer' => 6.35, 'wall' => 0.89],
+            $this->medidor->leer('TUBO SIN COSTURA Ø 6,35 X 0,89 MM X 1 METRO C/U (+IVA)', 'TUBO'),
+        );
+    }
+
+    /** "ØE" y "ØEXT" son el diametro exterior: no parten el numero. */
+    public function test_el_diametro_exterior_abreviado(): void
+    {
+        $this->assertSame(
+            ['outer' => 25.4, 'wall' => 1.65, 'length' => 3600.0],
+            $this->medidor->leer('ACERO INOX. 254-SMO TUBO C/COST A249 ØE25.4 X 1.65 X 3600MM, C/U', 'TUBO'),
+        );
+    }
+
+    /** Si lo que sigue es otra unidad, la ultima cifra no son milimetros. */
+    public function test_los_metros_no_son_milimetros(): void
+    {
+        $this->assertSame([], $this->medidor->leer('PLATINO ALAMBRE Ø 0.5 X 3 METROS COTIZA', 'ALAMBRE'));
+        $this->assertSame([], $this->medidor->leer('PLATINO ALAMBRE Ø 0.3 X 1 M 1.6 GR. P/GR', 'ALAMBRE'));
+    }
+
+    /** Un rango de largos —4.5/7 metros— son dos opciones. */
+    public function test_un_rango_de_largos_no_se_lee(): void
+    {
+        $this->assertSame([], $this->medidor->leer('TUBO AISI 316 L Ø 8 X 2 X 4.5/7 M 1000 METROS P/M', 'TUBO'));
+    }
+
+    /** Un alambre es largo: los dos lados de una seccion rectangular no son diametro y largo. */
+    public function test_un_alambre_rectangular_no_es_diametro_y_largo(): void
+    {
+        $this->assertSame([], $this->medidor->leer('ALAMBRE RECTANGULAR 0.52 X 0.72MM, X KG', 'ALAMBRE'));
+    }
+
+    /** Un largo con tres decimales es un punto de miles: no se carga como un tubo de 1,9 mm. */
+    public function test_un_largo_con_punto_de_miles_no_se_carga(): void
+    {
+        $this->assertSame(
+            ['outer' => 101.6, 'wall' => 5.74],
+            $this->medidor->leer('1 TIT GR2 TUBO 101.6 X 5.74 X 1.906 MM C/U (+IVA)', 'TUBO'),
+        );
+    }
+
+    /** Un hueco no puede tener la pared mas gruesa que su radio. */
+    public function test_una_pared_imposible_no_se_carga(): void
+    {
+        $this->assertSame([], $this->medidor->leer('1.5 M AISI 321H TUBO 6.3 X 5.54 MM P/M (+IVA)', 'TUBO'));
+        $this->assertSame([], $this->medidor->leer('1 C/U TIT GR2 TUBO S/C 9.53 X 265 X 2000MM C/U', 'TUBO'));
+    }
+
+    /** Un numero suelto con su "MM" antes de la serie: no se sabe de cual de los dos habla. */
+    public function test_dos_medidas_distintas_en_el_texto_no_se_adivinan(): void
+    {
+        $this->assertSame([], $this->medidor->leer('NIQUEL, ALAMBRE 1.5 MM (EN LUGAR DE Ø 2 MM) 2-3 KGS P/KG', 'ALAMBRE'));
     }
 }

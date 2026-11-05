@@ -70,11 +70,11 @@ class EnlazarLineas extends Command
             $this->warn('Modo informe: no se escribe nada. Agregá --aplicar para hacerlo.');
         }
 
-        $medidor = new MedidasDelTexto();
+        $medidor = new MedidasDelTexto;
         // El nombre de cada forma, para saber en que orden escribia sus medidas.
         $nombreForma = Forma::query()->pluck('nombre', 'id');
 
-        $conMaterial = $conForma = $conMedidas = $total = 0;
+        $conMaterial = $conForma = $conMedidas = $total = $cambiadas = 0;
         $muestra = [];
         $cuantas = (int) $this->option('muestra');
 
@@ -99,7 +99,7 @@ class EnlazarLineas extends Command
                 'diametro_mm', 'espesor_mm', 'ancho_mm', 'largo_mm'])
             ->chunkById(500, function ($lineas) use (
                 $materiales, $formas, $medidor, $nombreForma, $aplicar,
-                &$conMaterial, &$conForma, &$conMedidas, &$total, &$muestra, $cuantas
+                &$conMaterial, &$conForma, &$conMedidas, &$total, &$cambiadas, &$muestra, $cuantas
             ) {
                 foreach ($lineas as $linea) {
                     $total++;
@@ -160,12 +160,30 @@ class EnlazarLineas extends Command
                         continue;
                     }
 
-                    if (count($muestra) < $cuantas) {
-                        $muestra[] = [
+                    /*
+                      Muestra AL AZAR de todo lo que se escribiria, no las
+                      primeras: las primeras son las cotizaciones mas viejas y
+                      parecen todas iguales, y un error que vive en el medio de
+                      la tabla no se ve nunca. Es un muestreo uniforme (cada
+                      cambio tiene la misma chance de salir) que no necesita
+                      guardar todos.
+                    */
+                    $cambiadas++;
+
+                    if ($cuantas > 0) {
+                        $fila = [
                             mb_substr($linea->descripcion, 0, 58),
-                            isset($cambios['material_id']) ? Material::find($cambios['material_id'])?->nombre : '—',
-                            isset($cambios['forma_id']) ? Forma::find($cambios['forma_id'])?->nombre : '—',
+                            $cambios['material_id'] ?? null,
+                            $cambios['forma_id'] ?? null,
+                            // Solo para mostrar: lo que ya tenia, que no se cambia.
+                            $linea->material_id,
                         ];
+
+                        if (count($muestra) < $cuantas) {
+                            $muestra[] = $fila;
+                        } elseif (($lugar = random_int(0, $cambiadas - 1)) < $cuantas) {
+                            $muestra[$lugar] = $fila;
+                        }
                     }
 
                     if ($aplicar) {
@@ -183,7 +201,14 @@ class EnlazarLineas extends Command
 
         if ($muestra !== []) {
             $this->newLine();
-            $this->table(['descripcion', 'material', 'forma'], $muestra);
+            $this->line('Muestra al azar de lo que se escribiria ('.count($muestra).' de '.number_format($cambiadas, 0, ',', '.').'). "ya tenia" = el material ya estaba cargado y no se toca.');
+            $this->table(['descripcion', 'material', 'forma'], array_map(fn (array $f) => [
+                $f[0],
+                $f[1] !== null
+                    ? Material::find($f[1])?->nombre
+                    : ($f[3] !== null ? 'ya tenia: '.Material::find($f[3])?->nombre : '—'),
+                $f[2] !== null ? Forma::find($f[2])?->nombre : '—',
+            ], $muestra));
         }
 
         $this->newLine();

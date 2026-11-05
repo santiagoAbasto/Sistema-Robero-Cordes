@@ -84,4 +84,29 @@ class EnlazarLineasTest extends TestCase
         $this->assertNull($septiembre->fresh()->material_id);
         $this->assertNull($copia->fresh()->material_id);
     }
+
+    /**
+     * La muestra es al azar entre TODO lo que se escribiria, no las primeras.
+     *
+     * Las primeras son las cotizaciones mas viejas y parecen todas iguales: un error que vive en el
+     * medio de la tabla no se ve nunca.
+     */
+    public function test_la_muestra_es_de_lo_que_se_escribiria_y_dice_cuantas(): void
+    {
+        $this->seed(CatalogosSeeder::class);
+        $this->seed(CalculadoraSeeder::class);
+        User::factory()->create();
+
+        foreach (range(1, 5) as $_) {
+            $this->linea('Importada del sistema anterior.');
+        }
+
+        $this->artisan('lineas:enlazar', ['--muestra' => 3])
+            ->expectsOutputToContain('Muestra al azar de lo que se escribiria (3 de 5)')
+            ->expectsOutputToContain('No se escribio nada.')
+            ->assertSuccessful();
+
+        // En seco: no escribio.
+        $this->assertSame(0, ConsultaLinea::whereNotNull('material_id')->count());
+    }
 }
