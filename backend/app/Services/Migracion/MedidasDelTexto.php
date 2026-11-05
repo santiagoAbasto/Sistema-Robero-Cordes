@@ -200,10 +200,37 @@ class MedidasDelTexto
         return $medidas;
     }
 
-    /** Si mas adelante hay otro par de numeros con aspecto de medida ("Ø 63.5 X 200", "63.5 X 200 MM"). */
+    /** Si mas adelante hay otra medida con aspecto de medida: un par ("Ø 63.5 X 200", "63.5 X 200 MM") o un diametro ("Ø165MM"). */
     private function hayOtraSerie(string $resto): bool
     {
-        return (bool) preg_match('/(?<![\pL\d])(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d{1,5}(?:[.,]\d{1,3})?(?:\s*MM)?/u', $resto);
+        return (bool) preg_match('/(?<![\pL\d])(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d{1,5}(?:[.,]\d{1,3})?(?:\s*MM)?/u', $resto)
+            || (bool) preg_match('/Ø\s*\d/u', $resto);
+    }
+
+    /**
+     * Si en la misma linea hay OTRA pieza: otra medida unida con "+" o "Y" ("BARRA 95.25 X 150 MM + 95.25 X 300 MM"), o la forma
+     * nombrada de nuevo con su medida ("1 BARRA Ø 31,75 X 45 MM C/U 53,-- 5 BARRAS Ø63,5 X 107MM"). Una linea con dos piezas no
+     * tiene UNA medida: no se carga ninguna.
+     */
+    private function hayOtraPieza(string $resto, string $forma): bool
+    {
+        if (preg_match('/^\s*(?:MM\b)?\s*[,.;]?\s*(?:\+|&|\bY\b)\s*(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d/iu', $resto)) {
+            return true;
+        }
+
+        $nombre = $forma === 'BARRA REDONDA' ? self::BARRA_REDONDA : '/(?<![\pL])'.preg_quote($forma, '/').'(?![\pL])/iu';
+
+        if (! preg_match_all($nombre, $resto, $m, PREG_OFFSET_CAPTURE)) {
+            return false;
+        }
+
+        foreach ($m[0] as [$nombreHallado, $desde]) {
+            if ($this->hayOtraSerie(mb_strcut($resto, $desde + strlen($nombreHallado), 40))) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -393,6 +420,11 @@ class MedidasDelTexto
             $resto = substr($t, $hit[0][1] + strlen($texto));
 
             if (preg_match(self::OFERTA, $descripcion) && $this->hayOtraSerie($resto)) {
+                return [];
+            }
+
+            // Dos piezas en la misma linea: no hay UNA medida que cargar.
+            if ($this->hayOtraPieza($resto, $forma)) {
                 return [];
             }
 

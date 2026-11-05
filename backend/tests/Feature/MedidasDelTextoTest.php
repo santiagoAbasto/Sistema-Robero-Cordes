@@ -294,4 +294,31 @@ class MedidasDelTextoTest extends TestCase
     {
         $this->assertSame([], $this->medidor->leer('MONEL K500 - CONT: (LAS BARRAS MACIZAS SE PODRIAN ENTREGAR EN DOS TRAMOS DE 170 A 300 MM)', 'BARRA REDONDA'));
     }
+
+    /**
+     * Lo ofrecido puede venir con un solo diámetro, sin "X": igual no se adivina cuál es el de la línea.
+     *
+     * Hallado en el informe en seco de la VM: «BARRA Ø152X500MM: OFRECEMOS Ø165MM» cotiza el Ø165 y se cargaba el Ø152.
+     */
+    public function test_un_pedido_con_un_diametro_ofrecido_distinto_no_se_adivina(): void
+    {
+        $this->assertSame([], $this->medidor->leer('BARRA Ø152X500MM:  OFRECEMOS Ø165MM, X KG', 'BARRA REDONDA'));
+        $this->assertSame([], $this->medidor->leer('PC 38897 - INCONEL 602CA, 15M BARRA Ø5MM: OFRECEMOS APROX. 15M Ø9.53 X APROX. 1.83M, X M (+IVA)', 'BARRA REDONDA'));
+        $this->assertSame([], $this->medidor->leer('BUSCAN ACERO 15-5PH AMS 5659 BARRA Ø20MM PARA FABRICAR BUJES, OFRECIDO 17-4PH HH1150 Ø22MM', 'BARRA REDONDA'));
+    }
+
+    /**
+     * Una línea con dos piezas no tiene una medida: «BARRA 95.25 X 150 MM + 95.25 X 300 MM» es un lote.
+     */
+    public function test_dos_piezas_en_la_misma_linea_no_se_cargan(): void
+    {
+        $this->assertSame([], $this->medidor->leer('50% COMPRA 17-4PH BARRA 95.25 X 150 MM + 95.25 X 300 MM 0.500 ANTICIPO, P/LOTE (+IVA)', 'BARRA REDONDA'));
+        $this->assertSame([], $this->medidor->leer('COTIZADO ALAMBRE DE PLATINO 0.5 X 160 MM + 0.3 X 200 MM P/LOTE', 'ALAMBRE'));
+        $this->assertSame([], $this->medidor->leer('1 BARRA Ø 31,75 X 45 MM C/U 53,-- 5 BARRAS Ø63,5 X 107MM', 'BARRA REDONDA'));
+        $this->assertSame([], $this->medidor->leer('1 UN MONEL 400 BARRA 50.8 X 200 MM Y 2 UN MONEL 400 BARRA 25.4 X 100 MM', 'BARRA REDONDA'));
+
+        // Una sola pieza, aunque la linea tenga mas numeros, se sigue leyendo.
+        $this->assertSame(['diameter' => 25.4, 'length' => 100.0], $this->medidor->leer('1 UN MONEL 400 BARRA 25.4 X 100 MM, 2 C/U, PESO 2.5 KG', 'BARRA REDONDA'));
+        $this->assertSame(['diameter' => 305.0, 'length' => 500.0], $this->medidor->leer('NITRONIC 60: BARRA Ø305 X500MM (Ø270X500MM), 1 C/U (+IVA)', 'BARRA REDONDA'));
+    }
 }
