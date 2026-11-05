@@ -8,6 +8,7 @@ use App\Models\Empresa;
 use App\Models\Forma;
 use App\Models\HistorialCambio;
 use App\Models\Material;
+use App\Models\MaterialAlias;
 use App\Models\User;
 use Database\Seeders\CalculadoraSeeder;
 use Database\Seeders\CatalogosSeeder;
@@ -245,6 +246,40 @@ class EnlazarLineasTest extends TestCase
         $yaEstaban = glob(storage_path('app/materiales-corregidos-*.csv'));
         $this->artisan('lineas:enlazar', ['--corregir-materiales' => true, '--aplicar' => true])->assertSuccessful();
         $this->assertNull($vieja->fresh()->material_id);
+        array_map('unlink', array_diff(glob(storage_path('app/materiales-corregidos-*.csv')), $yaEstaban));
+    }
+
+    /**
+     * Un enlace que ninguna regla de hoy ni de antes reproduce, pero que el texto no respalda, tambien se suelta.
+     *
+     * En la VM habia enlaces escritos por versiones mas viejas del enlazador: «MONEL 400 ... (TERMINADO A 60 X 203)»
+     * en «Monel 60». Y lo que el texto si respalda no se toca, aunque hoy el enlazador dude.
+     */
+    public function test_corregir_materiales_suelta_el_grado_tomado_de_una_medida_y_no_lo_que_el_texto_respalda(): void
+    {
+        $this->seed(CatalogosSeeder::class);
+        $this->seed(CalculadoraSeeder::class);
+        User::factory()->create();
+
+        $monel60 = Material::create(['nombre' => 'Monel 60', 'activo' => true]);
+        $monel400 = Material::create(['nombre' => 'Monel 400', 'activo' => true]);
+        $aisi305 = Material::create(['nombre' => 'Acero AISI 305', 'activo' => true]);
+        $aisi321 = Material::create(['nombre' => 'Acero AISI 321', 'activo' => true]);
+        MaterialAlias::create(['material_id' => $aisi321->id, 'alias' => 'AISI 321']);
+        $historica = 'Importada del sistema anterior.';
+
+        $mal = $this->lineaConMaterial($historica, 'MONEL 400, BARRA Ø65 X 206 (TERMINADO A 60 X 203), X KG', $monel60);
+        $mal305 = $this->lineaConMaterial($historica, 'COTIZADO: AISI 321, BARRA Ø305 X 500 MM (290 KG) AEREO, X KG (+IVA)', $aisi305);
+        $bien = $this->lineaConMaterial($historica, 'COTIZADO: AISI 321, BARRA Ø25 X 500 MM, X KG (+IVA)', $aisi321);
+
+        $yaEstaban = glob(storage_path('app/materiales-corregidos-*.csv'));
+        $this->artisan('lineas:enlazar', ['--corregir-materiales' => true, '--aplicar' => true])->assertSuccessful();
+
+        $this->assertNotSame($monel60->id, $mal->fresh()->material_id);
+        $this->assertNotSame($aisi305->id, $mal305->fresh()->material_id);
+        $this->assertSame($aisi321->id, $bien->fresh()->material_id);
+        $this->assertNotNull($monel400->id);
+
         array_map('unlink', array_diff(glob(storage_path('app/materiales-corregidos-*.csv')), $yaEstaban));
     }
 }

@@ -300,15 +300,18 @@ class EnlazarLineas extends Command
                 foreach ($lineas as $linea) {
                     $revisadas++;
 
-                    // Solo lo que el enlazador de antes habria escrito, o un material marcado NO USAR: nunca se enlaza solo...
-                    if (! isset($vetados[$linea->material_id]) && $materiales->elegir($linea->descripcion, false) !== $linea->material_id) {
-                        continue;
-                    }
-
-                    // ...y el de hoy no sostiene.
+                    // El de hoy no lo elegiria...
                     $hoy = $materiales->elegir($linea->descripcion);
 
                     if ($hoy === $linea->material_id) {
+                        continue;
+                    }
+
+                    // ...y o bien lo habria escrito el enlazador de antes, o el texto no dice ese material
+                    // (un numero de la medida tomado por el grado, un NO USAR): una version todavia mas vieja lo escribio.
+                    // Si el texto lo dice, aunque hoy el enlazador dude, se deja como esta.
+                    if ($materiales->elegir($linea->descripcion, false) !== $linea->material_id
+                        && $materiales->sostiene($linea->material_id, $linea->descripcion)) {
                         continue;
                     }
 

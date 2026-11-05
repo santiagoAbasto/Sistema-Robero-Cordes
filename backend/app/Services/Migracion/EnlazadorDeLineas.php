@@ -98,6 +98,14 @@ class EnlazadorDeLineas
      */
     private array $tokensDelMaterial = [];
 
+    /**
+     * Los materiales que comparten exactamente las mismas palabras, por huella: "Hastelloy X", "Hastelloy W" y
+     * "Hastelloy" se reducen a las mismas. Solo en ellos la letra suelta es lo que distingue.
+     *
+     * @var array<string, array<int, true>>
+     */
+    private array $idsPorHuella = [];
+
     /** Palabras que no cuentan al medir cuan cerca esta una de otra: "COBRE Y TUNGSTENO", "PLATA CON 10% CADMIO". */
     private const CONECTORES = ['de', 'del', 'con', 'y', 'e', 'en', 'al', 'a', 'o', 'u', 'por', 'para', 'el', 'la', 'los', 'las', 'sobre'];
 
@@ -226,14 +234,28 @@ class EnlazadorDeLineas
                 'palabras' => $palabras,
                 // Las palabras de su nombre que el texto tiene que decir, salvo que una designacion fuerte ya lo identifique.
                 'exige' => $this->designacionFuerte($tokens) ? [] : array_intersect_key($palabras, $this->exigibles),
+                'huella' => implode(' ', array_keys(array_flip($tokens))),
+                'letras' => [],
                 'alias' => (bool) ($entrada[2] ?? false),
                 'vetado' => isset($this->vetados[(int) $id]),
             ];
 
             $this->familias[(int) $id][] = array_flip($tokens);
+            $this->idsPorHuella[implode(' ', array_keys(array_flip($tokens)))][(int) $id] = true;
 
             foreach ($tokens as $t) {
                 $frecuencia[$t] = ($frecuencia[$t] ?? 0) + 1;
+            }
+        }
+
+        /*
+          La letra suelta de un grado ("Hastelloy X", "Hastelloy W") no es un token, pero hay que decirla: se exige solo
+          cuando otro material comparte las mismas palabras y esa letra es lo unico que los distingue. En "Nichrome V
+          80/20" o "Aleacion Fusible 98°C" la letra es una variante o una unidad, y no se exige.
+        */
+        foreach ($this->candidatos as $i => $c) {
+            if (count($this->idsPorHuella[$c['huella']] ?? []) > 1) {
+                $this->candidatos[$i]['letras'] = $this->letrasSueltas($c['palabras']);
             }
         }
 
@@ -255,6 +277,25 @@ class EnlazadorDeLineas
      *                             enlaces que se escribieron con esas reglas.
      */
     public function elegir(string $descripcion, bool $reglasDeHoy = true): ?int
+    {
+        $elegido = $this->decidir($descripcion, $reglasDeHoy);
+
+        /*
+          Las medidas no son el grado. "AISI 321, BARRA Ø305 X 500" quedaba en "Acero AISI 305", "MONEL 400 ...
+          (TERMINADO A 60 X 203)" en "Monel 60" y "HASTELLOY B ... X C/U" en "Hastelloy X": un numero de una
+          medida, o la X del "por unidad", se tomaba por el nombre del material.
+
+          Se decide otra vez sin las medidas, y solo para validar: lo que ya no se enlazaba sigue sin enlazarse
+          (sin las medidas se enlazarian unas cuantas mas, y eso se audita aparte).
+        */
+        if (! $reglasDeHoy || ! $this->material || $elegido === null) {
+            return $elegido;
+        }
+
+        return $this->decidir($this->sinLasMedidas($descripcion), true);
+    }
+
+    private function decidir(string $descripcion, bool $reglasDeHoy): ?int
     {
         $presentes = array_flip($this->tokens($descripcion));
         $dichas = array_flip($this->palabras($descripcion));
@@ -290,7 +331,7 @@ class EnlazadorDeLineas
               contando como rival: lo que antes quedaba sin enlazar por ser dudoso
               no empieza a enlazarse por esta regla.
             */
-            if ($reglasDeHoy && ($c['vetado'] || array_diff_key($c['exige'], $dichas) !== [])) {
+            if ($reglasDeHoy && ($c['vetado'] || array_diff_key($c['exige'], $dichas) !== [] || array_diff_key($c['letras'], $dichas) !== [])) {
                 continue;
             }
 
@@ -379,6 +420,85 @@ class EnlazadorDeLineas
         }
 
         return $mejor['id'];
+    }
+
+    /**
+     * Si el texto dice de verdad ese material: algun nombre o alias suyo con todas sus palabras en el texto,
+     * sin contar las medidas, y no marcado para no usar.
+     *
+     * No es lo mismo que elegir(): elegir() es prudente y deja sin enlazar lo dudoso. Esto solo contesta si el
+     * material ya enlazado tiene sustento en lo escrito: "Acero AISI 305" no lo tiene en "AISI 321, BARRA Ø305
+     * X 500" —el 305 es el diametro—, y "Acero AISI 347" si lo tiene en "ACERO INOXIDABLE AISI 347, VARILLA".
+     */
+    public function sostiene(int $material, string $descripcion): bool
+    {
+        if (isset($this->vetados[$material])) {
+            return false;
+        }
+
+        $texto = $this->material ? $this->sinLasMedidas($descripcion) : $descripcion;
+        $presentes = array_flip($this->tokens($texto));
+        $dichas = array_flip($this->palabras($texto));
+
+        foreach ($this->candidatos as $c) {
+            if ($c['id'] === $material
+                && array_diff_key($c['tokens'], $presentes) === []
+                && array_diff_key($c['exige'], $dichas) === []
+                && array_diff_key($c['letras'], $dichas) === []) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Las letras sueltas de un nombre: la X de "Hastelloy X", la W de "Hastelloy W". No son tokens (una letra sola no
+     * identifica nada) pero son el grado, y el texto tiene que decirlas. Las conjunciones y las unidades ("98°C") no cuentan.
+     *
+     * @param  array<string, mixed>  $palabras
+     * @return array<string, true>
+     */
+    private function letrasSueltas(array $palabras): array
+    {
+        $letras = [];
+        $anterior = '';
+
+        foreach (array_keys($palabras) as $palabra) {
+            $palabra = (string) $palabra;
+
+            // La letra que sigue a un numero es una unidad ("98°C"), no un grado.
+            if (strlen($palabra) === 1 && ctype_alpha($palabra) && ! ctype_digit($anterior) && ! in_array($palabra, ['a', 'e', 'o', 'u', 'y'], true)) {
+                $letras[$palabra] = true;
+            }
+
+            $anterior = $palabra;
+        }
+
+        return $letras;
+    }
+
+    /**
+     * El texto sin las medidas: los diametros marcados, las series "25.4 X 1000" y los numeros con su "MM", y la
+     * X del precio por unidad ("X C/U", "X KG", "X M"). Queda lo que nombra al material.
+     */
+    private function sinLasMedidas(string $texto): string
+    {
+        // Un numero con su unidad de largo si la trae: "50 MM", "1.22M", "3 M".
+        $numero = '\d+(?:[.,]\d+)?(?:\s*(?:mm|mts?|mtos?|m)\b)?';
+        // Se reemplaza por una barra y no por un espacio: sin ella "400 Ø 51 X 3 M" quedaba "400 M", y "400 M" se pega en "400m".
+        $corte = ' | ';
+
+        // Un diametro marcado, con su serie si la tiene: "Ø 31.75 X 50 MM", "Ø25.4MM X 1000MM".
+        $t = preg_replace('/[ØøÝý]\s*'.$numero.'(?:\s*[xX*]\s*'.$numero.')*/iu', $corte, $texto);
+        // Una serie, que no empieza pegada a una letra ("X750" es un grado) ni es una pureza ("ALU 4X9" son cuatro nueves):
+        // "0.46 X 1220 X 1560", "8*2000*6000".
+        $t = preg_replace('/(?<![\pL\d])(?![3-6]\s*[xX]\s*9(?![\d.,]))'.$numero.'(?:\s*[xX*]\s*'.$numero.')+/iu', $corte, $t);
+        // Un numero con su "MM" solo: "60 MM".
+        $t = preg_replace('/(?<![\pL\d])\d+(?:[.,]\d+)?\s*mm\b/iu', $corte, $t);
+
+        // La X del precio: "X C/U", "X KG", "X M", "X METRO". "HASTELLOY X CHAPA" sigue diciendo X.
+        return preg_replace('~(?<![\pL\d])x\s+(?:c/?u|kgs?|k|m|mts?|mto|metros?|xm|u|un)(?![\pL\d])~iu', $corte, $t);
     }
 
     /**

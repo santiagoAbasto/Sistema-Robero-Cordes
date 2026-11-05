@@ -526,4 +526,77 @@ class EnlazadorDeLineasTest extends TestCase
         $this->assertSame(4, $e->elegir('OFRECITO TUBO CUPRO-NIQUEL 90/10 Ø19.05 X 1.5MM POR KG'));
         $this->assertNull($e->elegir('COTIZADO BARRA CUNI 70/30 DIA. 125 X 500 MM, X KG (+IVA)'));
     }
+
+    private function catalogoConGrados(): EnlazadorDeLineas
+    {
+        return new EnlazadorDeLineas([
+            [1, 'Monel 60'], [2, 'Monel 400'], [3, 'Acero AISI 305'], [3, 'AISI 305', true], [4, 'Acero AISI 321'], [4, 'AISI 321', true],
+            [5, 'Hastelloy X'], [6, 'Hastelloy B-2'], [13, 'Hastelloy W'], [7, 'Alferon 20'], [9, 'Inconel 600'], [10, 'Inconel X-750'],
+            [11, 'Aluminio 99.99%'], [11, 'ALU 4X9', true], [12, 'Zinc 99.99%'], [12, 'ZIN 4X9', true],
+            [20, 'Titanio Grado 2'], [21, 'Titanio Grado 5'], [22, 'Niquel 200'], [23, 'Niquel 201'], [24, 'Molibdeno'],
+            [25, 'Tantalio'], [26, 'Niobio'], [27, 'Hafnio'], [28, 'Renio'], [29, 'Plomo'], [30, 'Estano'],
+        ], ruidoExtra: ['cobre', 'plata', 'alambre', 90, 45]);
+    }
+
+    /**
+     * Un numero de la medida no es el grado, ni la X del "por unidad" el grado X.
+     *
+     * Hallado en el informe completo de la VM: «AISI 321, BARRA Ø305 X 500» estaba en «Acero AISI 305»,
+     * «MONEL 400 ... (TERMINADO A 60 X 203)» en «Monel 60», «HASTELLOY B BARRA Ø 31.75 X 50 MM, X C/U» en «Hastelloy X»,
+     * «ALFERON 25 ALAMBRE Ø 1,20 MM» en «Alferon 20» y «INCONEL 750 ... X 600» en «Inconel 600».
+     */
+    public function test_el_numero_de_una_medida_no_es_el_grado(): void
+    {
+        $e = $this->catalogoConGrados();
+
+        // Antes de esta regla: el grado equivocado.
+        $this->assertSame(5, $e->elegir('1 C/U HASTELLOY B BARRA Ø 31.75 X 50 MM, X C/U', false));
+        $this->assertSame(7, $e->elegir('ALFERON 25 ALAMBRE Ø 1,20 MM P/KG (+IVA)', false));
+        $this->assertSame(9, $e->elegir('INCONEL 750 ALA Ø 3.76 X 600 C/U(+IVA)', false));
+
+        // Ahora: sin enlazar, que es lo honesto; el grado dicho de verdad sigue enlazando.
+        $this->assertNull($e->elegir('COTIZADO: AISI 321, BARRA Ø305 X 500 MM (290 KG) AEREO, X KG (+IVA)'));
+        $this->assertNull($e->elegir('1 C/U HASTELLOY B BARRA Ø 31.75 X 50 MM, X C/U'));
+        $this->assertNull($e->elegir('ALFERON 25 ALAMBRE Ø 1,20 MM P/KG (+IVA)'));
+        $this->assertNull($e->elegir('INCONEL 750 ALA Ø 3.76 X 600 C/U(+IVA)'));
+        $this->assertSame(5, $e->elegir('1 C/U HASTELLOY X BARRA Ø 31.75 X 50 MM, X C/U'));
+        $this->assertSame(5, $e->elegir('HASTELLOY X CHAPA 4.76 X 600 X 740MM, 1 C/U'));
+        $this->assertSame(10, $e->elegir('INCONEL X750 X 9.53 P/KG(+IVA)'));
+        $this->assertSame(7, $e->elegir('ALAMBRE ALFERON 20 DIA. 0.60 MM, X KG'));
+        $this->assertSame(3, $e->elegir('1 UN ACERO AISI 305 BARRA Ø25 X 1000 MM C/U'));
+    }
+
+    /** «ALU 4X9» son cuatro nueves de pureza: no es una serie de medidas. */
+    public function test_cuatro_nueves_no_es_una_medida(): void
+    {
+        $e = $this->catalogoConGrados();
+
+        $this->assertSame(11, $e->elegir('ALU 4X9 PLANCHA'));
+        $this->assertSame(12, $e->elegir('1 KG ZIN 4X9 LINGOTE'));
+    }
+
+    /** Lo que ya estaba sin enlazar no empieza a enlazarse por quitar las medidas: eso se audita aparte. */
+    public function test_quitar_las_medidas_no_enlaza_lo_que_no_se_enlazaba(): void
+    {
+        $e = $this->catalogoConGrados();
+
+        // Con "X50" pegado la linea tenia una pseudo designacion y no se enlazaba: sigue igual.
+        $this->assertNull($e->elegir('TIT GR2 BARRA Ø 12.7 X50 MM C/U'));
+    }
+
+    /** sostiene(): si el texto dice de verdad el material ya enlazado, sin contar las medidas. */
+    public function test_sostiene_dice_si_el_texto_respalda_el_material(): void
+    {
+        $e = $this->catalogoConGrados();
+
+        $this->assertFalse($e->sostiene(3, 'COTIZADO: AISI 321, BARRA Ø305 X 500 MM'));
+        $this->assertTrue($e->sostiene(4, 'COTIZADO: AISI 321, BARRA Ø305 X 500 MM'));
+        $this->assertFalse($e->sostiene(1, 'MONEL 400, BARRA Ø65 X 206 (TERMINADO A 60 X 203), X KG'));
+        $this->assertTrue($e->sostiene(2, 'MONEL 400, BARRA Ø65 X 206 (TERMINADO A 60 X 203), X KG'));
+        $this->assertFalse($e->sostiene(5, '1 C/U HASTELLOY B BARRA Ø 31.75 X 50 MM, X C/U'));
+        $this->assertTrue($e->sostiene(5, 'HASTELLOY X BARRA Ø 31.75 X 50 MM, X C/U'));
+        $this->assertTrue($e->sostiene(6, 'HASTELLOY B-2 BARRA Ø 31.75 X 50 MM, X C/U'));
+        // Que el enlazador de hoy dude no quita el sustento: "Niquel 201" esta dicho aunque haya otro "201" cerca.
+        $this->assertTrue($e->sostiene(23, 'PIDE NIQUEL BARRA 1" X 100 MM 1 UN NIQUEL 201 BARRA 38.1 X 200 MM'));
+    }
 }
