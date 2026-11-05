@@ -206,6 +206,11 @@ class MedidasDelTexto
           numeros que siguen no son su medida. La medida de un articulo se
           escribe al lado de la forma, no treinta palabras despues.
         */
+        // "PLACA TUBO Ø1250 X 110" es un tubo-placa, un disco: no es un tubo de pared 110.
+        if (preg_match('/\bPLACAS?\s+$/iu', mb_substr($t, 0, $donde))) {
+            return [];
+        }
+
         $t = mb_substr($t, $donde + mb_strlen($forma));
         $ventana = mb_substr($t, 0, self::CERCA);
 

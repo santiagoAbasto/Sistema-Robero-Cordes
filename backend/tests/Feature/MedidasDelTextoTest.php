@@ -205,6 +205,16 @@ class MedidasDelTextoTest extends TestCase
         $this->assertSame([], $this->medidor->leer('1 C/U TIT GR2 TUBO S/C 9.53 X 265 X 2000MM C/U', 'TUBO'));
     }
 
+    /** Una placa tubo (tubo-placa) es un disco: Ø1250 X 110 no es un tubo de pared 110. */
+    public function test_una_placa_tubo_no_es_un_tubo(): void
+    {
+        $this->assertSame([], $this->medidor->leer('COBRE-NIQUEL 70/30: 2 PLACA TUBO Ø1250 X 110 MM C/U(+IVA)', 'TUBO'));
+        $this->assertSame(
+            ['outer' => 19.05, 'wall' => 1.65],
+            $this->medidor->leer('1 TUBO PARA PLACA 19.05 X 1.65 MM P/M', 'TUBO'),
+        );
+    }
+
     /** Un numero suelto con su "MM" antes de la serie: no se sabe de cual de los dos habla. */
     public function test_dos_medidas_distintas_en_el_texto_no_se_adivinan(): void
     {

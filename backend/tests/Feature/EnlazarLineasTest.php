@@ -109,4 +109,25 @@ class EnlazarLineasTest extends TestCase
         // En seco: no escribio.
         $this->assertSame(0, ConsultaLinea::whereNotNull('material_id')->count());
     }
+
+    /**
+     * La muestra dice que medidas se escribirian: es lo que hay que mirar con los datos reales.
+     *
+     * Las medidas eran donde estaban los errores mas graves, y la muestra no las mostraba.
+     */
+    public function test_la_muestra_muestra_las_medidas_que_se_escribirian(): void
+    {
+        $this->seed(CatalogosSeeder::class);
+        $this->seed(CalculadoraSeeder::class);
+        User::factory()->create();
+
+        $this->linea('Importada del sistema anterior.')->update(['descripcion' => 'INCONEL 600 TUBO 25.4 X 1.65 X 1000 MM, C/U']);
+
+        $this->artisan('lineas:enlazar', ['--muestra' => 5])
+            // Una sola expectativa: cada una consume una linea de salida.
+            ->expectsOutputToContain('material: INCONEL 600 · forma: TUBO · medidas: diam 25.4 · esp 1.65 · largo 1000')
+            ->assertSuccessful();
+
+        $this->assertNull(ConsultaLinea::first()->diametro_mm);
+    }
 }

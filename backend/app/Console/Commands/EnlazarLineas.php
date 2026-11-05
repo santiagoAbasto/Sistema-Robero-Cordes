@@ -171,12 +171,24 @@ class EnlazarLineas extends Command
                     $cambiadas++;
 
                     if ($cuantas > 0) {
+                        // Las medidas que se escribirian, con el nombre de cada campo: es lo que
+                        // hay que mirar con los datos reales, porque de ahi sale el peso.
+                        $escribe = [];
+
+                        foreach (['diametro_mm' => 'diam', 'espesor_mm' => 'esp', 'ancho_mm' => 'ancho', 'largo_mm' => 'largo'] as $col => $nombre) {
+                            if (isset($cambios[$col])) {
+                                $escribe[] = $nombre.' '.rtrim(rtrim(number_format((float) $cambios[$col], 3, '.', ''), '0'), '.');
+                            }
+                        }
+
                         $fila = [
-                            mb_substr($linea->descripcion, 0, 58),
+                            mb_substr($linea->descripcion, 0, 110),
                             $cambios['material_id'] ?? null,
                             $cambios['forma_id'] ?? null,
                             // Solo para mostrar: lo que ya tenia, que no se cambia.
                             $linea->material_id,
+                            $linea->forma_id,
+                            $escribe === [] ? '—' : implode(' · ', $escribe),
                         ];
 
                         if (count($muestra) < $cuantas) {
@@ -202,13 +214,18 @@ class EnlazarLineas extends Command
         if ($muestra !== []) {
             $this->newLine();
             $this->line('Muestra al azar de lo que se escribiria ('.count($muestra).' de '.number_format($cambiadas, 0, ',', '.').'). "ya tenia" = el material ya estaba cargado y no se toca.');
-            $this->table(['descripcion', 'material', 'forma'], array_map(fn (array $f) => [
-                $f[0],
-                $f[1] !== null
-                    ? Material::find($f[1])?->nombre
-                    : ($f[3] !== null ? 'ya tenia: '.Material::find($f[3])?->nombre : '—'),
-                $f[2] !== null ? Forma::find($f[2])?->nombre : '—',
-            ], $muestra));
+
+            foreach (array_values($muestra) as $i => [$descripcion, $materialNuevo, $formaNueva, $materialViejo, $formaVieja, $medidas]) {
+                $material = $materialNuevo !== null
+                    ? Material::find($materialNuevo)?->nombre
+                    : ($materialViejo !== null ? 'ya tenia '.Material::find($materialViejo)?->nombre : '—');
+                $forma = $formaNueva !== null
+                    ? Forma::find($formaNueva)?->nombre
+                    : ($formaVieja !== null ? 'ya tenia '.Forma::find($formaVieja)?->nombre : '—');
+
+                $this->line(sprintf('%2d. %s', $i + 1, $descripcion));
+                $this->line("    material: {$material} · forma: {$forma} · medidas: {$medidas}");
+            }
         }
 
         $this->newLine();
