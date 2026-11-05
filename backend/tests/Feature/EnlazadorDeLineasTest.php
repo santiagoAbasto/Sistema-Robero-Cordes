@@ -308,4 +308,174 @@ class EnlazadorDeLineasTest extends TestCase
         $this->assertSame(11, $e->elegir('1920 KG ACERO CORTEN B CHAPA 8 MM EUROS P/KG(+IVA)'));
         $this->assertSame(10, $e->elegir('1920 KG ACERO CORTEN A CHAPA 8 MM EUROS P/KG(+IVA)'));
     }
+
+    /**
+     * Un catalogo con "Cobre" y "Plata" dentro de nombres de otros materiales, y con las palabras de las
+     * formas como ruido ("ALAMBRE CON ALMA DE COBRE", "FUNDENTE SOLD. PLATA"), como en el catalogo real.
+     */
+    private function catalogoConCobreYPlata(): EnlazadorDeLineas
+    {
+        return new EnlazadorDeLineas([
+            [1, 'Tungsteno'],
+            [2, 'Tungsteno Plata 70/30'],
+            [3, 'Cobre Tungsteno 70W/30Cu'],
+            [4, 'Cobre Cromo'],
+            [5, 'Cobre'],
+            [6, 'Plata'],
+            [7, 'Soldadura de Plata'],
+            [8, 'Cobre Zirconio 10%'],
+            [9, 'Zirconio 702'],
+            [10, 'Cobalto'],
+            [11, 'Cobre Plata 20S'],
+            // El resto del catalogo, para que las palabras pesen lo que pesan.
+            [20, 'Titanio Grado 2'], [21, 'Titanio Grado 5'], [22, 'Niquel 200'], [23, 'Niquel 201'],
+            [24, 'Molibdeno'], [25, 'Tantalio'], [26, 'Niobio'], [27, 'Hafnio'], [28, 'Renio'],
+            [29, 'Acero Inoxidable 316'], [30, 'Acero Inoxidable 304'], [31, 'Bronce'], [32, 'Laton'],
+            [33, 'Zinc'], [34, 'Plomo'], [35, 'Estano'],
+        ], ruidoExtra: ['cobre', 'plata', 'alambre', 'alma', 'fundente', 'sold'], formasEnteras: ['crisol']);
+    }
+
+    /**
+     * "COBRE TUNGSTENO 70/30" no es "Tungsteno Plata 70/30": plata no cuenta y cobre si.
+     *
+     * Hay formas que se llaman "ALAMBRE CON ALMA DE COBRE" y "FUNDENTE SOLD. PLATA" y su vocabulario entero es
+     * ruido al buscar material: ni "cobre" ni "plata" contaban, y la linea caia en el material que quedaba.
+     */
+    public function test_cobre_y_plata_dentro_del_nombre_se_exigen(): void
+    {
+        $e = $this->catalogoConCobreYPlata();
+
+        // Antes: el tungsteno, o la plata, sin mirar el cobre.
+        $this->assertSame(1, $e->elegir('1 UN COBRE TUNGSTENO 20/80 BARRA 6.5 X 500 MM C/U', false));
+        $this->assertSame(2, $e->elegir('1 UN COBRE TUNGSTENO 70/30 BARRA 30 X 65 MM C/U', false));
+        $this->assertSame(4, $e->elegir('CROMO PIEDRAS P/KG(+IVA)', false));
+
+        // Ahora: otro material, que el catalogo trae con su composicion: no se adivina.
+        $this->assertNull($e->elegir('1 UN COBRE TUNGSTENO 20/80 BARRA 6.5 X 500 MM C/U'));
+        $this->assertNull($e->elegir('1 UN COBRE TUNGSTENO 70/30 BARRA 30 X 65 MM C/U'));
+        $this->assertNull($e->elegir('CROMO PIEDRAS P/KG(+IVA)'));
+
+        // Con su nombre completo, se enlaza.
+        $this->assertSame(2, $e->elegir('1 UN TUNGSTENO PLATA 70/30 BARRA 30 X 65 MM C/U'));
+        $this->assertSame(3, $e->elegir('COBRE TUNGSTENO 70W/30CU BARRA 22.22 X 300 MM C/U'));
+        $this->assertSame(1, $e->elegir('TUNGSTENO 99.95 BARRA 10 X 150 MM C/U'));
+    }
+
+    /**
+     * Una designacion fuerte ya dice que es cobre; un schedule de caño no.
+     *
+     * "TUNGSTENO 70W/30CU" es el compuesto de cobre y tungsteno aunque no diga "cobre". En cambio "20S" es
+     * el schedule de un caño: con el enlazador de antes, todo "SCH 20S" caia en "Cobre Plata 20S".
+     */
+    public function test_una_designacion_fuerte_alcanza_y_un_schedule_no(): void
+    {
+        $e = $this->catalogoConCobreYPlata();
+
+        $this->assertSame(3, $e->elegir('TUNGSTENO 70W/30CU BARRA 22.22 X 300 MM C/U'));
+
+        $this->assertSame(11, $e->elegir('CAÑO 2" SCH 20S X 6000 MM C/U', false));
+        $this->assertNull($e->elegir('CAÑO 2" SCH 20S X 6000 MM C/U'));
+        $this->assertNull($e->elegir('TUBO 1 1/2" SCH 20S C/U'));
+        // Con su nombre completo, si.
+        $this->assertSame(11, $e->elegir('COBRE PLATA 20S BARRA 10 X 100 MM'));
+    }
+
+    /** Un texto que nombra cobre o plata y un ganador que no los dice: son dos materiales. */
+    public function test_el_texto_con_cobre_o_plata_no_va_a_un_material_que_no_los_dice(): void
+    {
+        $e = $this->catalogoConCobreYPlata();
+
+        $this->assertNull($e->elegir('FILM DE POLIESTER 12 MICRONES Y PLATA $8/9 400 KG ZINC'));
+        $this->assertNull($e->elegir('SOLDADURA AL 40% 3.7 KG P/KG'));
+        // La plata dicha, con su soldadura: se enlaza.
+        $this->assertSame(7, $e->elegir('SOLDADURA DE PLATA AL 40% 3.7 KG P/KG'));
+    }
+
+    /**
+     * Lo que antes quedaba sin enlazar por ser dudoso no empieza a enlazarse por esta regla.
+     *
+     * "Cobre Zirconio 10%" pide cobre y la linea no lo dice, asi que no puede ganar: pero sigue siendo un rival
+     * y la linea queda como estaba. "CROMO COBALTO" es una aleacion de dos metales, no cobalto.
+     */
+    public function test_un_candidato_que_pide_cobre_no_gana_pero_sigue_bloqueando(): void
+    {
+        $e = $this->catalogoConCobreYPlata();
+
+        $this->assertNull($e->elegir('ALFA LE COTIZA CROMO COBALTO 8 X 3300 MM EUROS'));
+        $this->assertNull($e->elegir('10 UN ZIRCONIO 702 BARRA 3.18 MM'));
+        // Y el modo anterior seguia igual, que es lo que permite revisar lo ya escrito.
+        $this->assertNull($e->elegir('10 UN ZIRCONIO 702 BARRA 3.18 MM', false));
+    }
+
+    /**
+     * Una palabra que es una forma entera sigue siendo ruido, aunque tambien sea un material.
+     *
+     * "CRISOL" es una forma y tambien una entrada del catalogo de materiales: nombrar un crisol no es nombrar
+     * un material. "Cobre" y "Plata", en cambio, solo estan dentro de nombres mas largos de formas.
+     */
+    public function test_una_forma_entera_sigue_siendo_ruido(): void
+    {
+        $entradas = [
+            [1, 'Crisol'], [2, 'Crisol Grafito'], [3, 'Zafiro'], [4, 'Titanio'], [5, 'Niobio'], [6, 'Hafnio'], [7, 'Renio'],
+        ];
+
+        $conCrisolForma = new EnlazadorDeLineas($entradas, ruidoExtra: ['crisol'], formasEnteras: ['crisol']);
+        $sinCrisolForma = new EnlazadorDeLineas($entradas, ruidoExtra: ['crisol']);
+
+        // Crisol es una forma: no se le exige a "Crisol Grafito".
+        $this->assertSame(2, $conCrisolForma->elegir('GRAFITO PARA 5 KG'));
+        // Si no lo fuera, sera una palabra de material y se le exigiria.
+        $this->assertNull($sinCrisolForma->elegir('GRAFITO PARA 5 KG'));
+        $this->assertContains('crisol', $conCrisolForma->palabrasSolas());
+    }
+
+    /**
+     * Los numeros de las formas ("CODO 90", "CURVA 45") tambien eran ruido: tiraban el 90 de "Nimonic 90" y el 45
+     * de "Cu-Ni 45", y "CUNI 90/10" caia en "Cu-Ni 45".
+     *
+     * El vocabulario de las formas llega como claves de un array: un "90" es un entero, y asi se lo prueba.
+     */
+    public function test_el_grado_dentro_del_nombre_se_exige_aunque_una_forma_use_ese_numero(): void
+    {
+        $e = new EnlazadorDeLineas([
+            [1, 'Nimonic 90'], [2, 'Nimonic 80A'], [3, 'Cu-Ni 45'], [4, 'CUNI 90 Cobre Niquel 90/10', true], [4, 'Cobre Niquel 90/10'],
+            [10, 'Titanio Grado 2'], [11, 'Titanio Grado 5'], [12, 'Niquel 200'], [13, 'Niquel 201'], [14, 'Molibdeno'],
+            [15, 'Tantalio'], [16, 'Niobio'], [17, 'Hafnio'], [18, 'Renio'], [19, 'Zinc'], [20, 'Plomo'], [21, 'Estano'],
+        ], ruidoExtra: [90, 45, 'cobre'], formasEnteras: []);
+
+        $this->assertSame(1, $e->elegir('NIMONIC 90 CHAPA 4.76 X 175 X 1200MM, 1 C/U (+IVA)'));
+        $this->assertSame(1, $e->elegir('NIMONIC 90 CHAPA 4.76 X 175 X 1200MM, 1 C/U (+IVA)', false));
+
+        // "CUNI 90/10" no es "Cu-Ni 45": el 45 no esta dicho.
+        $this->assertSame(3, $e->elegir('CUNI 90/10 TUBO 25 X 2 MM C/U', false));
+        $this->assertNotSame(3, $e->elegir('CUNI 90/10 TUBO 25 X 2 MM C/U'));
+        $this->assertSame(3, $e->elegir('CU-NI 45 TUBO 25 X 2 MM C/U'));
+    }
+
+    /**
+     * El catalogo deja marcados los materiales que no se usan ("Acero Duplex 2507 NO USAR"): el enlace nunca
+     * los elige. Pero un duplicado marcado ya no empata con el bueno ni lo deja sin enlazar.
+     */
+    public function test_un_material_marcado_no_usar_no_se_elige(): void
+    {
+        $entradas = [
+            [40, 'Acero Duplex 2507 NO USAR'], [41, 'Acero Duplex S32750 2507'],
+            // Los dos tienen el mismo alias: sin el aviso del nombre, empatan.
+            [42, 'Acero 16Mo3'], [42, '16Mo3', true], [43, 'Acero 16Mo3- Usar 15Mo3/1'], [43, '16Mo3', true],
+            [10, 'Titanio Grado 2'], [11, 'Titanio Grado 5'], [12, 'Niquel 200'], [13, 'Niquel 201'], [14, 'Molibdeno'],
+            [15, 'Tantalio'], [16, 'Niobio'], [17, 'Hafnio'], [18, 'Renio'], [19, 'Zinc'], [20, 'Plomo'], [21, 'Estano'],
+        ];
+
+        // "no" y "usar" son ruido en el catalogo real: hay formas con esas palabras.
+        $e = new EnlazadorDeLineas($entradas, ruidoExtra: ['no', 'usar'], vetados: [40, 43]);
+
+        // Antes caia en el marcado; ahora no se adivina otro.
+        $this->assertSame(40, $e->elegir('ACERO SUPER DUPLEX 2507 BARRA Ø 101.6 X 600 MM', false));
+        $this->assertNull($e->elegir('ACERO SUPER DUPLEX 2507 BARRA Ø 101.6 X 600 MM'));
+        // Con su designacion, el bueno.
+        $this->assertSame(41, $e->elegir('ACERO DUPLEX S32750 2507 BARRA Ø 101.6 X 600 MM'));
+        // El duplicado marcado empataba con el bueno y no se enlazaba ninguno.
+        $this->assertNull($e->elegir('16MO3 CHAPA 8 X 2000 X 6000 MM', false));
+        $this->assertSame(42, $e->elegir('16MO3 CHAPA 8 X 2000 X 6000 MM'));
+    }
 }

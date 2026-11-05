@@ -25,13 +25,17 @@ use Illuminate\Support\Facades\DB;
  *
  * En seco por defecto, igual que el importador: sin --aplicar cuenta y no
  * escribe.
+ *
+ * Con --corregir-materiales no completa nada: revisa los materiales que YA estan
+ * enlazados y corrige los que las reglas de hoy no sostienen (ver mas abajo).
  */
 class EnlazarLineas extends Command
 {
     protected $signature = 'lineas:enlazar
         {--aplicar : escribe en la base; sin esto solo informa}
         {--solo-sumadas : solo las cotizaciones que entraron con --sumar, no las de septiembre}
-        {--muestra=0 : imprime N enlaces al azar para revisarlos a mano}';
+        {--muestra=0 : imprime N enlaces al azar para revisarlos a mano}
+        {--corregir-materiales : revisa los materiales ya enlazados y corrige los que las reglas de hoy no sostienen}';
 
     protected $description = 'Reconoce el material y la forma dentro del texto de las lineas historicas';
 
@@ -64,10 +68,17 @@ class EnlazarLineas extends Command
             ],
             material: true,
             ruidoExtra: $formas->vocabulario(),
+            formasEnteras: $formas->palabrasSolas(),
+            // El catalogo deja marcados los que no se usan ("... NO USAR", "zz..."): un enlace nunca los elige.
+            vetados: Material::idsQueNoSeUsan(),
         );
 
         if (! $aplicar) {
             $this->warn('Modo informe: no se escribe nada. Agregá --aplicar para hacerlo.');
+        }
+
+        if ($this->option('corregir-materiales')) {
+            return $this->corregirMateriales($materiales, $aplicar);
         }
 
         $medidor = new MedidasDelTexto;
@@ -241,6 +252,125 @@ class EnlazarLineas extends Command
         ]);
 
         if (! $aplicar) {
+            $this->warn('No se escribio nada.');
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Revisa los materiales que ya estan enlazados con las reglas de hoy.
+     *
+     * Hasta el 05-11-2026 el enlazador tiraba "cobre", "plata" y los numeros de las formas como ruido, y
+     * elegia materiales marcados "NO USAR": escribio enlaces como "COBRE TUNGSTENO 70/30" -> "Tungsteno
+     * Plata 70/30" (plata, no cobre), "CROMO PIEDRA" -> "Cobre Cromo", "SCH 20S" -> "Cobre Plata 20S" o
+     * "ACERO SUPER DUPLEX 2507" -> "Acero Duplex 2507 NO USAR".
+     * Solo se corrige lo que ESE enlazador habria escrito y el de hoy no sostiene, y todo enlace a un
+     * material marcado NO USAR que no haya elegido una persona: lo que cargo otro camino, o lo que una
+     * persona toco, no se mira. Nada se borra: el material se vacia o se cambia por el
+     * que sostienen las reglas de hoy, y un archivo guarda como estaba cada linea para poder volver.
+     */
+    private function corregirMateriales(EnlazadorDeLineas $materiales, bool $aplicar): int
+    {
+        $nombre = Material::query()->pluck('nombre', 'id');
+
+        // Las lineas cuyo material toco una persona: lo que ella puso manda.
+        $deUnaPersona = DB::table('historial_cambios')
+            ->where('tabla', 'consulta_lineas')->where('campo', 'material_id')
+            ->pluck('registro_id')->flip()->all();
+
+        $archivo = null;
+        $ruta = null;
+
+        if ($aplicar) {
+            $ruta = storage_path('app/materiales-corregidos-'.now()->format('Ymd-His').'.csv');
+            $archivo = fopen($ruta, 'w');
+            fputcsv($archivo, ['linea_id', 'consulta_id', 'material_anterior_id', 'material_anterior', 'material_nuevo_id', 'material_nuevo', 'descripcion']);
+        }
+
+        $revisadas = $cambian = $respetadas = $deVetados = 0;
+        $grupos = [];
+        $vetados = array_flip(Material::idsQueNoSeUsan());
+
+        ConsultaLinea::query()
+            ->whereIn('consulta_id', DB::table('consultas')->where('nota', 'like', 'Importada del sistema anterior.%')->select('id'))
+            ->whereNotNull('material_id')
+            ->select(['id', 'consulta_id', 'descripcion', 'material_id'])
+            ->chunkById(500, function ($lineas) use ($materiales, $nombre, $aplicar, $archivo, $deUnaPersona, $vetados, &$revisadas, &$cambian, &$respetadas, &$grupos, &$deVetados) {
+                foreach ($lineas as $linea) {
+                    $revisadas++;
+
+                    // Solo lo que el enlazador de antes habria escrito, o un material marcado NO USAR: nunca se enlaza solo...
+                    if (! isset($vetados[$linea->material_id]) && $materiales->elegir($linea->descripcion, false) !== $linea->material_id) {
+                        continue;
+                    }
+
+                    // ...y el de hoy no sostiene.
+                    $hoy = $materiales->elegir($linea->descripcion);
+
+                    if ($hoy === $linea->material_id) {
+                        continue;
+                    }
+
+                    if (isset($deUnaPersona[$linea->id])) {
+                        $respetadas++;
+
+                        continue;
+                    }
+
+                    $cambian++;
+                    $deVetados += isset($vetados[$linea->material_id]) ? 1 : 0;
+
+                    $antes = $nombre[$linea->material_id] ?? '?';
+                    $ahora = $hoy === null ? 'sin material' : ($nombre[$hoy] ?? '?');
+                    $grupos["{$antes} → {$ahora}"]['n'] = ($grupos["{$antes} → {$ahora}"]['n'] ?? 0) + 1;
+
+                    if (count($grupos["{$antes} → {$ahora}"]['ejemplos'] ?? []) < 2) {
+                        $grupos["{$antes} → {$ahora}"]['ejemplos'][] = mb_substr($linea->descripcion, 0, 110);
+                    }
+
+                    if ($aplicar) {
+                        fputcsv($archivo, [$linea->id, $linea->consulta_id, $linea->material_id, $antes, $hoy, $hoy === null ? '' : $ahora, $linea->descripcion]);
+
+                        // Update directo y solo si sigue como se leyo: no es una persona corrigiendo, y no se pisa lo que cambio entre medio.
+                        DB::table('consulta_lineas')->where('id', $linea->id)->where('material_id', $linea->material_id)->update(['material_id' => $hoy]);
+                    }
+                }
+            });
+
+        if ($archivo !== null) {
+            fclose($archivo);
+        }
+
+        uasort($grupos, fn ($a, $b) => $b['n'] <=> $a['n']);
+
+        $this->newLine();
+        $this->line('Materiales que '.($aplicar ? 'se corrigieron' : 'se corregirian').' (agrupados por lo que cambia):');
+
+        foreach (array_slice($grupos, 0, 40, true) as $cambio => $dato) {
+            $this->line(sprintf('[%s] %s', number_format($dato['n'], 0, ',', '.'), $cambio));
+
+            foreach ($dato['ejemplos'] as $ejemplo) {
+                $this->line('      '.$ejemplo);
+            }
+        }
+
+        if (count($grupos) > 40) {
+            $this->line('... y '.(count($grupos) - 40).' cambios distintos mas.');
+        }
+
+        $this->newLine();
+        $this->table(['', 'lineas'], [
+            ['lineas con material revisadas', number_format($revisadas, 0, ',', '.')],
+            [$aplicar ? 'corregidas' : 'se corregirian', number_format($cambian, 0, ',', '.')],
+            ['no se tocan: las corrigio una persona', number_format($respetadas, 0, ',', '.')],
+            // Las que quedan enlazadas a un material marcado NO USAR por cualquier otro camino: se ven, para decidirlas a mano.
+            ['siguen enlazadas a un material NO USAR (las eligio una persona)', number_format(max(0, ConsultaLinea::whereIn('material_id', array_keys($vetados))->count() - ($aplicar ? 0 : $deVetados)), 0, ',', '.')],
+        ]);
+
+        if ($aplicar) {
+            $this->info("Listo. Como estaba cada linea quedo guardado en: {$ruta}");
+        } else {
             $this->warn('No se escribio nada.');
         }
 

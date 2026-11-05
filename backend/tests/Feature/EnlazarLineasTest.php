@@ -5,11 +5,14 @@ namespace Tests\Feature;
 use App\Models\Consulta;
 use App\Models\ConsultaLinea;
 use App\Models\Empresa;
+use App\Models\Forma;
+use App\Models\HistorialCambio;
 use App\Models\Material;
 use App\Models\User;
 use Database\Seeders\CalculadoraSeeder;
 use Database\Seeders\CatalogosSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -129,5 +132,119 @@ class EnlazarLineasTest extends TestCase
             ->assertSuccessful();
 
         $this->assertNull(ConsultaLinea::first()->diametro_mm);
+    }
+
+    private function lineaConMaterial(string $nota, string $descripcion, Material $material): ConsultaLinea
+    {
+        $linea = $this->linea($nota);
+        $linea->update(['descripcion' => $descripcion]);
+        DB::table('consulta_lineas')->where('id', $linea->id)->update(['material_id' => $material->id]);
+
+        return $linea->fresh();
+    }
+
+    /**
+     * Los enlaces escritos cuando "cobre" y "plata" eran ruido se corrigen, y solo esos.
+     *
+     * "COBRE TUNGSTENO 20/80" habia quedado en "Tungsteno" y "CROMO PIEDRAS" en "Cobre Cromo". Lo que una persona
+     * toco no se pisa, lo que esta bien no se mueve, y un archivo guarda como estaba cada linea.
+     */
+    public function test_corregir_materiales_vacia_lo_que_las_reglas_de_hoy_no_sostienen(): void
+    {
+        $this->seed(CatalogosSeeder::class);
+        $this->seed(CalculadoraSeeder::class);
+        User::factory()->create();
+
+        // Las formas que contienen "cobre" y "plata": por ellas eran ruido.
+        Forma::firstOrCreate(['nombre' => 'ALAMBRE CON ALMA DE COBRE']);
+        Forma::firstOrCreate(['nombre' => 'FUNDENTE SOLD. PLATA']);
+
+        $tungsteno = Material::firstOrCreate(['nombre' => 'Tungsteno'], ['activo' => true]);
+        $tungstenoPlata = Material::firstOrCreate(['nombre' => 'Tungsteno Plata 70/30'], ['activo' => true]);
+        $cobreCromo = Material::firstOrCreate(['nombre' => 'Cobre Cromo'], ['activo' => true]);
+        Material::firstOrCreate(['nombre' => 'Cobre'], ['activo' => true]);
+        Material::firstOrCreate(['nombre' => 'Plata'], ['activo' => true]);
+
+        $historica = 'Importada del sistema anterior.';
+        $mal = $this->lineaConMaterial($historica, 'COBRE TUNGSTENO 20/80 BARRA 6.5 X 500 MM C/U (+IVA)', $tungsteno);
+        $malPlata = $this->lineaConMaterial($historica, 'COBRE TUNGSTENO 70/30 BARRA 30 X 65 MM C/U (+IVA)', $tungstenoPlata);
+        $malCromo = $this->lineaConMaterial($historica, 'CROMO PIEDRAS P/KG(+IVA)', $cobreCromo);
+        $bien = $this->lineaConMaterial($historica, 'TUNGSTENO PLATA 70/30 BARRA 30 X 65 MM C/U (+IVA)', $tungstenoPlata);
+        $deUnaPersona = $this->lineaConMaterial($historica, 'CROMO METALICO P/KG(+IVA)', $cobreCromo);
+        HistorialCambio::create([
+            'tabla' => 'consulta_lineas', 'registro_id' => $deUnaPersona->id, 'campo' => 'material_id',
+            'valor_anterior' => null, 'valor_nuevo' => (string) $cobreCromo->id, 'accion' => 'Modificacion', 'fecha' => now(),
+        ]);
+        $nueva = $this->lineaConMaterial('Cargada en el sistema nuevo', 'COBRE TUNGSTENO 20/80 BARRA 6.5 X 500 MM C/U (+IVA)', $tungsteno);
+
+        // En seco: dice que cambiaria, y no escribe.
+        $this->artisan('lineas:enlazar', ['--corregir-materiales' => true])
+            ->expectsOutputToContain('Tungsteno → sin material')
+            ->expectsOutputToContain('No se escribio nada.')
+            ->assertSuccessful();
+
+        $this->assertSame($tungsteno->id, $mal->fresh()->material_id);
+        $this->assertSame($cobreCromo->id, $malCromo->fresh()->material_id);
+
+        $yaEstaban = glob(storage_path('app/materiales-corregidos-*.csv'));
+
+        $this->artisan('lineas:enlazar', ['--corregir-materiales' => true, '--aplicar' => true])->assertSuccessful();
+
+        // Se corrigen las tres mal enlazadas...
+        $this->assertNull($mal->fresh()->material_id);
+        $this->assertNull($malPlata->fresh()->material_id);
+        $this->assertNull($malCromo->fresh()->material_id);
+        // ...y no se mueve ni lo que esta bien, ni lo que toco una persona, ni lo del sistema nuevo.
+        $this->assertSame($tungstenoPlata->id, $bien->fresh()->material_id);
+        $this->assertSame($cobreCromo->id, $deUnaPersona->fresh()->material_id);
+        $this->assertSame($tungsteno->id, $nueva->fresh()->material_id);
+
+        // Nada se borra: las lineas siguen, y un archivo guarda como estaba cada una.
+        $this->assertSame(6, ConsultaLinea::count());
+        // Solo el archivo de esta corrida: nunca uno que ya existiera.
+        $archivos = array_values(array_diff(glob(storage_path('app/materiales-corregidos-*.csv')), $yaEstaban));
+        $this->assertCount(1, $archivos);
+        $csv = (string) file_get_contents($archivos[0]);
+        $this->assertStringContainsString('COBRE TUNGSTENO 20/80', $csv);
+        $this->assertStringContainsString('CROMO PIEDRAS', $csv);
+        $this->assertStringNotContainsString('CROMO METALICO', $csv);
+        array_map('unlink', $archivos);
+    }
+
+    /**
+     * Un material marcado "NO USAR" en el catalogo no recibe enlaces nuevos, y los que ya tenia se sueltan.
+     *
+     * Quedaron lineas enlazadas a "Acero Duplex 2507 NO USAR" porque el enlazador elegia por las palabras y no
+     * leia el aviso del nombre.
+     */
+    public function test_no_se_enlaza_a_un_material_marcado_no_usar_y_se_sueltan_los_que_ya_tenia(): void
+    {
+        $this->seed(CatalogosSeeder::class);
+        $this->seed(CalculadoraSeeder::class);
+        User::factory()->create();
+
+        // Como en el catalogo real: hay formas con "no" y "usar", asi que esas palabras son ruido.
+        Forma::firstOrCreate(['nombre' => 'NO USAR']);
+        $marcado = Material::create(['nombre' => 'Acero Duplex 2507 NO USAR', 'activo' => true]);
+        $historica = 'Importada del sistema anterior.';
+
+        $vieja = $this->lineaConMaterial($historica, 'ACERO SUPER DUPLEX 2507 BARRA Ø 101.6 X 600 MM, X C/U', $marcado);
+        $vacia = $this->linea($historica);
+        $vacia->update(['descripcion' => 'ACERO SUPER DUPLEX 2507 BARRA Ø 127 X 200 MM, X C/U']);
+
+        // Una linea sin material no se enlaza al marcado.
+        $this->artisan('lineas:enlazar', ['--aplicar' => true])->assertSuccessful();
+        $this->assertNull($vacia->fresh()->material_id);
+
+        // La que ya lo tenia se suelta, y queda dicho.
+        $this->artisan('lineas:enlazar', ['--corregir-materiales' => true])
+            ->expectsOutputToContain('Acero Duplex 2507 NO USAR → sin material')
+            ->assertSuccessful();
+        $this->assertSame($marcado->id, $vieja->fresh()->material_id);
+
+        $yaEstaban = glob(storage_path('app/materiales-corregidos-*.csv'));
+        $this->artisan('lineas:enlazar', ['--corregir-materiales' => true, '--aplicar' => true])->assertSuccessful();
+        $this->assertNull($vieja->fresh()->material_id);
+        array_map('unlink', array_diff(glob(storage_path('app/materiales-corregidos-*.csv')), $yaEstaban));
     }
 }

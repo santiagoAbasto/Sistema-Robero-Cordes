@@ -68,6 +68,44 @@ class EnlazadorDeLineas
     private array $ruido;
 
     /**
+     * Las palabras que son el nombre entero de una entrada: "Cobre", "Plata", "CRISOL".
+     *
+     * @var array<string, true>
+     */
+    private array $solas = [];
+
+    /**
+     * Palabras que el ruido de las formas tira, pero que dentro del nombre de un material hay que
+     * respetar: "cobre" y "plata" ("ALAMBRE CON ALMA DE COBRE", "FUNDENTE SOLD. PLATA") y los numeros
+     * de las formas ("CODO 90") que tambien son el grado de "Nimonic 90" o "Cu-Ni 45".
+     *
+     * @var array<string, true>
+     */
+    private array $exigibles = [];
+
+    /**
+     * De esas, las que nombran un material por si solas: un texto que las dice no se enlaza a un
+     * material que no las dice.
+     *
+     * @var array<string, true>
+     */
+    private array $nombranMaterial = [];
+
+    /**
+     * Los materiales que el catalogo deja marcados para no usar: pueden bloquear una linea dudosa, no ganarla.
+     *
+     * @var array<int, true>
+     */
+    private array $vetados = [];
+
+    /**
+     * Todas las palabras de cada material, de su nombre y de sus alias.
+     *
+     * @var array<int, array<string, true>>
+     */
+    private array $palabrasDelMaterial = [];
+
+    /**
      * Los juegos de tokens de cada entrada, por id: "Acero Inoxidable" y "ACE INOX" son del mismo material.
      *
      * @var array<int, list<array<string, true>>>
@@ -99,13 +137,60 @@ class EnlazadorDeLineas
      *                                          material y enganchan el
      *                                          "BISMUTO AGUJAS" de cualquier
      *                                          descripcion.
+     * @param  array<int, string>  $formasEnteras  las palabras que son el nombre entero de una forma
+     *                                             ("CRISOL"): esas siguen siendo ruido aunque tambien sean
+     *                                             un material.
+     * @param  array<int, int>  $vetados  los ids de los materiales marcados para no usar ("... NO USAR"):
+     *                                    el enlace nunca los elige, pero cuentan como rivales.
      */
     public function __construct(
         array $entradas,
         private bool $material = true,
         private float $exigencia = 0.51,
         array $ruidoExtra = [],
+        array $formasEnteras = [],
+        array $vetados = [],
     ) {
+        $this->vetados = array_fill_keys(array_map('intval', $vetados), true);
+        // Las palabras llegan como claves de un array y un "90" se vuelve entero: se las compara como texto.
+        $ruidoExtra = array_map('strval', $ruidoExtra);
+
+        foreach ($entradas as $entrada) {
+            $palabras = $this->palabras($entrada[1]);
+
+            if (count($palabras) === 1 && ctype_alpha($palabras[0]) && strlen($palabras[0]) >= 4) {
+                $this->solas[$palabras[0]] = true;
+            }
+
+            $this->palabrasDelMaterial[(int) $entrada[0]] = ($this->palabrasDelMaterial[(int) $entrada[0]] ?? []) + array_fill_keys($palabras, true);
+        }
+
+        /*
+          "Cobre" y "Plata" son materiales, pero hay formas con esas palabras
+          ("ALAMBRE CON ALMA DE COBRE", "FUNDENTE SOLD. PLATA") y su vocabulario
+          entero se toma como ruido para no enganchar "BISMUTO AGUJAS". Con eso
+          "COBRE TUNGSTENO 70/30" quedaba en "Tungsteno Plata 70/30" —plata, no
+          cobre— y "CROMO PIEDRA" en "Cobre Cromo": ni "cobre" ni "plata" contaban.
+
+          Siguen siendo ruido para buscar, asi no cambia ningun peso ni se enlaza
+          nada nuevo, pero un nombre que las dice las exige en el texto y un
+          texto que las dice no se enlaza a un material que no las dice.
+
+          Salvo que el nombre traiga una designacion fuerte: "TUNGSTENO 70W/30CU"
+          o "C12200" ya dicen que es cobre. "20S" no cuenta —es el schedule de un
+          caño—: sin esto, todo "SCH 20S" caia en "Cobre Plata 20S".
+
+          Los numeros de las formas ("CODO 90", "CURVA 45") tambien eran ruido, y
+          tiraban el 90 de "Nimonic 90" o el 45 de "Cu-Ni 45": "CUNI 90/10" caia
+          en "Cu-Ni 45".
+        */
+        if ($material) {
+            $this->nombranMaterial = array_flip(array_diff(array_intersect(array_keys($this->solas), $ruidoExtra), $formasEnteras));
+
+            // Los numeros tambien: "Nimonic 90" y "Cu-Ni 45" no son "Nimonic" y "Cu-Ni" porque una forma diga "CODO 90".
+            $this->exigibles = $this->nombranMaterial + array_flip(array_filter($ruidoExtra, 'ctype_digit'));
+        }
+
         $this->ruido = array_flip(array_merge(
             $material ? array_merge(self::RELLENO, self::FORMAS_PALABRA) : self::RELLENO,
             $ruidoExtra,
@@ -121,7 +206,17 @@ class EnlazadorDeLineas
                 continue;
             }
 
-            $this->candidatos[] = ['id' => (int) $id, 'tokens' => array_flip($tokens), 'palabras' => array_flip($this->palabras($texto)), 'alias' => (bool) ($entrada[2] ?? false)];
+            $palabras = array_flip($this->palabras($texto));
+
+            $this->candidatos[] = [
+                'id' => (int) $id,
+                'tokens' => array_flip($tokens),
+                'palabras' => $palabras,
+                // Las palabras de su nombre que el texto tiene que decir, salvo que una designacion fuerte ya lo identifique.
+                'exige' => $this->designacionFuerte($tokens) ? [] : array_intersect_key($palabras, $this->exigibles),
+                'alias' => (bool) ($entrada[2] ?? false),
+                'vetado' => isset($this->vetados[(int) $id]),
+            ];
 
             $this->familias[(int) $id][] = array_flip($tokens);
 
@@ -140,10 +235,17 @@ class EnlazadorDeLineas
         $this->minimo = log(max($total, 2)) * $this->exigencia;
     }
 
-    /** El id del material o la forma que nombra ese texto, o null si no esta claro. */
-    public function elegir(string $descripcion): ?int
+    /**
+     * El id del material o la forma que nombra ese texto, o null si no esta claro.
+     *
+     * @param  bool  $reglasDeHoy  false reproduce lo que hacia antes del 05-11-2026 —sin exigir "cobre", "plata" ni
+     *                             los numeros, y sin descartar los materiales "NO USAR"—: sirve para revisar los
+     *                             enlaces que se escribieron con esas reglas.
+     */
+    public function elegir(string $descripcion, bool $reglasDeHoy = true): ?int
     {
         $presentes = array_flip($this->tokens($descripcion));
+        $dichas = array_flip($this->palabras($descripcion));
 
         if ($presentes === []) {
             return null;
@@ -169,6 +271,17 @@ class EnlazadorDeLineas
 
             $completos[] = [$c, $puntaje];
 
+            /*
+              Las palabras de su nombre que el ruido tira pero que son parte del
+              material: "Tungsteno Plata" dice plata. Si el texto no la dice, o el
+              catalogo lo deja marcado para no usar, no puede ganar, pero sigue
+              contando como rival: lo que antes quedaba sin enlazar por ser dudoso
+              no empieza a enlazarse por esta regla.
+            */
+            if ($reglasDeHoy && ($c['vetado'] || array_diff_key($c['exige'], $dichas) !== [])) {
+                continue;
+            }
+
             if ($puntaje > $puntajeMejor + 0.01) {
                 [$mejores, $puntajeMejor] = [[$c], $puntaje];
             } elseif ($mejores !== [] && abs($puntaje - $puntajeMejor) <= 0.01) {
@@ -190,6 +303,17 @@ class EnlazadorDeLineas
         }
 
         $mejor = $mejores[0];
+
+        /*
+          Un texto que nombra cobre o plata y un ganador que no: son dos materiales.
+
+          "COBRE TUNGSTENO 20/80" no es tungsteno: es otro material, que el catalogo
+          trae con su composicion ("Cobre Tungsteno 80W/20Cu"). Si el ganador no dice
+          lo que el texto dice, la linea queda sin enlazar.
+        */
+        if ($reglasDeHoy && array_diff_key(array_intersect_key($dichas, $this->nombranMaterial), $this->palabrasDelMaterial[$mejor['id']] ?? []) !== []) {
+            return null;
+        }
 
         /*
           Dos materiales distintos nombrados con firmeza: no se adivina.
@@ -337,10 +461,33 @@ class EnlazadorDeLineas
         return false;
     }
 
+    /**
+     * Si entre estos tokens hay una designacion que identifica por si sola: "70w30cu", "c12200", "f138".
+     * Un numero seguido de una letra ("20s", "40s") es un schedule o un tamaño, no una designacion.
+     *
+     * @param  array<int, string>  $tokens
+     */
+    private function designacionFuerte(array $tokens): bool
+    {
+        foreach ($tokens as $t) {
+            if (preg_match(self::DESIGNACION, $t) && ! preg_match(self::MEDIDA, $t) && ! preg_match('/^\d+[a-z]$/', $t)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** Las palabras de estos textos, para pasarlas de ruido al otro lado. */
     public function vocabulario(): array
     {
         return array_keys($this->peso);
+    }
+
+    /** @return array<int, string> las palabras que son el nombre entero de una entrada */
+    public function palabrasSolas(): array
+    {
+        return array_keys($this->solas);
     }
 
     /** @return array<int, string> */
