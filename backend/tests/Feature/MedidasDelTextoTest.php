@@ -321,4 +321,18 @@ class MedidasDelTextoTest extends TestCase
         $this->assertSame(['diameter' => 25.4, 'length' => 100.0], $this->medidor->leer('1 UN MONEL 400 BARRA 25.4 X 100 MM, 2 C/U, PESO 2.5 KG', 'BARRA REDONDA'));
         $this->assertSame(['diameter' => 305.0, 'length' => 500.0], $this->medidor->leer('NITRONIC 60: BARRA Ø305 X500MM (Ø270X500MM), 1 C/U (+IVA)', 'BARRA REDONDA'));
     }
+
+    /**
+     * Hallado en el segundo informe en seco de la VM: «BARRA Ø31.75MM + 2500 KG Ø45MM» son dos diámetros, y
+     * «BARRA PERF OD 108 X ID 61.98 X 2100» es una barra hueca cuya medida «61.98» es el interior.
+     */
+    public function test_dos_diametros_con_su_cantidad_y_las_barras_huecas_no_se_cargan(): void
+    {
+        $this->assertSame([], $this->medidor->leer('ASI 630 (17-4PH) H1150: 640 KG BARRA Ø31.75MM + 2500 KG Ø45MM, X KG (+IVA) ENTREGA 180 DIAS APROX.', 'BARRA REDONDA'));
+        $this->assertSame([], $this->medidor->leer('SUPER CROMO 13 - 110 KSI 2 CU 13CRS BARRA PERF OD 108 X ID 61.98 X 2100 MM   C/U', 'BARRA REDONDA'));
+        $this->assertSame([], $this->medidor->leer('AISI 4140 BARRA PERFORADA 108 X 62 X 2100 MM', 'BARRA REDONDA'));
+
+        // Un solo diametro con su "+IVA" o con "KG" de peso se sigue leyendo.
+        $this->assertSame(['diameter' => 31.75], $this->medidor->leer('AISI 630 BARRA Ø31.75MM, 640 KG, X KG (+IVA)', 'BARRA REDONDA'));
+    }
 }

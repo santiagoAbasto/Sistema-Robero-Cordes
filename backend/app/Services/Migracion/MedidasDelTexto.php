@@ -65,7 +65,10 @@ class MedidasDelTexto
     private const BARRA_REDONDA = '/(?<![\pL\d])(?:BARRA\s+REDONDA|BARRAS?\s*RED\.?|BAR\.?\s*RED\.?|BARRED|BARRAS?)(?![\pL\d])/iu';
 
     /** Si despues de "BARRA" viene esto, no es redonda: su medida no es un diametro. */
-    private const NO_ES_REDONDA = '/^\s*(?:DE\s+)?(?:CUADRAD[AO]S?|CUAD\.?|HEXAGONAL(?:ES)?|EXAGONAL(?:ES)?|HEX\.?|OCTOGONAL(?:ES)?|RECTANGULAR(?:ES)?|RECT\.?|PLANAS?|PLANOS?|PLANCHUELAS?|HUECAS?|HUECOS?|PERFORADAS?|PERFILADAS?)(?![\pL])/iu';
+    private const NO_ES_REDONDA = '/^\s*(?:DE\s+)?(?:CUADRAD[AO]S?|CUAD\.?|HEXAGONAL(?:ES)?|EXAGONAL(?:ES)?|HEX\.?|OCTOGONAL(?:ES)?|RECTANGULAR(?:ES)?|RECT\.?|PLANAS?|PLANOS?|PLANCHUELAS?|HUECAS?|HUECOS?|PERF(?:ORAD[AO]S?)?\.?|PERFILADAS?)(?![\pL])/iu';
+
+    /** "OD 108 X ID 61.98": exterior e interior son de un tubo o de una barra hueca, no de una barra redonda. */
+    private const EXTERIOR_INTERIOR = '/(?<![\pL\d])(?:OD|ID)(?![\pL\d])/iu';
 
     /** Palabras de pedido y de oferta: con otra medida en la misma linea, no se sabe cual es la del articulo. */
     private const OFERTA = '/(?<![\pL])(?:OFREC\pL*|ALTERNATIV\pL*|PEDI\pL*|PIDE\pL*|PIDEN|BUSCA\pL*|CONSULT\pL*|REQUIERE\pL*|SE\s+COBRA|EN\s+LUGAR\s+DE)(?![\pL])/iu';
@@ -214,7 +217,8 @@ class MedidasDelTexto
      */
     private function hayOtraPieza(string $resto, string $forma): bool
     {
-        if (preg_match('/^\s*(?:MM\b)?\s*[,.;]?\s*(?:\+|&|\bY\b)\s*(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d/iu', $resto)) {
+        // Otro par ("+ 95.25 X 300") o otro diametro con su cantidad delante ("+ 2500 KG Ø45MM").
+        if (preg_match('/^\s*(?:MM\b)?\s*[,.;]?\s*(?:\+|&|\bY\b)\s*(?:(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d|(?:\d{1,6}(?:[.,]\d{1,3})?\s*(?:KGS?|UN|U|PZAS?|MTS?|M)?\s*)?Ø\s*\d)/iu', $resto)) {
             return true;
         }
 
@@ -290,6 +294,10 @@ class MedidasDelTexto
           de nombrar la forma.
         */
         if (preg_match(self::ARMADO, $descripcion)) {
+            return [];
+        }
+
+        if (in_array($forma, self::REDONDOS, true) && preg_match(self::EXTERIOR_INTERIOR, $descripcion)) {
             return [];
         }
 
