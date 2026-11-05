@@ -13,6 +13,7 @@ use App\Models\User;
 use Database\Seeders\CalculadoraSeeder;
 use Database\Seeders\CatalogosSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -210,6 +211,86 @@ class EnlazarLineasTest extends TestCase
         $this->assertStringContainsString('CROMO PIEDRAS', $csv);
         $this->assertStringNotContainsString('CROMO METALICO', $csv);
         array_map('unlink', $archivos);
+    }
+
+    private function lineaConMedidas(string $nota, string $descripcion, Forma $forma, array $medidas): ConsultaLinea
+    {
+        $linea = $this->linea($nota);
+        DB::table('consulta_lineas')->where('id', $linea->id)->update(['descripcion' => $descripcion, 'forma_id' => $forma->id] + $medidas);
+
+        return $linea->fresh();
+    }
+
+    /**
+     * Las medidas que una version vieja del lector dejo guardadas se corrigen, y solo esas.
+     *
+     * `CAÑO 2" SCH. 10 X 2500MM` quedo con exterior 10 y pared 2500. `--aplicar` no lo arregla: solo completa lo vacio.
+     */
+    public function test_corregir_medidas_suelta_lo_que_el_lector_de_hoy_no_sostiene(): void
+    {
+        $this->seed(CatalogosSeeder::class);
+        $this->seed(CalculadoraSeeder::class);
+        User::factory()->create();
+
+        $cano = Forma::firstOrCreate(['nombre' => 'CAÑO']);
+        $barra = Forma::firstOrCreate(['nombre' => 'BARRA REDONDA']);
+        $historica = 'Importada del sistema anterior.';
+        $texto = 'TITANIO GR 2 CAÑO S/C 2" SCH. 10 X 2500MM, 1 C/U (+IVA)';
+
+        $mal = $this->lineaConMedidas($historica, $texto, $cano, ['diametro_mm' => 10, 'espesor_mm' => 2500]);
+        $bien = $this->lineaConMedidas($historica, 'TITANIO GRADO 2 BARRA RED Ø 20 X 365 C/U(+IVA)', $barra, ['diametro_mm' => 20, 'largo_mm' => 365]);
+        $otraCifra = $this->lineaConMedidas($historica, 'TITANIO GRADO 2 BARRA RED Ø 20 X 365 C/U(+IVA)', $barra, ['diametro_mm' => 25, 'largo_mm' => 365]);
+        $sinMedidas = $this->lineaConMedidas($historica, $texto, $cano, []);
+        $deUnaPersona = $this->lineaConMedidas($historica, $texto, $cano, ['diametro_mm' => 10, 'espesor_mm' => 2500]);
+        HistorialCambio::create([
+            'tabla' => 'consulta_lineas', 'registro_id' => $deUnaPersona->id, 'campo' => 'diametro_mm',
+            'valor_anterior' => null, 'valor_nuevo' => '10', 'accion' => 'Modificacion', 'fecha' => now(),
+        ]);
+        $copia = $this->lineaConMedidas($historica, $texto, $cano, ['diametro_mm' => 10, 'espesor_mm' => 2500]);
+        DB::table('consultas')->where('id', $copia->consulta_id)->update(['copiada_de_id' => $mal->consulta_id]);
+        $nueva = $this->lineaConMedidas('Cargada en el sistema nuevo', $texto, $cano, ['diametro_mm' => 10, 'espesor_mm' => 2500]);
+
+        // En seco: dice que corregiria, y no escribe.
+        $this->artisan('lineas:enlazar', ['--corregir-medidas' => true])
+            ->expectsOutputToContain('CAÑO: diam se suelta, esp se suelta')
+            ->expectsOutputToContain('No se escribio nada.')
+            ->assertSuccessful();
+
+        $this->assertEquals(10, $mal->fresh()->diametro_mm);
+        $this->assertEquals(2500, $mal->fresh()->espesor_mm);
+
+        $yaEstaban = glob(storage_path('app/medidas-corregidas-*.csv'));
+
+        $this->artisan('lineas:enlazar', ['--corregir-medidas' => true, '--aplicar' => true])->assertSuccessful();
+
+        // El caño mal leido queda sin medidas; la cifra distinta se pone como la lee el lector de hoy.
+        $this->assertNull($mal->fresh()->diametro_mm);
+        $this->assertNull($mal->fresh()->espesor_mm);
+        $this->assertEquals(20, $otraCifra->fresh()->diametro_mm);
+        $this->assertEquals(365, $otraCifra->fresh()->largo_mm);
+
+        // Lo que esta bien, lo vacio, lo que toco una persona, una copia y lo del sistema nuevo no se mueven.
+        $this->assertEquals(20, $bien->fresh()->diametro_mm);
+        $this->assertEquals(365, $bien->fresh()->largo_mm);
+        $this->assertNull($sinMedidas->fresh()->diametro_mm);
+        $this->assertEquals(10, $deUnaPersona->fresh()->diametro_mm);
+        $this->assertEquals(2500, $deUnaPersona->fresh()->espesor_mm);
+        $this->assertEquals(10, $copia->fresh()->diametro_mm);
+        $this->assertEquals(10, $nueva->fresh()->diametro_mm);
+
+        // Nada se borra: las lineas siguen enteras y un archivo guarda como estaba cada una.
+        $this->assertSame(7, ConsultaLinea::count());
+        $this->assertSame($texto, $mal->fresh()->descripcion);
+        $archivos = array_values(array_diff(glob(storage_path('app/medidas-corregidas-*.csv')), $yaEstaban));
+        $this->assertCount(1, $archivos);
+        $csv = (string) file_get_contents($archivos[0]);
+        $this->assertStringContainsString('SCH. 10 X 2500MM', $csv);
+        $this->assertStringContainsString('10.00', $csv);
+        array_map('unlink', $archivos);
+
+        // Repetirlo ya no encuentra nada.
+        Artisan::call('lineas:enlazar', ['--corregir-medidas' => true]);
+        $this->assertMatchesRegularExpression('/se corregirian\s*\|\s*0\s*\|/', Artisan::output());
     }
 
     /**

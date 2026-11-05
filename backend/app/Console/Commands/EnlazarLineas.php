@@ -28,14 +28,25 @@ use Illuminate\Support\Facades\DB;
  *
  * Con --corregir-materiales no completa nada: revisa los materiales que YA estan
  * enlazados y corrige los que las reglas de hoy no sostienen (ver mas abajo).
+ *
+ * Con --corregir-medidas hace lo mismo con las medidas ya guardadas.
  */
 class EnlazarLineas extends Command
 {
+    /** La columna de la linea donde va cada medida que lee MedidasDelTexto. */
+    private const COLUMNA_DE_MEDIDA = [
+        'diameter' => 'diametro_mm', 'outer' => 'diametro_mm',
+        'side' => 'diametro_mm', 'across' => 'diametro_mm',
+        'wall' => 'espesor_mm', 'height' => 'espesor_mm',
+        'width' => 'ancho_mm', 'length' => 'largo_mm',
+    ];
+
     protected $signature = 'lineas:enlazar
         {--aplicar : escribe en la base; sin esto solo informa}
         {--solo-sumadas : solo las cotizaciones que entraron con --sumar, no las de septiembre}
         {--muestra=0 : imprime N enlaces al azar para revisarlos a mano}
-        {--corregir-materiales : revisa los materiales ya enlazados y corrige los que las reglas de hoy no sostienen}';
+        {--corregir-materiales : revisa los materiales ya enlazados y corrige los que las reglas de hoy no sostienen}
+        {--corregir-medidas : revisa las medidas ya guardadas y suelta o corrige las que el lector de hoy no sostiene}';
 
     protected $description = 'Reconoce el material y la forma dentro del texto de las lineas historicas';
 
@@ -79,6 +90,10 @@ class EnlazarLineas extends Command
 
         if ($this->option('corregir-materiales')) {
             return $this->corregirMateriales($materiales, $aplicar);
+        }
+
+        if ($this->option('corregir-medidas')) {
+            return $this->corregirMedidas($aplicar);
         }
 
         $medidor = new MedidasDelTexto;
@@ -137,12 +152,7 @@ class EnlazarLineas extends Command
                       descripcion. Necesitan la forma, porque es la que dice en
                       que orden las escribia el sistema anterior.
                     */
-                    $columna = [
-                        'diameter' => 'diametro_mm', 'outer' => 'diametro_mm',
-                        'side' => 'diametro_mm', 'across' => 'diametro_mm',
-                        'wall' => 'espesor_mm', 'height' => 'espesor_mm',
-                        'width' => 'ancho_mm', 'length' => 'largo_mm',
-                    ];
+                    $columna = self::COLUMNA_DE_MEDIDA;
 
                     $medidas = $f === null ? [] : $medidor->leer(
                         $linea->descripcion,
@@ -369,6 +379,180 @@ class EnlazarLineas extends Command
             ['no se tocan: las corrigio una persona', number_format($respetadas, 0, ',', '.')],
             // Las que quedan enlazadas a un material marcado NO USAR por cualquier otro camino: se ven, para decidirlas a mano.
             ['siguen enlazadas a un material NO USAR (las eligio una persona)', number_format(max(0, ConsultaLinea::whereIn('material_id', array_keys($vetados))->count() - ($aplicar ? 0 : $deVetados)), 0, ',', '.')],
+        ]);
+
+        if ($aplicar) {
+            $this->info("Listo. Como estaba cada linea quedo guardado en: {$ruta}");
+        } else {
+            $this->warn('No se escribio nada.');
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Revisa las medidas que ya estan guardadas con el lector de hoy.
+     *
+     * Una version vieja del lector escribio medidas que el de hoy no escribiria: un caño `2" SCH 40 X 760` quedo con
+     * exterior 40 y pared 760 (el schedule y el largo tomados por medidas), un alambre `Ø 0.5 X 1 M` con un largo de
+     * 1 mm. Esas copias llegaron a la base de la VM con los datos de septiembre, y `--aplicar` no las corrige: solo
+     * completa lo vacio.
+     *
+     * Por cada campo guardado: si el lector de hoy lee lo mismo, queda; si lee otra cosa, se pone esa; si no lee nada
+     * (duda o no cierra), el campo se vacia. Solo se miran las lineas de las cotizaciones importadas sin tocar: las
+     * copias y revisiones, las del sistema nuevo y toda linea cuya medida cambio una persona (historial) no se tocan.
+     * Nada se borra: la descripcion queda entera y un archivo guarda como estaba cada linea.
+     */
+    private function corregirMedidas(bool $aplicar): int
+    {
+        $medidor = new MedidasDelTexto;
+        $nombreForma = Forma::query()->pluck('nombre', 'id');
+        $columnas = ['diametro_mm' => 'diam', 'espesor_mm' => 'esp', 'ancho_mm' => 'ancho', 'largo_mm' => 'largo'];
+
+        $deUnaPersona = DB::table('historial_cambios')
+            ->where('tabla', 'consulta_lineas')->whereIn('campo', array_keys($columnas))
+            ->pluck('registro_id')->flip()->all();
+
+        $archivo = null;
+        $ruta = null;
+
+        if ($aplicar) {
+            $ruta = storage_path('app/medidas-corregidas-'.now()->format('Ymd-His').'.csv');
+            $archivo = fopen($ruta, 'w');
+            fputcsv($archivo, ['linea_id', 'consulta_id', 'forma', 'diametro_anterior', 'espesor_anterior', 'ancho_anterior', 'largo_anterior', 'diametro_nuevo', 'espesor_nuevo', 'ancho_nuevo', 'largo_nuevo', 'descripcion']);
+        }
+
+        $revisadas = $cambian = $campos = $respetadas = $sinForma = 0;
+        $grupos = [];
+
+        ConsultaLinea::query()
+            // Solo lo importado y sin tocar: una copia o una revision tiene lineas que tipeo una persona.
+            ->whereIn('consulta_id', DB::table('consultas')->where('nota', 'like', 'Importada del sistema anterior.%')
+                ->whereNull('copiada_de_id')->whereNull('revision_de_id')->select('id'))
+            ->where(function ($q) use ($columnas) {
+                foreach (array_keys($columnas) as $c) {
+                    $q->orWhereNotNull($c);
+                }
+            })
+            ->select(['id', 'consulta_id', 'descripcion', 'forma_id', ...array_keys($columnas)])
+            ->chunkById(500, function ($lineas) use ($medidor, $nombreForma, $columnas, $aplicar, $archivo, $deUnaPersona, &$revisadas, &$cambian, &$campos, &$respetadas, &$sinForma, &$grupos) {
+                foreach ($lineas as $linea) {
+                    $revisadas++;
+
+                    // Sin la forma no se sabe en que orden escribia las medidas: no se puede juzgar.
+                    if ($linea->forma_id === null) {
+                        $sinForma++;
+
+                        continue;
+                    }
+
+                    $hoy = [];
+
+                    foreach ($medidor->leer($linea->descripcion, (string) ($nombreForma[$linea->forma_id] ?? '')) as $clave => $mm) {
+                        if (isset(self::COLUMNA_DE_MEDIDA[$clave])) {
+                            // Las columnas guardan dos decimales: lo que se compara es lo que se guardaria.
+                            $hoy[self::COLUMNA_DE_MEDIDA[$clave]] ??= round((float) $mm, 2);
+                        }
+                    }
+
+                    $nuevo = [];
+
+                    foreach (array_keys($columnas) as $c) {
+                        if ($linea->{$c} === null) {
+                            continue;
+                        }
+
+                        if (! array_key_exists($c, $hoy)) {
+                            $nuevo[$c] = null;
+                        } elseif (abs($hoy[$c] - (float) $linea->{$c}) > 0.004) {
+                            $nuevo[$c] = $hoy[$c];
+                        }
+                    }
+
+                    if ($nuevo === []) {
+                        continue;
+                    }
+
+                    if (isset($deUnaPersona[$linea->id])) {
+                        $respetadas++;
+
+                        continue;
+                    }
+
+                    $cambian++;
+                    $campos += count($nuevo);
+
+                    $forma = $nombreForma[$linea->forma_id] ?? '?';
+                    $clave = $forma.': '.implode(', ', array_map(
+                        fn ($c) => $columnas[$c].($nuevo[$c] === null ? ' se suelta' : ' cambia'),
+                        array_keys($nuevo),
+                    ));
+                    $grupos[$clave]['n'] = ($grupos[$clave]['n'] ?? 0) + 1;
+
+                    if (count($grupos[$clave]['ejemplos'] ?? []) < 3) {
+                        $antes = $ahora = [];
+
+                        foreach (array_keys($nuevo) as $c) {
+                            $antes[] = $columnas[$c].'='.$linea->{$c};
+                            $ahora[] = $columnas[$c].'='.($nuevo[$c] ?? '—');
+                        }
+
+                        $grupos[$clave]['ejemplos'][] = mb_substr($linea->descripcion, 0, 100).'  ['.implode(' ', $antes).' → '.implode(' ', $ahora).']';
+                    }
+
+                    if ($aplicar) {
+                        $fila = [$linea->id, $linea->consulta_id, $forma];
+
+                        foreach (array_keys($columnas) as $c) {
+                            $fila[] = $linea->{$c};
+                        }
+
+                        foreach (array_keys($columnas) as $c) {
+                            $fila[] = array_key_exists($c, $nuevo) ? ($nuevo[$c] ?? '') : $linea->{$c};
+                        }
+
+                        fputcsv($archivo, [...$fila, $linea->descripcion]);
+
+                        // Update directo y solo si el campo sigue como se leyo: no es una persona corrigiendo.
+                        $consulta = DB::table('consulta_lineas')->where('id', $linea->id);
+
+                        foreach (array_keys($nuevo) as $c) {
+                            $consulta->where($c, $linea->{$c});
+                        }
+
+                        $consulta->update($nuevo);
+                    }
+                }
+            });
+
+        if ($archivo !== null) {
+            fclose($archivo);
+        }
+
+        uasort($grupos, fn ($a, $b) => $b['n'] <=> $a['n']);
+
+        $this->newLine();
+        $this->line('Medidas que '.($aplicar ? 'se corrigieron' : 'se corregirian').' (agrupadas por lo que cambia):');
+
+        foreach (array_slice($grupos, 0, 150, true) as $cambio => $dato) {
+            $this->line(sprintf('[%s] %s', number_format($dato['n'], 0, ',', '.'), $cambio));
+
+            foreach ($dato['ejemplos'] as $ejemplo) {
+                $this->line('      '.$ejemplo);
+            }
+        }
+
+        if (count($grupos) > 150) {
+            $this->line('... y '.(count($grupos) - 150).' cambios distintos mas.');
+        }
+
+        $this->newLine();
+        $this->table(['', 'lineas'], [
+            ['lineas con medidas guardadas revisadas', number_format($revisadas, 0, ',', '.')],
+            [$aplicar ? 'corregidas' : 'se corregirian', number_format($cambian, 0, ',', '.')],
+            ['campos que se sueltan o cambian', number_format($campos, 0, ',', '.')],
+            ['no se tocan: las corrigio una persona', number_format($respetadas, 0, ',', '.')],
+            ['con medidas y sin forma: no se pueden juzgar', number_format($sinForma, 0, ',', '.')],
         ]);
 
         if ($aplicar) {
