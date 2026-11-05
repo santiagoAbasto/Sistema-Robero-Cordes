@@ -67,6 +67,18 @@ class MedidasDelTexto
     /** Si despues de "BARRA" viene esto, no es redonda: su medida no es un diametro. */
     private const NO_ES_REDONDA = '/^\s*(?:DE\s+)?(?:CUADRAD[AO]S?|CUAD\.?|HEXAGONAL(?:ES)?|EXAGONAL(?:ES)?|HEX\.?|OCTOGONAL(?:ES)?|RECTANGULAR(?:ES)?|RECT\.?|PLANAS?|PLANOS?|PLANCHUELAS?|HUECAS?|HUECOS?|PERF(?:ORAD[AO]S?)?\.?|PERFILADAS?)(?![\pL])/iu';
 
+    /** Una barra hueca o canulada: su medida es el exterior de un tubo, no el diametro de una barra maciza. */
+    private const HUECA = '/Ø\s*(?:I|INT)(?![\pL])|\bCANUL|\bCON\s+PERFORAD|\bC\/\s*PERF/iu';
+
+    /** "O 57.15", "ó 15,88MM": otra opcion de medida. */
+    private const OTRA_OPCION = '/(?<![\pL\d])[OÓóo]\s+(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*(?:MM\b|[xX]\s*\d)/u';
+
+    /**
+     * "(COTIZADO POR 2000MM)": el precio es de otra medida que la escrita. "(PARA 19.05)" no: es el tamaño final
+     * al que se va a mecanizar, y lo que se cotiza es la barra escrita.
+     */
+    private const PARA_OTRA_MEDIDA = '/COTIZAD[OA]S?\s+POR\s+\d{1,5}(?:[.,]\d{1,3})?\s*MM/iu';
+
     /** "OD 108 X ID 61.98": exterior e interior son de un tubo o de una barra hueca, no de una barra redonda. */
     private const EXTERIOR_INTERIOR = '/(?<![\pL\d])(?:OD|ID)(?![\pL\d])/iu';
 
@@ -121,6 +133,7 @@ class MedidasDelTexto
         }
 
         $medidas = [];
+        $escritos = [];
 
         foreach ($numeros as $i => $escrito) {
             if (! isset($orden[$i])) {
@@ -137,6 +150,7 @@ class MedidasDelTexto
             }
 
             $medidas[$orden[$i]] = (float) str_replace(',', '.', $escrito);
+            $escritos[$orden[$i]] = $escrito;
         }
 
         /*
@@ -200,6 +214,22 @@ class MedidasDelTexto
             unset($medidas['length']);
         }
 
+        /*
+          Un largo dudoso se descarta al final, cuando ya se sabe que el resto cierra: antes taparia el chequeo
+          "mas largo que grueso" y "ALAMBRE 3 X 0.76" (un fleje) quedaria como alambre de 3 mm.
+        */
+        if (isset($medidas['length'])) {
+            // Un largo con decimales menor a 20 son metros mal escritos ("X 9.15 MM" por 915, "X 3.66"): no se carga.
+            if ($medidas['length'] < 20 && preg_match('/[.,]\d/', $escritos['length'])) {
+                unset($medidas['length']);
+            }
+
+            // Una barra de mas de 12 metros no existe: "X 41055 MM" es otra cosa.
+            if (isset($medidas['length']) && $medidas['length'] > 12000 && in_array(mb_strtoupper(trim($forma)), ['BARRA', 'BARRA REDONDA'], true)) {
+                unset($medidas['length']);
+            }
+        }
+
         return $medidas;
     }
 
@@ -208,6 +238,15 @@ class MedidasDelTexto
     {
         return (bool) preg_match('/(?<![\pL\d])(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d{1,5}(?:[.,]\d{1,3})?(?:\s*MM)?/u', $resto)
             || (bool) preg_match('/Ø\s*\d/u', $resto);
+    }
+
+    /**
+     * Si despues de la serie "OFRECEMOS 40MM" nombra el tamaño que se cotiza: la serie es lo pedido. Al reves,
+     * "(PIDE 22MM)" o "EN LUGAR DE 2.5MM" nombran lo pedido, y la serie escrita es lo que se cotiza.
+     */
+    private function seOfreceOtraMedida(string $resto): bool
+    {
+        return (bool) preg_match('/OFREC\pL*[\s:\-]*(?:\pL+\s+){0,2}(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*MM\b/iu', $resto);
     }
 
     /**
@@ -297,7 +336,7 @@ class MedidasDelTexto
             return [];
         }
 
-        if (in_array($forma, self::REDONDOS, true) && preg_match(self::EXTERIOR_INTERIOR, $descripcion)) {
+        if (in_array($forma, self::REDONDOS, true) && (preg_match(self::EXTERIOR_INTERIOR, $descripcion) || preg_match(self::HUECA, $t))) {
             return [];
         }
 
@@ -388,6 +427,11 @@ class MedidasDelTexto
                 return [];
             }
 
+            // 'Ø5.25 X 10"' son pulgadas, no 10 milimetros.
+            if (preg_match('/^(?:"|\'\'|”|″)/u', $despues)) {
+                return [];
+            }
+
             // "4.5/7 M" es un rango de largos: son dos opciones, no una medida.
             if (preg_match('#^\s*/\s*\d#', $despues)) {
                 return [];
@@ -427,12 +471,23 @@ class MedidasDelTexto
             */
             $resto = substr($t, $hit[0][1] + strlen($texto));
 
-            if (preg_match(self::OFERTA, $descripcion) && $this->hayOtraSerie($resto)) {
+            if (preg_match(self::OFERTA, $descripcion) && ($this->hayOtraSerie($resto) || $this->seOfreceOtraMedida($resto))) {
+                return [];
+            }
+
+            // "(O 57.15MM)", "(PARA 20MM)", "(COTIZADO POR 2000MM)": la medida escrita no es la unica ni la del precio.
+            if (preg_match(self::OTRA_OPCION, $resto) || preg_match(self::PARA_OTRA_MEDIDA, $resto)) {
                 return [];
             }
 
             // Dos piezas en la misma linea: no hay UNA medida que cargar.
             if ($this->hayOtraPieza($resto, $forma)) {
+                return [];
+            }
+
+            // Otra serie despues, que no este entre parentesis: "BARRA Ø10 X 300 $470 Ø12 X 300", "Ø 76,2 X 100 $ 541 C/U Y Ø76,2 X 150".
+            // Entre parentesis es el tamaño terminado de la misma pieza: "BARRA Ø305 X500MM (Ø270X500MM)".
+            if ($this->hayOtraSerie(preg_replace('/\([^)]*\)?/u', ' ', $resto))) {
                 return [];
             }
 

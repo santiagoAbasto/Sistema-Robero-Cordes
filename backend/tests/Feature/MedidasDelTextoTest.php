@@ -335,4 +335,75 @@ class MedidasDelTextoTest extends TestCase
         // Un solo diametro con su "+IVA" o con "KG" de peso se sigue leyendo.
         $this->assertSame(['diameter' => 31.75], $this->medidor->leer('AISI 630 BARRA Ø31.75MM, 640 KG, X KG (+IVA)', 'BARRA REDONDA'));
     }
+
+    /**
+     * Hallado en el informe completo de la VM (21.579 líneas, filtrado por patrones de riesgo): una barra hueca,
+     * dos ítems en una línea o dos diámetros distintos no tienen una sola medida.
+     */
+    public function test_una_barra_hueca_o_con_dos_items_no_carga_medida(): void
+    {
+        $r = 'BARRA REDONDA';
+
+        // Hueca o canulada: su medida es el exterior de un tubo.
+        $this->assertSame([], $this->medidor->leer('COTIZADO: TITANIO GR 5, BARRA Ø4MM X 16 MM C/PERF 0.9MM 50 C/U (+IVA)', $r));
+        $this->assertSame([], $this->medidor->leer('ALTERNATIVA #3 BARRA AISI 410 QDT Ø406MM CON PERFORADO ØI 250 +/-1MM X 500MM DE LARGO, 1 C/U', $r));
+        $this->assertSame([], $this->medidor->leer('2.865 ACE INOX F138 BARRA CANUL. ØE 13MM OD3.4MM P/M (+IVA)', $r));
+
+        // Dos ítems, con su precio en el medio o dos diámetros distintos.
+        $this->assertSame([], $this->medidor->leer('ACME 764-2306: BARRA Ø10 X 300MM $470  Ø12X300 MM C/U', $r));
+        $this->assertSame([], $this->medidor->leer('BARRA Ø 76,2 X 100 MM $ 541 C/U Y Ø76,2 X 150 MM C/U (+IVA)', $r));
+        $this->assertSame([], $this->medidor->leer('ACME PREGUNTA POR 2 MTS BARRA Ø 19,1 MM (5.7.94). SON 10 C/U Ø19,05 ó 15,88MM X 2600M', $r));
+        $this->assertSame([], $this->medidor->leer('INTERESADOS EN PEEK BARRA Ø8MM Y MENOR INDICADO PRECIO ESTIMADO Ø12MM, XM (+IVA)', $r));
+        $this->assertSame([], $this->medidor->leer('G41830+G41807 - MONEL K500 BARRA Ø9.53 X 800MM, 1 C/U - NO 12.7 X 800MM, 1 C/U', $r));
+
+        // Una opción, o un precio de otra medida.
+        $this->assertSame([], $this->medidor->leer('6. 1 C/U BARRA Ø50.8MM X 3000MM (O 57.15MM), X KG', $r));
+        $this->assertSame([], $this->medidor->leer('BARRA Ø25.4 X 2500MM, 1 C/U     (COTIZADO POR 2000MM)!!!!', $r));
+
+        // Lo ofrecido va despues: la serie es lo pedido.
+        $this->assertSame([], $this->medidor->leer('BARRA Ø38.1MM, OFRECEMOS 40MM, 1M, X M (+IVA)', $r));
+    }
+
+    /**
+     * Lo que se mantiene: el tamaño final, lo pedido y las notas que no son otra pieza.
+     *
+     * «(PARA 19.05)» es el diámetro al que se mecaniza: lo que se cotiza es la barra de 19.18. «(PIDE 22MM)» y
+     * «EN LUGAR DE 2.5MM» nombran lo pedido y la serie es lo que se ofrece.
+     */
+    public function test_el_tamano_final_y_lo_pedido_no_anulan_la_medida(): void
+    {
+        $r = 'BARRA REDONDA';
+
+        $this->assertSame(['diameter' => 19.18], $this->medidor->leer('ACERO 17-4PH, SOLUTION TREATED: 12 M BARRA Ø19.18MM (PARA 19.05), X KG (+IVA)', $r));
+        $this->assertSame(['diameter' => 70.0, 'length' => 420.0], $this->medidor->leer('RECOTIZADO BARRA Ø 70 X 420 MM (PARA 66) 1 C/U(+IVA)', $r));
+        $this->assertSame(['diameter' => 25.0], $this->medidor->leer('INCONEL 602 BARRA Ø25MM (PIDE 22MM), 3M, X M (+IVA)', $r));
+        $this->assertSame(['diameter' => 2.36], $this->medidor->leer('5-10M   BARRA Ø2.36MM (EN LUGAR DE 2.5MM), X M', $r));
+        $this->assertSame(['diameter' => 360.0], $this->medidor->leer('ALEACION C-276 BARRA Ø360MM (PEDIAN 350) X 1000MM, 1 C/U', $r));
+        $this->assertSame(['diameter' => 15.88, 'length' => 100.0], $this->medidor->leer('(SE OFRECEN RECORTES 203 / 218 MM) 1 UN MONEL 400 BARRA 15.88 X 100 MM (RECORTE,SE COBRA 115MM POR CORTE) C/U', $r));
+        $this->assertSame(['diameter' => 76.2], $this->medidor->leer('OFRECEMOS: MONEL K-500, BARRA Ø76.2MM X 176MM, X KG', $r));
+        // El "idem" del sistema viejo no son pulgadas.
+        $this->assertSame(['diameter' => 22.2, 'length' => 60.0], $this->medidor->leer('1 CU HASTELLOY C-276 BARRA 22.2 X 60MM " " "', $r));
+        // Entre parentesis es el tamaño terminado de la misma pieza.
+        $this->assertSame(['diameter' => 305.0, 'length' => 500.0], $this->medidor->leer('NITRONIC 60: BARRA Ø305 X500MM (Ø270X500MM), 1 C/U (+IVA)', $r));
+    }
+
+    /** Un largo en metros mal escrito, o de más de 12 metros, no se carga; el diámetro sí. Las pulgadas tampoco. */
+    public function test_un_largo_en_metros_o_de_mas_de_doce_metros_no_se_carga(): void
+    {
+        $r = 'BARRA REDONDA';
+
+        $this->assertSame(['diameter' => 2.36], $this->medidor->leer('4 TIT GR2 BARRA 2.36 X 9.15 MM C/U (+IVA)', $r));
+        $this->assertSame(['diameter' => 1.6], $this->medidor->leer('1 NIQUEL 61 BARRA 1.6 X 1.95 MM C/U', $r));
+        $this->assertSame(['diameter' => 6.35], $this->medidor->leer('25-3-4 6 TIT GR2 BARRA 6.35 X 41055 MM C/U (+IVA)', $r));
+        $this->assertSame(['diameter' => 114.3], $this->medidor->leer('BARRA Ø114.3 X 60000MM, X KG', $r));
+        $this->assertSame([], $this->medidor->leer('INCONEL 625 BARRA Ø5.25 X 10", 1 C/U (+IVA)', $r));
+
+        // Un largo corto entero es una pieza corta de verdad.
+        $this->assertSame(['diameter' => 6.35, 'length' => 15.0], $this->medidor->leer('1 TIT GR5 BARRA 6.35 X 15 MM C/U (+IVA)', $r));
+        // Y un fleje escrito como alambre sigue sin cargarse: el largo no se descarta antes de comprobarlo.
+        $this->assertSame([], $this->medidor->leer('TUNGSTENO, ALAMBRE 3 X 0,76 MM P/KG (+IVA)', 'ALAMBRE'));
+        $this->assertSame([], $this->medidor->leer('2 TIT GR5 BARRA 63.5 X 16.2 MM C/U (+IVA)', $r));
+        // Un tubo de 4.5 a 7 metros: el largo en metros no es un largo en milimetros.
+        $this->assertSame(['outer' => 19.05, 'wall' => 1.65], $this->medidor->leer('DUPLEX S31803 TUBO Ø 19.05 X 1.65 X 4.5 A 7 MTS P/M(+IVA)', 'TUBO'));
+    }
 }
