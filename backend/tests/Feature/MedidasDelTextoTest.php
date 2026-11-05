@@ -220,4 +220,78 @@ class MedidasDelTextoTest extends TestCase
     {
         $this->assertSame([], $this->medidor->leer('NIQUEL, ALAMBRE 1.5 MM (EN LUGAR DE Ø 2 MM) 2-3 KGS P/KG', 'ALAMBRE'));
     }
+
+    /**
+     * La barra redonda se escribe "BARRA", "BAR RED"...: casi nunca "BARRA REDONDA".
+     *
+     * Con solo buscar el nombre completo, las 2.457 barras de Monel 400 de la VM quedaban sin diámetro y «cuánto cuesta una barra de
+     * 20 mm» decía que no había registros.
+     */
+    public function test_la_barra_redonda_se_reconoce_como_se_escribe(): void
+    {
+        $casos = [
+            '1 UN MONEL 400 BARRA 76.2 X 500 MM, C/U (+IVA)' => ['diameter' => 76.2, 'length' => 500.0],
+            '1 C/U MONEL 400 BARRA RED 165.1 X 185MM C/U(+IVA)' => ['diameter' => 165.1, 'length' => 185.0],
+            '2 C/U MONEL 400 BAR RED Ø 25 X 4350MM 38 KG. P/KG(+IVA)' => ['diameter' => 25.0, 'length' => 4350.0],
+            'MONEL 400 BAR.RED. Ø 35 X 550 MM C/U(+IVA)' => ['diameter' => 35.0, 'length' => 550.0],
+            '1 BARRA Ø 31,75 X 45 MM C/U' => ['diameter' => 31.75, 'length' => 45.0],
+            'TITANIO GRADO 2 BARRAS Ø63,5 X 107MM' => ['diameter' => 63.5, 'length' => 107.0],
+            '1 UN MONEL 400 BARRA REDONDA Ø 20 X 1000 MM' => ['diameter' => 20.0, 'length' => 1000.0],
+            '1 TIT GR2 BARRA D.25,40 X 100 MM. C/U(+IVA).' => ['diameter' => 25.4, 'length' => 100.0],
+            // El largo en metros no son milímetros: solo el diámetro.
+            '4.390 KG TIT GR5 BARRA Ø 5.0 MM L: 50.795 M, P/KG (+IVA)' => ['diameter' => 5.0],
+        ];
+
+        foreach ($casos as $texto => $esperado) {
+            $this->assertSame($esperado, $this->medidor->leer($texto, 'BARRA REDONDA'), "mal leído: {$texto}");
+        }
+    }
+
+    /** "BARRA" a secas también es la cuadrada, la hexagonal, la perforada: esas no tienen un diámetro. */
+    public function test_una_barra_que_no_es_redonda_no_se_lee(): void
+    {
+        foreach ([
+            'BARRA CUADRADA 25 X 1000 MM',
+            '1 UN MONEL 400 BARRA HEXAGONAL 19.05 X 25 MM',
+            'BARRA RECTANGULAR 25 X 3 X 1000 MM',
+            'BARRA PERF ØE 127 X ØI 70 X 300MM, 1 C/U',
+            // Tres números es una sección rectangular, no un diámetro y un largo.
+            '1 UN MONEL 400 BARRA 10 X 25 X 1000 MM',
+            // «40 X 40» es la sección de una barra cuadrada, no un diámetro de 40 y un largo de 40.
+            '2 UN HASTELLOY C-276 BARRA 40 X 40 MM, C/U',
+        ] as $texto) {
+            $this->assertSame([], $this->medidor->leer($texto, 'BARRA REDONDA'), "se leyó algo en: {$texto}");
+        }
+    }
+
+    /**
+     * Lo pedido y lo ofrecido en la misma línea: la línea cotiza lo ofrecido y el primer par de números es lo pedido.
+     */
+    public function test_lo_pedido_y_lo_ofrecido_en_la_misma_linea_no_se_adivina(): void
+    {
+        $this->assertSame([], $this->medidor->leer('PIDEN AISI 630 (17-4PH) BARRA 55.56 X 1800 MM COND H1025 SE OFRECE AISI 630 BARRA 63.5 X 1767 MM', 'BARRA REDONDA'));
+        $this->assertSame([], $this->medidor->leer('PIDE INCONEL X-750 ALAMBRE 14.3 X 2200 MM, SE OFRECE INCONEL X-750 ALAMBRE 15.88 X 2200 MM, P/M', 'ALAMBRE'));
+        $this->assertSame([], $this->medidor->leer('MONEL 400 DIA 133.3X 136MM(2UN) OFRECEMOS: 1UN MONEL 400 BARRA 139.7 X 504MM + BARRA 76 X 200MM', 'BARRA REDONDA'));
+        // Con una sola medida, aunque diga "ofrece", es la de la línea.
+        $this->assertSame(['diameter' => 127.0, 'length' => 160.0], $this->medidor->leer('OFRECE: 316L BARRA Ø127 X 160MM, X KG (+IVA)', 'BARRA REDONDA'));
+    }
+
+    /** Un diámetro marcado sin su "MM" y después otra serie: no se sabe cuál es del artículo. */
+    public function test_un_diametro_suelto_antes_de_la_serie_no_se_adivina(): void
+    {
+        $this->assertSame([], $this->medidor->leer('CONSULTA COBRE/TUNGSTENO BARRA Ø 13 COBRE/TUNGSTENO Ø 12.7 X 205MM X 5 U (1025 MM)', 'BARRA REDONDA'));
+    }
+
+    /** Una cesta, un canasto o una serpentina nombran una barra que es solo una pieza de otra cosa. */
+    public function test_un_armado_no_toma_la_medida_de_una_de_sus_piezas(): void
+    {
+        $this->assertSame([], $this->medidor->leer('TITANIO,CESTA CONFORMADA DE 470/235/285 X 180 X 60 MM CON GANCHOS PARA CALZAR BARRA 19X45 MM', 'BARRA REDONDA'));
+        $this->assertSame([], $this->medidor->leer('1 CONJUNTO DE TUBO Ø 25.4 X 1.65 X 1000 MM CON BRIDAS', 'TUBO'));
+    }
+
+    /** Un texto que dice "BARRAS" en medio de una frase no es la medida de nada. */
+    public function test_la_palabra_barra_en_una_frase_no_es_una_medida(): void
+    {
+        $this->assertSame([], $this->medidor->leer('MONEL K500 - CONT: (LAS BARRAS MACIZAS SE PODRIAN ENTREGAR EN DOS TRAMOS DE 170 A 300 MM)', 'BARRA REDONDA'));
+    }
 }

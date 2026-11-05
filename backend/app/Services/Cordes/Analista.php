@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Cache;
 final class Analista
 {
     /** Cómo se llaman en castellano los filtros, para decir "sin el período hay 12". */
-    private const GRUPOS = [
+    public const GRUPOS = [
         'lugar' => [['provincia_id', 'localidad_id'], 'el lugar'],
         'periodo' => [['desde', 'hasta', 'fecha_de'], 'el período'],
         'material' => [['material', 'material_id'], 'el material'],

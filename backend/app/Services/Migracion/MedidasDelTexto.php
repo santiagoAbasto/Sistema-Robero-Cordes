@@ -55,6 +55,27 @@ class MedidasDelTexto
     /** Las formas que son largas y finas: su largo es mucho mas que su diametro. */
     private const FILIFORMES = ['ALAMBRE', 'VARILLA', 'VARILLA DE APORTE'];
 
+    /** Las formas redondas: un diametro y un largo, nunca tres numeros. */
+    private const REDONDOS = ['BARRA', 'BARRA REDONDA', 'ALAMBRE', 'VARILLA', 'VARILLA DE APORTE'];
+
+    /**
+     * Como se escribe de verdad la barra redonda en las descripciones: "BARRA", "BARRAS", "BARRA RED", "BAR RED",
+     * "BAR.RED." y "BARRED". Con solo buscar "BARRA REDONDA" quedaban afuera las 2.457 barras de Monel 400.
+     */
+    private const BARRA_REDONDA = '/(?<![\pL\d])(?:BARRA\s+REDONDA|BARRAS?\s*RED\.?|BAR\.?\s*RED\.?|BARRED|BARRAS?)(?![\pL\d])/iu';
+
+    /** Si despues de "BARRA" viene esto, no es redonda: su medida no es un diametro. */
+    private const NO_ES_REDONDA = '/^\s*(?:DE\s+)?(?:CUADRAD[AO]S?|CUAD\.?|HEXAGONAL(?:ES)?|EXAGONAL(?:ES)?|HEX\.?|OCTOGONAL(?:ES)?|RECTANGULAR(?:ES)?|RECT\.?|PLANAS?|PLANOS?|PLANCHUELAS?|HUECAS?|HUECOS?|PERFORADAS?|PERFILADAS?)(?![\pL])/iu';
+
+    /** Palabras de pedido y de oferta: con otra medida en la misma linea, no se sabe cual es la del articulo. */
+    private const OFERTA = '/(?<![\pL])(?:OFREC\pL*|ALTERNATIV\pL*|PEDI\pL*|PIDE\pL*|PIDEN|BUSCA\pL*|CONSULT\pL*|REQUIERE\pL*|SE\s+COBRA|EN\s+LUGAR\s+DE)(?![\pL])/iu';
+
+    /**
+     * Los armados: una cesta, un canasto, una serpentina o un conjunto nombran una barra o un tubo que es solo una pieza de
+     * otra cosa ("CESTA ... CON GANCHOS PARA CALZAR BARRA 19X45 MM"): esa medida no es la del articulo.
+     */
+    private const ARMADO = '/(?<![\pL])(?:CEST[AO]S?|CANAST\pL*|SERPENTIN\pL*|CONJUNTOS?|CONFORMAD\pL*|ENSAMBL\pL*|ARMAD[OA]S?)(?![\pL])/iu';
+
     /** Cuantos caracteres despues de la forma puede empezar la medida. */
     private const CERCA = 26;
 
@@ -91,6 +112,11 @@ class MedidasDelTexto
             return [];
         }
 
+        // Un redondo es un diametro y un largo: con tres numeros ("BARRA 10 X 25 X 1000") es una seccion rectangular.
+        if (count($numeros) > 2 && in_array(mb_strtoupper(trim($forma)), self::REDONDOS, true)) {
+            return [];
+        }
+
         $medidas = [];
 
         foreach ($numeros as $i => $escrito) {
@@ -120,6 +146,13 @@ class MedidasDelTexto
         */
         if (isset($medidas['diameter'], $medidas['length'])
             && $medidas['length'] < $medidas['diameter']) {
+            return [];
+        }
+
+        // "BARRA 40 X 40" es casi seguro la seccion de una barra cuadrada, no un diametro de 40 y un largo de 40.
+        if (isset($medidas['diameter'], $medidas['length'])
+            && in_array(mb_strtoupper(trim($forma)), self::REDONDOS, true)
+            && $medidas['length'] === $medidas['diameter']) {
             return [];
         }
 
@@ -167,6 +200,43 @@ class MedidasDelTexto
         return $medidas;
     }
 
+    /** Si mas adelante hay otro par de numeros con aspecto de medida ("Ø 63.5 X 200", "63.5 X 200 MM"). */
+    private function hayOtraSerie(string $resto): bool
+    {
+        return (bool) preg_match('/(?<![\pL\d])(?:Ø\s*)?\d{1,5}(?:[.,]\d{1,3})?\s*[xX]\s*\d{1,5}(?:[.,]\d{1,3})?(?:\s*MM)?/u', $resto);
+    }
+
+    /**
+     * Donde nombra el texto a la forma: [donde empieza, cuantas letras tiene el nombre usado], o null si no la nombra.
+     *
+     * Casi todas se escriben como se llaman. La barra redonda no: dice "BARRA", "BAR RED"... y se la reconoce con
+     * cuidado, porque "BARRA" a secas tambien es la cuadrada, la hexagonal o la rectangular, y esas no tienen diametro.
+     *
+     * @return array{0: int, 1: int}|null
+     */
+    private function ubicarLaForma(string $t, string $forma): ?array
+    {
+        if ($forma !== 'BARRA REDONDA') {
+            $donde = mb_stripos($t, $forma);
+
+            return $donde === false ? null : [$donde, mb_strlen($forma)];
+        }
+
+        if (! preg_match(self::BARRA_REDONDA, $t, $m, PREG_OFFSET_CAPTURE)) {
+            return null;
+        }
+
+        // El desplazamiento viene en bytes; el resto del lector cuenta letras.
+        $donde = mb_strlen(substr($t, 0, $m[0][1]));
+        $largo = mb_strlen($m[0][0]);
+
+        if (preg_match(self::NO_ES_REDONDA, mb_substr($t, $donde + $largo, 30))) {
+            return null;
+        }
+
+        return [$donde, $largo];
+    }
+
     /**
      * La primera serie de numeros separados por X que parezca una medida.
      *
@@ -192,11 +262,17 @@ class MedidasDelTexto
           salian medidas de la prosa. Lo que describe al articulo viene despues
           de nombrar la forma.
         */
-        $donde = mb_stripos($t, $forma);
-
-        if ($donde === false) {
+        if (preg_match(self::ARMADO, $descripcion)) {
             return [];
         }
+
+        $sitio = $this->ubicarLaForma($t, $forma);
+
+        if ($sitio === null) {
+            return [];
+        }
+
+        [$donde, $largoDelNombre] = $sitio;
 
         /*
           Y solo lo que viene pegado a la forma.
@@ -211,7 +287,7 @@ class MedidasDelTexto
             return [];
         }
 
-        $t = mb_substr($t, $donde + mb_strlen($forma));
+        $t = mb_substr($t, $donde + $largoDelNombre);
         $ventana = mb_substr($t, 0, self::CERCA);
 
         // Un rango —"5/7 X 45/50 MM"— no es una medida: son dos opciones.
@@ -295,7 +371,8 @@ class MedidasDelTexto
                 : ($tieneMarca && $tieneMm);
 
             if (! $sirve) {
-                if (count($numeros) === 1 && $tieneMm && ! $tieneMarca) {
+                // Un numero solo con una de las dos marcas (el "Ø" o el "MM") y la otra no: no se sabe si es la medida.
+                if (count($numeros) === 1 && ($tieneMm || $tieneMarca)) {
                     $suelto = true;
                 }
 
@@ -303,6 +380,19 @@ class MedidasDelTexto
             }
 
             if ($suelto) {
+                return [];
+            }
+
+            /*
+              Lo pedido y lo ofrecido en la misma linea: no se adivina cual es.
+
+              "PIDEN 17-4PH BARRA 55.56 X 1800 SE OFRECE 17-4PH BARRA 63.5 X 17..." cotiza lo ofrecido, y el
+              primer par de numeros es lo pedido. Con una palabra de oferta o de pedido y otra medida mas
+              adelante, no se carga ninguna.
+            */
+            $resto = substr($t, $hit[0][1] + strlen($texto));
+
+            if (preg_match(self::OFERTA, $descripcion) && $this->hayOtraSerie($resto)) {
                 return [];
             }
 

@@ -108,6 +108,8 @@ final class Conocimiento
            y un desglose corto. Si un ítem no se puede calcular (sin densidad, forma sin fórmula), decilo y seguí con los demás.
         8. PRECIOS: "a cuánto cotizamos / último precio / rango" → `precios`. "Cómo viene el precio / subió o bajó / evolución" → `evolucion_de_precios`.
            Los precios son por unidad de venta y por moneda: no los compares si son monedas o unidades distintas (decilo).
+           Si `precios` o `evolucion_de_precios` no encuentran nada, NO digas "no hay registros" a secas: mirá `sin_estos_filtros` y decí qué filtro sobra y cuántos renglones hay
+           sin él (en los renglones viejos la medida o el material suelen estar escritos solo en la descripción, no cargados como dato).
         9. LISTAS Y CUENTAS DE DATOS: "quiénes / cuántas / dónde / cómo viene" → `buscar` y `agrupar`. Una empresa puntual → `buscar_empresas` y después `empresa`.
            Una cotización concreta → `cotizacion`. "Cómo viene el año / ranking / vencimientos / por material" → `reporte`.
         10. SI HAY DUDA, PREGUNTÁ CON OPCIONES clicables (dos empresas parecidas, un material con varias calidades, falta la medida): nunca adivines.

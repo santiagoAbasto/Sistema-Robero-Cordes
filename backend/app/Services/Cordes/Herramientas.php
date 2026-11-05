@@ -394,10 +394,56 @@ final class Herramientas
             ];
         }
 
+        $sinFiltros = $r['estadisticas'] === [] ? $this->sinFiltros($pedido) : [];
+
         return $r + [
             'filtros_aplicados' => $pedido, 'no_entendi' => $noEntendi, 'tablas' => $tablas,
-            'nota' => $r['estadisticas'] === [] ? 'No hay renglones con precio para ese pedido (revisá el material o el período).' : 'Cada fila de estadística es una moneda y una unidad: no se mezclan. Mínimo, máximo y promedio son de TODOS los renglones; si dice mediana_de_los_ultimos, la mediana es sólo de esos más recientes.',
+            'sin_estos_filtros' => $sinFiltros,
+            'nota' => $r['estadisticas'] === [] ? $this->notaSinPrecios($sinFiltros) : 'Cada fila de estadística es una moneda y una unidad: no se mezclan. Mínimo, máximo y promedio son de TODOS los renglones; si dice mediana_de_los_ultimos, la mediana es sólo de esos más recientes.',
         ];
+    }
+
+    /**
+     * Cuando una búsqueda de precios no encuentra nada: qué filtro sobra y cuántos renglones hay sin él.
+     *
+     * "No hay registros" a secas engaña: en los renglones viejos la medida (o el material) muchas veces está escrita solo en la
+     * descripción y no cargada como dato, así que con ese filtro no aparecen aunque se hayan cotizado. En la VM, «una barra de Monel 400
+     * de 20 mm» daba cero y había 2.457 barras de Monel 400 sin medida.
+     *
+     * @param  array<string, mixed>  $pedido
+     * @return list<array{sin: string, renglones: int}>
+     */
+    private function sinFiltros(array $pedido): array
+    {
+        $salida = [];
+
+        foreach (Analista::GRUPOS as [$claves, $nombre]) {
+            if (array_intersect_key($pedido, array_flip($claves)) === []) {
+                continue;
+            }
+
+            $n = (int) ($this->contar('renglones', array_diff_key($pedido, array_flip($claves)))['total'] ?? 0);
+
+            if ($n > 0) {
+                $salida[] = ['sin' => $nombre, 'renglones' => $n];
+            }
+        }
+
+        usort($salida, fn ($a, $b) => $b['renglones'] <=> $a['renglones']);
+
+        return array_slice($salida, 0, 3);
+    }
+
+    /** @param  list<array{sin: string, renglones: int}>  $sinFiltros */
+    private function notaSinPrecios(array $sinFiltros): string
+    {
+        if ($sinFiltros === []) {
+            return 'No hay renglones con precio para ese pedido.';
+        }
+
+        return 'Con esos filtros no hay renglones con precio, pero eso NO quiere decir que no se haya cotizado: mirá `sin_estos_filtros`, que dice cuántos hay si se saca cada filtro '
+            .'(los renglones viejos suelen tener la medida o el material escritos solo en la descripción, no cargados como dato). Decile eso a la persona, con esos números; '
+            .'nunca contestes "no hay registros" a secas.';
     }
 
     /** @return array<string, mixed> */
@@ -410,15 +456,16 @@ final class Herramientas
         [$pedido, $noEntendi, $f] = $this->filtrosDe($a, 'renglones');
         $por = ($a['por'] ?? 'anio') === 'mes' ? 'mes' : 'anio';
         $periodos = $this->buscador->evolucionDePrecios($f, $por);
+        $sinFiltros = $periodos === [] ? $this->sinFiltros($pedido) : [];
 
         return [
-            'por' => $por, 'periodos' => $periodos, 'filtros_aplicados' => $pedido, 'no_entendi' => $noEntendi,
+            'por' => $por, 'periodos' => $periodos, 'filtros_aplicados' => $pedido, 'no_entendi' => $noEntendi, 'sin_estos_filtros' => $sinFiltros,
             'tablas' => $periodos === [] ? [] : [[
                 'titulo' => 'Cómo se movió el precio, por '.($por === 'mes' ? 'mes' : 'año'),
                 'columnas' => ['Período', 'Moneda', 'Unidad', 'Renglones', 'Mínimo', 'Promedio', 'Máximo'],
                 'filas' => array_map(fn ($p) => [$p['periodo'], $p['moneda'], $p['unidad'], $p['renglones'], $this->plata($p['minimo']), $this->plata($p['promedio']), $this->plata($p['maximo'])], $periodos),
             ]],
-            'nota' => $periodos === [] ? 'No hay renglones con precio para ese pedido (revisá el material o el período).' : 'Cada fila es un período, una moneda y una unidad: no se mezclan. Los renglones viejos importados pueden no tener el material enlazado.',
+            'nota' => $periodos === [] ? $this->notaSinPrecios($sinFiltros) : 'Cada fila es un período, una moneda y una unidad: no se mezclan. Los renglones viejos importados pueden no tener el material enlazado.',
         ];
     }
 

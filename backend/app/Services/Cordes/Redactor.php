@@ -736,7 +736,7 @@ final class Redactor
         $pedido = $r['filtros_aplicados'] ?? [];
 
         if ($r['periodos'] === []) {
-            return $this->resp(['mensaje' => "No encontré precios cotizados de **{$de}** para ver cómo se movieron.", 'pedido' => $pedido ?: null]);
+            return $this->resp(['mensaje' => $this->sinPrecios($de, $r['sin_estos_filtros'] ?? [], false, ' para ver cómo se movieron'), 'pedido' => $pedido ?: null]);
         }
 
         // Cada moneda y unidad por separado (nunca se mezclan), de lo más viejo a lo más nuevo, y la variación entre la primera y la última.
@@ -771,6 +771,24 @@ final class Redactor
                 isset($f['material']) && ! $empresa ? 'qué empresas más compran '.$f['material'] : null,
             ])),
         ]);
+    }
+
+    /**
+     * «No encontré precios»: con lo que sí hay si se saca un filtro, para que no suene a que nunca se cotizó.
+     *
+     * @param  list<array{sin: string, renglones: int}>  $sinFiltros
+     */
+    private function sinPrecios(string $de, array $sinFiltros, bool $conPeriodo, string $para = ''): string
+    {
+        $mensaje = "No encontré precios cotizados de **{$de}**{$para}.";
+
+        if ($sinFiltros === []) {
+            return $mensaje.($conPeriodo ? ' Probá con otro período.' : '');
+        }
+
+        $hay = implode('; ', array_map(fn ($s) => "sin {$s['sin']} hay **".number_format($s['renglones'], 0, ',', '.').'** renglones', $sinFiltros));
+
+        return $mensaje.' Ojo: no quiere decir que no se haya cotizado, porque en muchos renglones viejos esos datos están escritos solo en la descripción y no cargados. Mirá cuántos hay si se saca un filtro: '.$hay.'.';
     }
 
     private function precio(array $d): array
@@ -818,7 +836,7 @@ final class Redactor
         $de = trim(implode(' ', array_filter([$f['material'] ?? null, isset($f['forma']) ? 'en '.$f['forma'] : null, $empresa ? 'a '.$empresa->nombre : null]))) ?: 'eso';
 
         if ($r['estadisticas'] === []) {
-            return $this->resp(['mensaje' => "No encontré precios cotizados de **{$de}**.".(isset($f['desde']) ? ' Probá con otro período.' : ''), 'pedido' => $pedido ?: null]);
+            return $this->resp(['mensaje' => $this->sinPrecios($de, $r['sin_estos_filtros'] ?? [], isset($f['desde'])), 'pedido' => $pedido ?: null]);
         }
 
         $lineas = [];

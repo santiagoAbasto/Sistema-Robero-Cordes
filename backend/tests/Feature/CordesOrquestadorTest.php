@@ -400,6 +400,67 @@ class CordesOrquestadorTest extends TestCase
         $this->assertStringContainsString('En **DOLAR BILLETE BNA VENDEDOR** (sin unidad cargada):', $r['mensaje']);
     }
 
+    /**
+     * «No hay registros» a secas engaña.
+     *
+     * En la VM, «cuánto cuesta una barra de Monel 400 de 20 mm» contestó «no hay registros de precios» y había 2.457 barras de Monel 400
+     * con la medida sin cargar (escrita solo en la descripción). Cuando una búsqueda de precios da cero, se dice qué filtro sobra y
+     * cuántos renglones hay sin él.
+     */
+    public function test_si_no_hay_precios_con_la_medida_se_dice_cuantos_hay_sin_la_medida(): void
+    {
+        $this->monel();
+        $e = Empresa::create(['nombre' => 'ALFA SA', 'activa' => true]);
+        $this->cotizado($e, '2025-02-01', 360);
+        $this->cotizado($e, '2025-03-01', 380);
+
+        $r = $this->herramientas()->ejecutar('precios', ['filtros' => ['material' => 'monel', 'forma' => 'BARRA REDONDA', 'diametro_desde' => 20, 'diametro_hasta' => 20]]);
+
+        $this->assertSame([], $r['estadisticas']);
+        $this->assertContains(['sin' => 'la medida', 'renglones' => 2], $r['sin_estos_filtros']);
+        $this->assertStringContainsString('sin_estos_filtros', $r['nota'], 'la IA tiene que enterarse: si no, contesta «no hay registros»');
+        $this->assertStringContainsString('nunca contestes "no hay registros"', $r['nota']);
+
+        // Con precios, no hay nada que avisar.
+        $this->assertSame([], $this->herramientas()->ejecutar('precios', ['filtros' => ['material' => 'monel']])['sin_estos_filtros']);
+    }
+
+    public function test_sin_ia_el_codigo_tambien_dice_que_filtro_sobra(): void
+    {
+        $this->monel();
+        $e = Empresa::create(['nombre' => 'ALFA SA', 'activa' => true]);
+        $this->cotizado($e, '2025-02-01', 360);
+        $this->cotizado($e, '2025-03-01', 380);
+
+        $r = (new Cordes($this->admin))->responder('a cuánto cotizamos monel en 2019');
+
+        $this->assertSame('codigo', $r['fuente']);
+        $this->assertStringContainsString('No encontré precios cotizados de **Monel 400**', $r['mensaje']);
+        $this->assertStringContainsString('no quiere decir que no se haya cotizado', $r['mensaje']);
+        $this->assertStringContainsString('sin el período hay **2** renglones', $r['mensaje']);
+    }
+
+    public function test_la_ia_puede_decir_cuantos_hay_sin_el_filtro_y_el_verificador_lo_acepta(): void
+    {
+        $this->monel();
+        $e = Empresa::create(['nombre' => 'ALFA SA', 'activa' => true]);
+        $this->cotizado($e, '2025-02-01', 360);
+        $this->cotizado($e, '2025-03-01', 380);
+        $this->ia(
+            $this->juntas([['precios', ['filtros' => ['material' => 'monel', 'forma' => 'BARRA REDONDA', 'diametro_desde' => 20, 'diametro_hasta' => 20]]]]),
+            $this->final(['mensaje' => 'Con esa medida cargada no hay precios, pero sin la medida hay **2** renglones de barra redonda de **Monel 400**.']),
+        );
+
+        $r = (new Cordes($this->admin))->responder('cuánto pesa una barra de monel de 20 mm y 1 metro y cuánto cuesta, con lo que haya cotizado en la historia del sistema');
+
+        $this->assertSame('ia', $r['fuente']);
+        $this->assertTrue($r['verificada'], json_encode($r));
+        $this->assertStringContainsString('sin la medida hay **2**', $r['mensaje']);
+
+        // La IA recibió el dato: es lo que le permite no contestar «no hay registros».
+        Http::assertSent(fn ($req) => collect($req['messages'])->where('role', 'tool')->contains(fn ($m) => str_contains($m['content'], 'sin_estos_filtros') && str_contains($m['content'], 'la medida')));
+    }
+
     public function test_la_evolucion_distingue_subio_de_bajo_y_no_mezcla_monedas(): void
     {
         $this->monel();
