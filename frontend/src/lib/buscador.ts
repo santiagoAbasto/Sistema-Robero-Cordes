@@ -294,7 +294,7 @@ export const ATAJOS: Atajo[] = [
   {
     texto: 'Borradores sin emitir',
     ayuda: 'Lo que quedó a medias',
-    pedido: () => ({ grano: 'consultas', estado: 'Borrador' }),
+    pedido: () => ({ grano: 'consultas', estado: 'Sin emitir' }),
   },
 ]
 

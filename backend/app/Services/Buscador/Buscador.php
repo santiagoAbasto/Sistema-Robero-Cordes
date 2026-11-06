@@ -370,13 +370,21 @@ class Buscador
      */
     private function filtrosDeConsulta(Eloquent|Consulta_SQL $q, Filtros $f, string $t): void
     {
+        $sinEmitir = $f->estado === Consulta::SIN_EMITIR;
+
         // Los borradores no figuran en el historial: sólo se ven si se piden.
-        if (! $f->incluirBorradores && $f->estado !== 'Borrador') {
+        if (! $f->incluirBorradores && ! $sinEmitir && $f->estado !== 'Borrador') {
             $q->where("{$t}.estado", '!=', 'Borrador');
         }
 
+        // "Sin emitir": los borradores y las guardadas que faltan emitir (lo mismo que cuenta el dashboard).
+        if ($sinEmitir) {
+            $q->where(fn ($w) => $w->where("{$t}.estado", 'Borrador')
+                ->orWhere(fn ($x) => $x->where("{$t}.tipo", 'Cotizacion')->where("{$t}.estado", 'Confirmada')->whereNull("{$t}.emitida_el")));
+        }
+
         $q->when($f->tipo, fn ($q, $v) => $q->where("{$t}.tipo", $v))
-            ->when($f->estado, fn ($q, $v) => $q->where("{$t}.estado", $v))
+            ->when($sinEmitir ? null : $f->estado, fn ($q, $v) => $q->where("{$t}.estado", $v))
             ->when($f->usuarioId, fn ($q, $v) => $q->where("{$t}.usuario_id", $v))
             ->when($f->monedaId, fn ($q, $v) => $q->where("{$t}.moneda_id", $v));
 

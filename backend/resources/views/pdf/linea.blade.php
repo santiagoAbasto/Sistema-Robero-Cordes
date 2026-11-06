@@ -63,7 +63,7 @@
         {{-- Cuando se cotizo otra cosa, en la hoja sale aclarado. --}}
         @if (! $esAlternativa && ! $linea->igual_a_lo_pedido && $linea->pedido_texto)
             <div class="pedido">
-                Se habia pedido: {{ $linea->pedido_texto }}
+                Se había pedido: {{ $linea->pedido_texto }}
                 @if ($linea->motivo_cambio) &nbsp;&middot;&nbsp; {{ $linea->motivo_cambio }} @endif
             </div>
         @endif

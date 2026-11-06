@@ -15,6 +15,7 @@ import ConsultaEditor from './pages/indice/ConsultaEditor'
 import ControlDeCambios from './pages/indice/ControlDeCambios'
 import CopiarCotizacion from './pages/indice/CopiarCotizacion'
 import Borradores from './pages/indice/Borradores'
+import Empresas from './pages/indice/Empresas'
 import BorradoresEliminados from './pages/indice/BorradoresEliminados'
 import Imprimir from './pages/indice/Imprimir'
 import QuienVeQue from './pages/indice/QuienVeQue'
@@ -34,14 +35,17 @@ import RedirigirAlBuscador, {
   DESDE_BUSCAR_MATERIAL,
   DESDE_CONSULTAS_POR_CONDICION,
   DESDE_CONSULTAS_POR_FECHA,
+  DESDE_COTIZACIONES_A_CLIENTES,
+  DESDE_FACTURAS_Y_REMITOS,
   DESDE_EMPRESAS_POR_CONDICION,
-  DESDE_REGISTROS,
 } from './pages/buscador/Redirigir'
 
 /** Las que ya están hechas: el resto sigue mostrando el placeholder. */
 const HECHAS = [
   '/buscador',
+  '/compras/facturas',
   '/cotizaciones/buscar',
+  '/cotizaciones/clientes',
   '/config/antes-y-ahora',
   '/config/condiciones',
   '/config/condiciones-de-la-ficha',
@@ -77,7 +81,8 @@ export default function App() {
               {/* Empresas */}
               <Route path="/empresas" element={<IndiceMenu />} />
               {/* Los cuatro buscadores viejos son el Buscador: sus direcciones siguen andando. */}
-              <Route path="/empresas/registros" element={<RedirigirAlBuscador traducir={DESDE_REGISTROS} />} />
+              {/* "Nueva cotización" del Dashboard: la lista de empresas de siempre, sin el bot. */}
+              <Route path="/empresas/registros" element={<Empresas />} />
               <Route path="/empresas/condicion" element={<RedirigirAlBuscador traducir={DESDE_EMPRESAS_POR_CONDICION} />} />
               {/* "nueva" va antes que ":id": si no, entra por la ficha. */}
               <Route path="/empresas/nueva" element={<NuevaEmpresa />} />
@@ -89,6 +94,9 @@ export default function App() {
               <Route path="/consultas/fecha" element={<RedirigirAlBuscador traducir={DESDE_CONSULTAS_POR_FECHA} />} />
               <Route path="/consultas/condicion" element={<RedirigirAlBuscador traducir={DESDE_CONSULTAS_POR_CONDICION} />} />
               <Route path="/consultas/eliminados" element={<BorradoresEliminados />} />
+              {/* Los menús que ya tienen su pantalla real en el Buscador (Roberto no encontraba los comprobantes). */}
+              <Route path="/compras/facturas" element={<RedirigirAlBuscador traducir={DESDE_FACTURAS_Y_REMITOS} />} />
+              <Route path="/cotizaciones/clientes" element={<RedirigirAlBuscador traducir={DESDE_COTIZACIONES_A_CLIENTES} />} />
               <Route path="/consultas/:consultaId" element={<ConsultaEditor />} />
               <Route path="/consultas/:consultaId/copiar" element={<CopiarCotizacion />} />
               <Route path="/consultas/:consultaId/borradores" element={<Borradores />} />

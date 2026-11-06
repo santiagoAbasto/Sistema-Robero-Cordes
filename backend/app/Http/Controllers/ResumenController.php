@@ -40,9 +40,9 @@ class ResumenController extends Controller
                 'proveedores' => Empresa::activas()->conRelacion('Proveedor')->count(),
                 'cotizaciones_mes' => $cotizacionesMes,
                 'cotizaciones_mes_pasado' => $cotizacionesMesPasado,
-                // Borradores sin terminar: para tener a mano lo que quedó a
-                // medias y poder abrirlos todos de una.
-                'borradores' => Consulta::where('estado', 'Borrador')->count(),
+                // Lo que quedó a medias y todavía no salió (borradores y "falta emisión"):
+                // para tenerlo a mano y poder abrirlos todos de una.
+                'borradores' => Consulta::sinEmitir()->count(),
                 // Lo que se vendió (compra total o parcial): tiene su acceso en el dashboard.
                 'vendidas' => Consulta::where('estado', 'Vendida')->count(),
                 // En la papelera, todavía dentro de los 30 días que duran.

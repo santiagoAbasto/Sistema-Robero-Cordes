@@ -111,6 +111,15 @@ class LargosVariablesTest extends TestCase
         ])->render();
     }
 
+    /** Roberto, 06-11: "poner el acento en había". */
+    public function test_la_aclaracion_de_lo_que_se_habia_pedido_lleva_el_acento(): void
+    {
+        $hoja = $this->enLaHoja(['igual_a_lo_pedido' => false, 'pedido_forma' => 'BARRA REDONDA', 'pedido_dimensiones' => '177,8 X 9,5 MM']);
+
+        $this->assertStringContainsString('Se había pedido: BARRA REDONDA  ·  177,8 X 9,5 MM', $hoja);
+        $this->assertStringNotContainsString('Se habia pedido', $hoja);
+    }
+
     /**
      * Gunitado (Roberto, 14-10): por metro el peso no entra en la cuenta, así
      * que la hoja dice el rango y no "peso calculado sobre el promedio".

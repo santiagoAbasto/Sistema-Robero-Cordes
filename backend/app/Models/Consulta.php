@@ -305,6 +305,9 @@ class Consulta extends Model
     /** Los dos finales de los que no se vuelve solo: los cierra una persona. */
     public const ESTADOS_DE_CIERRE = [self::CERRADA, self::VENCIDA];
 
+    /** El valor del filtro de estado que junta lo que todavia no salio: borradores y cotizaciones guardadas sin emitir. */
+    public const SIN_EMITIR = 'Sin emitir';
+
     /**
      * Por donde llego la consulta.
      *
@@ -536,6 +539,18 @@ class Consulta extends Model
     public function scopeCotizaciones(Builder $q): Builder
     {
         return $q->where('tipo', 'Cotizacion');
+    }
+
+    /**
+     * Lo que se armo y todavia no salio: los borradores y las cotizaciones guardadas que faltan emitir.
+     *
+     * "Guardar" deja una cotizacion Confirmada sin numero ("Falta emision"), que para quien la armo es un
+     * borrador: contarlas aparte hacia que el dashboard dijera 0 borradores con una cotizacion a medias.
+     */
+    public function scopeSinEmitir(Builder $q): Builder
+    {
+        return $q->where(fn (Builder $w) => $w->where('estado', 'Borrador')
+            ->orWhere(fn (Builder $x) => $x->where('tipo', 'Cotizacion')->where('estado', 'Confirmada')->whereNull('emitida_el')));
     }
 
     public function scopePedidos(Builder $q): Builder

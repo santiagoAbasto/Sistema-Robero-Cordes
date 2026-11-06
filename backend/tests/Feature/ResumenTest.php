@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Http\Controllers\ResumenController;
 use App\Models\Consulta;
 use App\Models\Empresa;
+use App\Models\User;
 use Database\Seeders\CatalogosSeeder;
 use Database\Seeders\IndiceTelefonicoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -73,5 +74,29 @@ class ResumenTest extends TestCase
         $this->assertSame(0, $resumen['totales']['cotizaciones_mes']);
         $this->assertSame([], $resumen['ultimas']);
         $this->assertSame([], $resumen['materiales']);
+    }
+
+    /**
+     * "Guardar" deja una cotización sin numerar ("Falta emisión"): para quien la armó es un borrador.
+     *
+     * Roberto armó una, el dashboard la mostraba como "Falta emisión" y decía 0 borradores sin emitir.
+     */
+    public function test_los_borradores_cuentan_tambien_las_guardadas_que_faltan_emitir(): void
+    {
+        $this->seed(CatalogosSeeder::class);
+        $usuario = User::factory()->create();
+        $empresa = Empresa::create(['nombre' => 'ALFA SA', 'activa' => true]);
+        $nueva = fn (array $extra) => Consulta::create($extra + [
+            'empresa_id' => $empresa->id, 'tipo' => 'Cotizacion', 'fecha' => '2026-11-05',
+            'estado' => 'Confirmada', 'usuario_id' => $usuario->id,
+        ]);
+
+        $nueva(['estado' => 'Borrador']);
+        $nueva([]);                                         // guardada, sin emitir: "Falta emisión"
+        $nueva(['emitida_el' => '2026-11-05 10:00:00']);    // emitida: no es un borrador
+        $nueva(['tipo' => 'Observacion', 'estado' => 'Sin cotizar']);
+        $nueva(['estado' => 'Vendida', 'emitida_el' => '2026-11-04 10:00:00']);
+
+        $this->assertSame(2, $this->resumen()['totales']['borradores']);
     }
 }

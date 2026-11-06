@@ -233,6 +233,11 @@ final class Catalogo
     {
         $buscado = Texto::normalizar($texto);
 
+        // No es un estado de la cotizacion sino los dos que todavia no salieron (borrador y falta emision).
+        if ($buscado === Texto::normalizar(Consulta::SIN_EMITIR)) {
+            return Consulta::SIN_EMITIR;
+        }
+
         foreach (Consulta::ESTADOS as $estado) {
             if (Texto::normalizar($estado) === $buscado) {
                 return $estado;

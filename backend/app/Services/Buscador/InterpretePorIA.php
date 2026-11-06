@@ -75,7 +75,7 @@ final class InterpretePorIA
         $hoy = $this->catalogo->hoy();
         $semana = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'][$hoy->dayOfWeekIso - 1];
         $relaciones = implode(', ', EmpresaRelacion::OPCIONES);
-        $estados = implode(', ', Consulta::ESTADOS);
+        $estados = implode(', ', [...Consulta::ESTADOS, Consulta::SIN_EMITIR]).' ("Sin emitir" junta los borradores y las guardadas que faltan emitir)';
         $periodos = implode(', ', Periodo::NOMBRES);
         $provincias = Provincia::where('activo', true)->orderBy('nombre')->pluck('nombre')->implode(', ');
 

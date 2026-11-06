@@ -168,7 +168,7 @@ final class InterpretePorReglas
         /* -------------------------------------------------------- estados y tipos */
 
         $consumir('/\bborradores?(?:\s+sin\s+emitir)?\b|\bsin\s+emitir\b/', function () use (&$b) {
-            $b['estado'] = 'Borrador';
+            $b['estado'] = 'Sin emitir';
         });
         $consumir('/\b(?:vendid[oa]s?|ventas?|se vendieron|vendimos|concretad[oa]s?)\b/', function () use (&$b) {
             $b['estado'] ??= 'Vendida';

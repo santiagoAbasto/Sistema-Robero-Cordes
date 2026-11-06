@@ -1175,7 +1175,7 @@ function EntradaHistorial({
                   key={`pedido-${l.id}`}
                   className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-[#f3d9a6] bg-[#fff8ee] px-3 py-2"
                 >
-                  <span className="text-[9.5px] font-bold text-warning-ink">Le habia pedido</span>
+                  <span className="text-[9.5px] font-bold text-warning-ink">Le había pedido</span>
                   <span className="min-w-0 flex-1 text-[11.5px] text-[#7a5a1e]">
                     {l.pedido?.texto}
                   </span>

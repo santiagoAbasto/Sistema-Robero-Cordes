@@ -188,7 +188,7 @@ function Encabezado({ periodo }: { periodo?: string }) {
           <Plus size={17} strokeWidth={2.2} /> Nueva empresa
         </Link>
         <Link
-          to="/buscador"
+          to="/empresas/registros"
           className="flex items-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_2px_8px_rgba(0,125,195,0.3)] transition-colors hover:bg-brand-600"
         >
           <Plus size={17} strokeWidth={2.2} /> Nueva cotización
@@ -439,7 +439,7 @@ export default function Dashboard() {
         <div className="flex flex-col gap-5">
           {/* Borradores: lo que quedó a medias, para abrirlos todos de una. */}
           <Link
-            to="/buscador?grano=consultas&estado=Borrador"
+            to="/buscador?grano=consultas&estado=Sin%20emitir"
             className="group rounded-card border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-colors hover:border-brand-200 hover:bg-brand-50"
           >
             <div className="flex items-start justify-between">

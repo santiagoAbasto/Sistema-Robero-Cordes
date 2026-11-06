@@ -170,7 +170,7 @@ class CordesIATest extends TestCase
     public function test_whatsapp_y_mail_juntos_y_borradores_sin_emitir(): void
     {
         $this->assertPedido(['relacion' => 'Cliente', 'con_mail' => '1', 'con_whatsapp' => '1'], 'los clientes que tienen mail y whatsapp');
-        $this->assertPedido(['grano' => 'consultas', 'estado' => 'Borrador'], 'borradores sin emitir');
+        $this->assertPedido(['grano' => 'consultas', 'estado' => 'Sin emitir'], 'borradores sin emitir');
     }
 
     public function test_un_numero_suelto_no_es_una_empresa(): void
@@ -225,7 +225,7 @@ class CordesIATest extends TestCase
 
     public function test_estados_tipos_y_moneda(): void
     {
-        $this->assertPedido(['grano' => 'consultas', 'estado' => 'Borrador'], 'borradores');
+        $this->assertPedido(['grano' => 'consultas', 'estado' => 'Sin emitir'], 'borradores');
         $this->assertPedido(['grano' => 'consultas', 'estado' => 'Vendida', 'moneda_id' => (string) $this->pesos->id], 'cotizaciones vendidas en pesos');
         $this->assertPedido(['grano' => 'consultas', 'tipo' => 'Pedido', 'desde' => '2026-10-26', 'hasta' => '2026-11-01'], 'pedidos de la semana pasada');
     }

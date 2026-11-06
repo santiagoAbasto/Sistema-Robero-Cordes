@@ -131,7 +131,11 @@ export default function PanelDeFiltros({
         />
         <Lista
           etiqueta="Estado" vacio="Todos" value={v('estado')} onChange={poner('estado')}
-          opciones={(catalogos?.estados ?? []).map((x) => ({ valor: x, texto: x }))}
+          opciones={[
+            // Lo que todavía no salió: borradores y guardadas que faltan emitir (lo que cuenta el Dashboard).
+            { valor: 'Sin emitir', texto: 'Sin emitir' },
+            ...(catalogos?.estados ?? []).map((x) => ({ valor: x, texto: x })),
+          ]}
         />
         <Lista
           etiqueta="La hizo" vacio="Cualquiera" value={v('usuario_id')} onChange={poner('usuario_id')}

@@ -42,6 +42,12 @@ export const DESDE_CONSULTAS_POR_CONDICION: Traductor = (v) =>
 
 export const DESDE_BUSCADOR_IA: Traductor = () => ({})
 
+/** "Facturas y remitos" del menú de Compras: una fila por comprobante, con la cotización de la que salió. */
+export const DESDE_FACTURAS_Y_REMITOS: Traductor = () => ({ grano: 'comprobantes' })
+
+/** "A clientes" del menú de Cotizaciones: las cotizaciones, una fila por cotización. */
+export const DESDE_COTIZACIONES_A_CLIENTES: Traductor = () => ({ grano: 'consultas', tipo: 'Cotizacion' })
+
 /** "Buscar material" del menú de Cotizaciones: a quién se le cotizó, renglón por renglón. */
 export const DESDE_BUSCAR_MATERIAL: Traductor = () => ({ grano: 'renglones' })
 

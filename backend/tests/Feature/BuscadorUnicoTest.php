@@ -250,6 +250,22 @@ class BuscadorUnicoTest extends TestCase
         $this->assertCount(1, $this->buscar(['grano' => 'consultas', 'estado' => 'Borrador'])->json('data'));
     }
 
+    /** "Sin emitir" junta lo que el dashboard cuenta: borradores y guardadas que faltan emitir. */
+    public function test_sin_emitir_junta_los_borradores_y_las_guardadas_sin_emitir(): void
+    {
+        $e = $this->empresa('ALFA SA');
+        $borrador = $this->cotizacion($e, ['estado' => 'Borrador']);
+        $faltaEmision = $this->cotizacion($e);
+        $this->cotizacion($e, ['emitida_el' => '2026-10-02 09:00:00']);
+        $this->cotizacion($e, ['estado' => 'Vendida', 'emitida_el' => '2026-10-02 09:00:00']);
+        $this->cotizacion($e, ['tipo' => 'Observacion', 'estado' => 'Sin cotizar']);
+
+        $ids = collect($this->buscar(['grano' => 'consultas', 'estado' => 'Sin emitir'])->json('data'))
+            ->map(fn ($f) => $f['id'] ?? $f['consulta']['id'] ?? null)->filter()->sort()->values()->all();
+
+        $this->assertSame([$borrador->id, $faltaEmision->id], $ids);
+    }
+
     public function test_la_fecha_que_se_mira_puede_ser_la_de_la_factura(): void
     {
         $e = $this->empresa('ALFA SA');
