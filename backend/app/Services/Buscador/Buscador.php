@@ -719,6 +719,8 @@ class Buscador
             'fecha' => $c->fecha?->format('Y-m-d'),
             'numero' => $c->numeroConRevision(),
             'emitida' => $c->estaEmitida(),
+            // Para mostrar el boton «Descartar»: borradores y guardadas que todavia no se emitieron.
+            'descartable' => $c->esDescartable(),
             'empresa' => ['id' => $c->empresa_id, 'nombre' => $c->empresa_nombre, 'activa' => (bool) $c->empresa_activa],
             'moneda' => $c->moneda?->nombre,
             'usuario' => $c->usuario?->initials,

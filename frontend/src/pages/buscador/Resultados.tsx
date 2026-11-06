@@ -125,9 +125,9 @@ export function TablaDeConsultas({
 }: {
   filas: FilaConsulta[]
   veImportes: boolean
-  /** Sólo los administradores descartan borradores. */
+  /** Sólo los administradores descartan borradores y guardadas sin emitir. */
   puedeDescartar: boolean
-  alDescartar: (consulta: { id: number; empresa: string }) => void
+  alDescartar: (consulta: { id: number; empresa: string; sinEmitir?: boolean }) => void
 }) {
   return (
     <Tabla>
@@ -182,8 +182,11 @@ export function TablaDeConsultas({
                 <div className="flex items-center justify-end gap-3">
                   <Accion to={`/consultas/${c.id}`}>Abrir</Accion>
                   <Accion to={`/imprimir?empresa=${c.empresa.id}&consulta=${c.id}`}>Imprimir</Accion>
-                  {puedeDescartar && c.estado === 'Borrador' && (
-                    <Accion apagado onClick={() => alDescartar({ id: c.id, empresa: c.empresa.nombre })}>
+                  {puedeDescartar && (c.descartable ?? c.estado === 'Borrador') && (
+                    <Accion
+                      apagado
+                      onClick={() => alDescartar({ id: c.id, empresa: c.empresa.nombre, sinEmitir: c.estado !== 'Borrador' })}
+                    >
                       Descartar
                     </Accion>
                   )}

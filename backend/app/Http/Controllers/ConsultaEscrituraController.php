@@ -432,14 +432,14 @@ class ConsultaEscrituraController extends Controller
     {
         $this->soloAdministradorConClave($request);
 
-        // Sólo se descarta lo que todavía es borrador. Lo confirmado no se borra.
-        if ($consulta->estado !== 'Borrador') {
+        // Sólo se descarta lo que todavía no salió: un borrador o una guardada sin emitir. Lo emitido no se borra.
+        if (! $consulta->esDescartable()) {
             return response()->json([
-                'message' => 'Sólo se pueden descartar borradores. Una cotización confirmada no se borra.',
+                'message' => 'Sólo se pueden descartar los borradores y las cotizaciones guardadas que todavía no se emitieron. Una cotización emitida no se borra.',
             ], 422);
         }
 
-        $consulta->anotarCambio('Eliminado', 'estado', 'Borrador', 'a la papelera');
+        $consulta->anotarCambio('Eliminado', 'estado', $consulta->estado, 'a la papelera');
         $consulta->forceFill(['eliminada_por' => $request->user()->id])->save();
         $consulta->delete();
 

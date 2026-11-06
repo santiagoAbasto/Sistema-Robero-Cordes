@@ -17,8 +17,8 @@ export default function DescartarBorrador({
   onCerrar,
   onListo,
 }: {
-  /** El borrador a descartar. null = cerrado. */
-  consulta: { id: number; empresa: string } | null
+  /** Lo que se descarta. null = cerrado. `sinEmitir`: una cotización guardada que todavía no se emitió (no un borrador). */
+  consulta: { id: number; empresa: string; sinEmitir?: boolean } | null
   onCerrar: () => void
   /** Se llamó con éxito: el padre recarga y avisa. */
   onListo: (mensaje: string) => void
@@ -42,7 +42,11 @@ export default function DescartarBorrador({
 
     try {
       await descartarConsulta(consulta.id, clave)
-      onListo('Borrador enviado a la papelera. Se puede restaurar por 30 días.')
+      onListo(
+        consulta.sinEmitir
+          ? 'Cotización sin emitir enviada a la papelera. Se puede restaurar por 30 días.'
+          : 'Borrador enviado a la papelera. Se puede restaurar por 30 días.',
+      )
       onCerrar()
     } catch (err) {
       // Clave incorrecta, intentos que quedan o "esperá una hora": todo viene
@@ -56,8 +60,14 @@ export default function DescartarBorrador({
   return (
     <Modal
       abierto={consulta !== null}
-      titulo="Descartar el borrador"
-      bajada={consulta ? `Se descarta el borrador de ${consulta.empresa}. Queda 30 días en la papelera por si hay que restaurarlo.` : undefined}
+      titulo={consulta?.sinEmitir ? 'Descartar la cotización sin emitir' : 'Descartar el borrador'}
+      bajada={
+        consulta
+          ? consulta.sinEmitir
+            ? `Se descarta la cotización guardada de ${consulta.empresa} que todavía no se emitió: no se le mandó a nadie. Queda 30 días en la papelera por si hay que restaurarla.`
+            : `Se descarta el borrador de ${consulta.empresa}. Queda 30 días en la papelera por si hay que restaurarlo.`
+          : undefined
+      }
       onCerrar={onCerrar}
       onGuardar={descartar}
       guardando={trabajando}

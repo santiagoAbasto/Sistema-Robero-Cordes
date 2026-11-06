@@ -266,6 +266,21 @@ class BuscadorUnicoTest extends TestCase
         $this->assertSame([$borrador->id, $faltaEmision->id], $ids);
     }
 
+    /** El botón «Descartar» de la lista aparece en los borradores y en las guardadas sin emitir, no en las emitidas. */
+    public function test_la_fila_dice_cuales_se_pueden_descartar(): void
+    {
+        $e = $this->empresa('ALFA SA');
+        $borrador = $this->cotizacion($e, ['estado' => 'Borrador']);
+        $guardada = $this->cotizacion($e);
+        $emitida = $this->cotizacion($e, ['emitida_el' => '2026-10-02 09:00:00', 'numero' => '2026-0001']);
+
+        $filas = collect($this->buscar(['grano' => 'consultas', 'incluir_borradores' => 1])->json('data'))->keyBy('id');
+
+        $this->assertTrue($filas[$borrador->id]['descartable']);
+        $this->assertTrue($filas[$guardada->id]['descartable']);
+        $this->assertFalse($filas[$emitida->id]['descartable']);
+    }
+
     public function test_la_fecha_que_se_mira_puede_ser_la_de_la_factura(): void
     {
         $e = $this->empresa('ALFA SA');

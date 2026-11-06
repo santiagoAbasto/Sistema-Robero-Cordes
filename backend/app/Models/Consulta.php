@@ -553,6 +553,23 @@ class Consulta extends Model
             ->orWhere(fn (Builder $x) => $x->where('tipo', 'Cotizacion')->where('estado', 'Confirmada')->whereNull('emitida_el')));
     }
 
+    /**
+     * Si se puede mandar a la papelera: un borrador, o una cotizacion guardada que todavia no salio.
+     *
+     * Lo que salio (emitida, con su numero) no se descarta: el cliente la tiene. Una guardada sin emitir y
+     * sin numero no se le mando a nadie ni deja un agujero en la correlatividad. Roberto, 06-11: la lista
+     * de borradores sin emitir las traia "pero sin boton para borrar".
+     */
+    public function esDescartable(): bool
+    {
+        if ($this->estado === 'Borrador') {
+            return true;
+        }
+
+        return $this->tipo === 'Cotizacion' && $this->estado === 'Confirmada'
+            && ! $this->estaEmitida() && blank($this->numero);
+    }
+
     public function scopePedidos(Builder $q): Builder
     {
         return $q->where('tipo', 'Pedido');

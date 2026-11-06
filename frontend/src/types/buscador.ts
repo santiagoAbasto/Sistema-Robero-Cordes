@@ -24,6 +24,8 @@ export interface FilaConsulta {
   fecha: string | null
   numero: string | null
   emitida: boolean
+  /** Un borrador, o una guardada que todavía no se emitió: se puede mandar a la papelera. */
+  descartable?: boolean
   empresa: EmpresaDeFila
   moneda: string | null
   usuario: string | null

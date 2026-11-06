@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\Consulta;
 use App\Models\Empresa;
-use App\Models\HistorialCambio;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -84,13 +83,52 @@ class PapeleraDeBorradoresTest extends TestCase
         $this->assertNotNull(Consulta::find($borrador->id));
     }
 
-    public function test_una_confirmada_no_se_descarta(): void
+    /**
+     * Una cotización guardada que todavía no se emitió es un borrador para quien la armó.
+     *
+     * Roberto, 06-11: la lista de "borradores sin emitir" las traía "pero sin botón para borrar".
+     * Mismas protecciones: administrador, su clave, 30 días en la papelera, anotado y restaurable.
+     */
+    public function test_una_guardada_sin_emitir_se_descarta_y_se_restaura(): void
+    {
+        $admin = $this->admin();
+        Sanctum::actingAs($admin);
+        $guardada = $this->borrador();
+        $guardada->update(['estado' => 'Confirmada']);
+
+        $this->deleteJson("/api/consultas/{$guardada->id}", ['password' => 'clave-ok'])->assertOk();
+
+        $this->assertSoftDeleted('consultas', ['id' => $guardada->id, 'eliminada_por' => $admin->id]);
+        $this->assertDatabaseHas('historial_cambios', [
+            'tabla' => 'consultas', 'registro_id' => $guardada->id,
+            'accion' => 'Eliminado', 'campo' => 'estado', 'valor_anterior' => 'Confirmada',
+        ]);
+
+        $this->postJson("/api/consultas/{$guardada->id}/restaurar")->assertOk();
+        $this->assertNotNull(Consulta::find($guardada->id));
+        $this->assertSame('Confirmada', Consulta::find($guardada->id)->estado);
+    }
+
+    public function test_una_emitida_no_se_descarta(): void
     {
         Sanctum::actingAs($this->admin());
-        $borrador = $this->borrador();
-        $borrador->update(['estado' => 'Confirmada']);
+        $emitida = $this->borrador();
+        $emitida->update(['estado' => 'Confirmada', 'emitida_el' => '2026-10-08 10:00:00', 'numero' => '2026-0001']);
 
-        $this->deleteJson("/api/consultas/{$borrador->id}", ['password' => 'clave-ok'])
+        $this->deleteJson("/api/consultas/{$emitida->id}", ['password' => 'clave-ok'])
+            ->assertStatus(422);
+
+        $this->assertNotNull(Consulta::find($emitida->id));
+    }
+
+    /** Vendida o cerrada tampoco: salió y tuvo respuesta. */
+    public function test_una_vendida_no_se_descarta(): void
+    {
+        Sanctum::actingAs($this->admin());
+        $vendida = $this->borrador();
+        $vendida->update(['estado' => 'Vendida']);
+
+        $this->deleteJson("/api/consultas/{$vendida->id}", ['password' => 'clave-ok'])
             ->assertStatus(422);
     }
 

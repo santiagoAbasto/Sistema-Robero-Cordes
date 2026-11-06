@@ -21,9 +21,23 @@ use Illuminate\Support\Facades\Route;
 $spa = function () {
     $index = public_path('index.html');
 
-    return file_exists($index)
-        ? response()->file($index)
-        : view('welcome');
+    if (! file_exists($index)) {
+        return view('welcome');
+    }
+
+    /*
+      La pantalla se pide cada vez, sin guardarla en el navegador.
+
+      Un archivo servido con response()->file() sale "Cache-Control: public" sin vencimiento, y el
+      navegador lo reusa durante horas sin preguntar: despues de instalar una version, quien abria
+      el sistema seguia viendo la pantalla vieja (06-11-2026: el boton de borradores seguia llevando
+      al estado viejo con la version nueva ya instalada). Los archivos de assets/ llevan el hash en el
+      nombre, asi que esos si se guardan.
+    */
+    $respuesta = response()->file($index);
+    $respuesta->headers->set('Cache-Control', 'no-cache, must-revalidate');
+
+    return $respuesta;
 };
 
 Route::get('/', $spa);

@@ -231,7 +231,7 @@ export default function Buscador() {
     }
   }
 
-  const [aDescartar, setADescartar] = useState<{ id: number; empresa: string } | null>(null)
+  const [aDescartar, setADescartar] = useState<{ id: number; empresa: string; sinEmitir?: boolean } | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
 
   const inicioDeResultados = useRef<HTMLDivElement>(null)
