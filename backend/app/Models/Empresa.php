@@ -131,8 +131,17 @@ class Empresa extends Model
             return $query;
         }
 
-        return $query->where(function (Builder $q) use ($texto) {
+        // "meca rada" encuentra MECANIZADOS RADA: cada palabra tiene que estar
+        // en el nombre, juntas o no, en cualquier orden (pedido de Roberto, 11-11-2026).
+        $palabras = preg_split('/\s+/u', $texto, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return $query->where(function (Builder $q) use ($texto, $palabras) {
             $q->where('nombre', 'like', "%{$texto}%")
+                ->when(count($palabras) > 1, fn ($n) => $n->orWhere(function ($todas) use ($palabras) {
+                    foreach ($palabras as $palabra) {
+                        $todas->where('nombre', 'like', "%{$palabra}%");
+                    }
+                }))
                 ->orWhere('cuit', 'like', "%{$texto}%")
                 ->orWhere('codigo_isis', 'like', "%{$texto}%")
                 ->orWhere('codigo_indice', 'like', "%{$texto}%")

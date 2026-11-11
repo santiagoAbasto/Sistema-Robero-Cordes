@@ -135,4 +135,59 @@ class BuscadorDeEmpresasTest extends TestCase
         $this->getJson('/api/empresas?con_inactivas=1&ids=abc,,-1,0')->assertOk()->assertJsonCount(0, 'data');
         $this->getJson('/api/empresas?con_inactivas=1&ids=0')->assertOk()->assertJsonCount(0, 'data');
     }
+
+    /**
+     * Buscando "rada" Roberto no veía MECANIZADOS RADA (11-11-2026): la palabra
+     * entera quedaba detrás de las que solo la llevan por dentro (ESTRADA,
+     * PERFORADA...) y el buscador de arriba muestra pocas. (Nombres inventados:
+     * el repo es público.)
+     */
+    public function test_la_palabra_entera_va_antes_que_las_que_solo_la_contienen(): void
+    {
+        Sanctum::actingAs(User::factory()->create(['role' => 'Administrador']));
+
+        foreach (['CHAPA EXPANDIDA Y PERFORADA', 'CHAPA PERFORADA', 'EDITORIAL ANGEL ESTRADA', 'ELECTROMECANICA ESTRADA',
+            'HIC INTEGRADA', 'INDUSTRIAS ZZESTRADA', 'MECANIZADOS ZORZAL RADA'] as $nombre) {
+            Empresa::create(['nombre' => $nombre]);
+        }
+        Empresa::create(['nombre' => 'RADA, PEDRO E.']);
+
+        $nombres = array_column($this->getJson('/api/empresas?buscar=rada')->assertOk()->json('data'), 'nombre');
+
+        $this->assertSame('RADA, PEDRO E.', $nombres[0], 'la que empieza con lo buscado, primera');
+        $this->assertSame('MECANIZADOS ZORZAL RADA', $nombres[1], 'la que lo tiene como palabra entera, antes que las que lo llevan por dentro');
+    }
+
+    public function test_varias_palabras_se_encuentran_juntas_o_no_y_en_cualquier_orden(): void
+    {
+        Sanctum::actingAs(User::factory()->create(['role' => 'Administrador']));
+
+        Empresa::create(['nombre' => 'MECANIZADOS ZORZAL RADA']);
+        Empresa::create(['nombre' => 'MECANIZADOS OTRA SA']);
+        Empresa::create(['nombre' => 'RADA, PEDRO E.']);
+
+        foreach (['meca rada', 'rada meca', 'mecanizados zorzal rada', 'zorzal mecanizados'] as $texto) {
+            $nombres = array_column($this->getJson('/api/empresas?buscar='.urlencode($texto))->assertOk()->json('data'), 'nombre');
+
+            $this->assertContains('MECANIZADOS ZORZAL RADA', $nombres, "«{$texto}» tiene que encontrarla");
+        }
+
+        // Tienen que estar TODAS las palabras: "meca rada" no trae a la que solo dice MECANIZADOS...
+        $nombres = array_column($this->getJson('/api/empresas?buscar='.urlencode('meca rada'))->json('data'), 'nombre');
+        $this->assertNotContains('MECANIZADOS OTRA SA', $nombres);
+        // ...ni a la que solo dice RADA.
+        $this->assertNotContains('RADA, PEDRO E.', $nombres);
+    }
+
+    public function test_el_nombre_igual_va_antes_que_el_que_solo_empieza_igual(): void
+    {
+        Sanctum::actingAs(User::factory()->create(['role' => 'Administrador']));
+
+        Empresa::create(['nombre' => 'ZORBA FUNDICIONES']);
+        Empresa::create(['nombre' => 'ZORBA']);
+
+        $nombres = array_column($this->getJson('/api/empresas?buscar=ZORBA')->assertOk()->json('data'), 'nombre');
+
+        $this->assertSame(['ZORBA', 'ZORBA FUNDICIONES'], $nombres);
+    }
 }

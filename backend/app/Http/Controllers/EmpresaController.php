@@ -72,19 +72,49 @@ class EmpresaController extends Controller
             // Las inactivas (si se pidieron) van siempre al final, aunque
             // coincidan mejor o les toque antes por el abecedario.
             ->orderByDesc('activa')
-            // Con búsqueda, primero las que coinciden por NOMBRE (empieza con,
-            // después contiene); las que sólo matchean por un contacto, una
-            // razón social o una línea de cotización van al final. Sin esto,
-            // buscar una empresa por su nombre la enterraba detrás de cualquier
-            // cotización cuyo material contuviera ese texto, a varias páginas.
-            ->when($buscar !== '', fn ($q) => $q->orderByRaw(
-                'CASE WHEN nombre LIKE ? THEN 1 WHEN nombre LIKE ? THEN 2 ELSE 3 END',
-                [$buscar.'%', '%'.$buscar.'%']
-            ))
+            // Con búsqueda, primero las que coinciden por NOMBRE; las que sólo
+            // matchean por un contacto, una razón social o una línea de
+            // cotización van al final. Sin esto, buscar una empresa por su
+            // nombre la enterraba detrás de cualquier cotización cuyo material
+            // contuviera ese texto, a varias páginas.
+            ->when($buscar !== '', fn ($q) => $this->ordenarPorRelevancia($q, $buscar))
             ->orderBy('nombre')
             ->paginate((int) $request->query('por_pagina', 25));
 
         return EmpresaListaResource::collection($empresas);
+    }
+
+    /**
+     * Del nombre que más se parece al que menos:
+     *   0 el nombre igual · 1 empieza con lo buscado · 2 cada palabra buscada
+     *   empieza una palabra del nombre · 3 lo contiene tal cual · 4 contiene
+     *   cada palabra · 5 sólo matchea por otra cosa.
+     *
+     * El 2 es el que faltaba: buscando "rada", MECANIZADOS RADA (la palabra
+     * entera) quedaba detrás de ESTRADA, PERFORADA o INTEGRADA, que sólo la
+     * contienen por dentro, y el buscador de arriba muestra pocas (Roberto,
+     * 11-11-2026).
+     */
+    private function ordenarPorRelevancia($consulta, string $buscar)
+    {
+        $palabras = preg_split('/\s+/u', $buscar, -1, PREG_SPLIT_NO_EMPTY) ?: [$buscar];
+
+        $empiezaPalabra = implode(' AND ', array_fill(0, count($palabras), '(nombre LIKE ? OR nombre LIKE ?)'));
+        $contiene = implode(' AND ', array_fill(0, count($palabras), 'nombre LIKE ?'));
+
+        $datos = [$buscar, $buscar.'%'];
+        foreach ($palabras as $palabra) {
+            array_push($datos, $palabra.'%', '% '.$palabra.'%');
+        }
+        $datos[] = '%'.$buscar.'%';
+        foreach ($palabras as $palabra) {
+            $datos[] = '%'.$palabra.'%';
+        }
+
+        return $consulta->orderByRaw(
+            "CASE WHEN nombre = ? THEN 0 WHEN nombre LIKE ? THEN 1 WHEN {$empiezaPalabra} THEN 2 WHEN nombre LIKE ? THEN 3 WHEN {$contiene} THEN 4 ELSE 5 END",
+            $datos,
+        );
     }
 
     /** La ficha completa. */
