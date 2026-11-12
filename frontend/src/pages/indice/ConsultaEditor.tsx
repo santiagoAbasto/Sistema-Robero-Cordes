@@ -97,6 +97,7 @@ import { ModalContacto } from './modales'
 import Revisiones from './Revisiones'
 import Versiones from './Versiones'
 import HojaPrevia from './HojaPrevia'
+import { avisarTrabajoSinGuardar } from '../../lib/version'
 import { A_MILIMETROS, UNIDADES_MEDIDA, aMilimetros, calcularPeso } from '../../lib/calculadora'
 import { armarDescripcion, armarDimensiones, camposEnOrden } from '../../lib/descripcion'
 import { condicionesConLaFicha } from '../../lib/condiciones'
@@ -529,6 +530,17 @@ export default function ConsultaEditor() {
     window.addEventListener('beforeunload', avisar)
 
     return () => window.removeEventListener('beforeunload', avisar)
+  }, [hayCambios])
+
+  /*
+    Y lo mismo para la actualización automática: con una cotización a medio
+    cargar NO se recarga sola, espera a que se guarde (ver lib/version.ts).
+    Es la pantalla donde se pierde trabajo de verdad.
+  */
+  useEffect(() => {
+    avisarTrabajoSinGuardar('cotizacion', hayCambios)
+
+    return () => avisarTrabajoSinGuardar('cotizacion', false)
   }, [hayCambios])
   const [guardando, setGuardando] = useState(false)
   const [bajando, setBajando] = useState(false)

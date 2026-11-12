@@ -1,12 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import Sidebar from '../components/Sidebar'
 import Topbar from '../components/Topbar'
+import AvisoDeVersion from '../components/AvisoDeVersion'
+import { vigilarLaVersion } from '../lib/version'
 
 export default function AppShell() {
   const location = useLocation()
   const [drawerOpen, setDrawerOpen] = useState(false)
+
+  // Una sola vez, para toda la sesión: ver lib/version.ts.
+  useEffect(() => vigilarLaVersion(), [])
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-app">
@@ -57,6 +62,8 @@ export default function AppShell() {
           </motion.div>
         </main>
       </div>
+
+      <AvisoDeVersion />
     </div>
   )
 }
