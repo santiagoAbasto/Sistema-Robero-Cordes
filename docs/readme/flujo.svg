@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#0b1020"/><stop offset="1" stop-color="#111827"/>
+  </linearGradient>
+  <linearGradient id="ac" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#007DC3"/><stop offset="1" stop-color="#1B2A3A"/>
+  </linearGradient>
+  <radialGradient id="glowA" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#007DC3" stop-opacity="0.55"/><stop offset="1" stop-color="#007DC3" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="glowB" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#1B2A3A" stop-opacity="0.45"/><stop offset="1" stop-color="#1B2A3A" stop-opacity="0"/>
+  </radialGradient>
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+    <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.05"/>
+  </pattern>
+  <clipPath id="card"><rect width="1200" height="300" rx="22"/></clipPath>
+</defs>
+<style>
+  .t{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;fill:#f8fafc} .s{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;fill:#cbd5e1} .m{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#94a3b8}
+  .floatA{animation:fa 14s ease-in-out infinite alternate} .floatB{animation:fb 17s ease-in-out infinite alternate}
+  .grid{animation:gd 20s linear infinite}
+  .bar{animation:br 3.2s ease-in-out infinite}
+  @keyframes fa{from{transform:translate(0,0)}to{transform:translate(160px,40px)}}
+  @keyframes fb{from{transform:translate(0,0)}to{transform:translate(-180px,-30px)}}
+  @keyframes gd{from{transform:translate(0,0)}to{transform:translate(40px,40px)}}
+  @keyframes br{0%,100%{opacity:.55}50%{opacity:1}}
+  .dash{animation:ds 1.2s linear infinite} @keyframes ds{to{stroke-dashoffset:-24}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<g clip-path="url(#card)">
+  <rect width="1200" height="300" fill="url(#bg)"/>
+  <rect class="grid" x="-40" y="-40" width="1280" height="380" fill="url(#grid)"/>
+  <circle class="floatA" cx="220" cy="75" r="260" fill="url(#glowA)"/>
+  <circle class="floatB" cx="1000" cy="240" r="300" fill="url(#glowB)"/>
+  <text class="m" x="50" y="48" font-size="17" letter-spacing="3">CÓMO FUNCIONA</text>
+  <rect x="50" y="126" width="240" height="130" rx="16" fill="#ffffff" fill-opacity="0.05" stroke="url(#ac)" stroke-opacity="0.65"/>
+  <text class="m" x="170" y="160" font-size="14" text-anchor="middle">01</text>
+  <text class="t" x="170" y="196" font-size="22" font-weight="700" text-anchor="middle">Vendedor</text>
+  <text class="s" x="170" y="222" font-size="14" text-anchor="middle">SPA en React</text>
+  <path id="p0" d="M294 191 L332 191" stroke="#007DC3" stroke-width="3" stroke-dasharray="6 6" class="dash"/>
+  <path d="M324 185 L332 191 L324 197" fill="none" stroke="#1B2A3A" stroke-width="3" stroke-linecap="round"/>
+  <circle r="5" fill="#f8fafc"><animateMotion dur="1.6s" begin="0.0s" repeatCount="indefinite"><mpath href="#p0"/></animateMotion><animate attributeName="opacity" values="0;1;1;0" dur="1.6s" begin="0.0s" repeatCount="indefinite"/></circle>
+  <rect x="336" y="126" width="240" height="130" rx="16" fill="#ffffff" fill-opacity="0.05" stroke="url(#ac)" stroke-opacity="0.65"/>
+  <text class="m" x="457" y="160" font-size="14" text-anchor="middle">02</text>
+  <text class="t" x="457" y="196" font-size="22" font-weight="700" text-anchor="middle">API Laravel</text>
+  <text class="s" x="457" y="222" font-size="14" text-anchor="middle">token Sanctum y permisos</text>
+  <path id="p1" d="M581 191 L619 191" stroke="#007DC3" stroke-width="3" stroke-dasharray="6 6" class="dash"/>
+  <path d="M611 185 L619 191 L611 197" fill="none" stroke="#1B2A3A" stroke-width="3" stroke-linecap="round"/>
+  <circle r="5" fill="#f8fafc"><animateMotion dur="1.6s" begin="0.4s" repeatCount="indefinite"><mpath href="#p1"/></animateMotion><animate attributeName="opacity" values="0;1;1;0" dur="1.6s" begin="0.4s" repeatCount="indefinite"/></circle>
+  <rect x="623" y="126" width="240" height="130" rx="16" fill="#ffffff" fill-opacity="0.05" stroke="url(#ac)" stroke-opacity="0.65"/>
+  <text class="m" x="743" y="160" font-size="14" text-anchor="middle">03</text>
+  <text class="t" x="743" y="196" font-size="22" font-weight="700" text-anchor="middle">Servicios</text>
+  <text class="s" x="743" y="222" font-size="14" text-anchor="middle">cálculo de peso, fórmulas e</text>
+  <text class="s" x="743" y="240" font-size="14" text-anchor="middle">IA</text>
+  <path id="p2" d="M868 191 L906 191" stroke="#007DC3" stroke-width="3" stroke-dasharray="6 6" class="dash"/>
+  <path d="M898 185 L906 191 L898 197" fill="none" stroke="#1B2A3A" stroke-width="3" stroke-linecap="round"/>
+  <circle r="5" fill="#f8fafc"><animateMotion dur="1.6s" begin="0.8s" repeatCount="indefinite"><mpath href="#p2"/></animateMotion><animate attributeName="opacity" values="0;1;1;0" dur="1.6s" begin="0.8s" repeatCount="indefinite"/></circle>
+  <rect x="910" y="126" width="240" height="130" rx="16" fill="#ffffff" fill-opacity="0.05" stroke="url(#ac)" stroke-opacity="0.65"/>
+  <text class="m" x="1030" y="160" font-size="14" text-anchor="middle">04</text>
+  <text class="t" x="1030" y="196" font-size="22" font-weight="700" text-anchor="middle">Base de datos</text>
+  <text class="s" x="1030" y="222" font-size="14" text-anchor="middle">empresas, cotizaciones e</text>
+  <text class="s" x="1030" y="240" font-size="14" text-anchor="middle">historial</text>
+  <rect width="1200" height="300" rx="22" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+</g>
+</svg>
