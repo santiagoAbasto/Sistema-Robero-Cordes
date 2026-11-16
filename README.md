@@ -19,17 +19,17 @@
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 📑 Contenido
+## <img src="docs/readme/ic-indice.svg" width="24" height="24" alt=""> Contenido
 
 - [El problema](#-el-problema)
 - [La solución](#-la-solución)
 - [Funcionalidades](#-funcionalidades)
-- [Arquitectura](#%EF%B8%8F-arquitectura)
+- [Arquitectura](#-arquitectura)
 - [Flujos de trabajo](#-flujos-de-trabajo)
-- [Modelo de datos](#%EF%B8%8F-modelo-de-datos)
+- [Modelo de datos](#-modelo-de-datos)
 - [Criterios y decisiones](#-criterios-y-decisiones)
-- [Stack](#%EF%B8%8F-stack)
-- [Estructura del repo](#%EF%B8%8F-estructura-del-repo)
+- [Stack](#-stack)
+- [Estructura del repo](#-estructura-del-repo)
 - [Puesta en marcha](#-puesta-en-marcha)
 - [Pruebas y calidad](#-pruebas-y-calidad)
 - [Despliegue](#-despliegue)
@@ -38,11 +38,11 @@
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🧩 El problema
+## <img src="docs/readme/ic-problema.svg" width="24" height="24" alt=""> El problema
 
 Cotizar un caño o un producto metálico exige calcular el peso a partir del material, la forma y las medidas, y luego transcribir cada línea del pedido del cliente. Esa transcripción es lenta y propensa a errores de tipeo. Además, las condiciones pactadas con cada empresa y el precio de cada cotización se perdían en el historial del sistema anterior, y no había control de quién veía qué.
 
-## 💡 La solución
+## <img src="docs/readme/ic-solucion.svg" width="24" height="24" alt=""> La solución
 
 Un sistema a medida que reemplaza al anterior: el vendedor carga la cotización con líneas calculadas por fórmula, puede pedir a la IA que lea el texto del pedido del cliente, y el sistema guarda una copia de todo lo que se usó en el cálculo. Administración y vendedores trabajan cada uno con sus permisos.
 
@@ -55,7 +55,7 @@ El sistema es de una sola empresa, con permisos por usuario y por ficha; no es m
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## ✨ Funcionalidades
+## <img src="docs/readme/ic-funcionalidades.svg" width="24" height="24" alt=""> Funcionalidades
 
 <details open>
 <summary><b>Empresas y contactos</b></summary>
@@ -89,7 +89,7 @@ El sistema es de una sola empresa, con permisos por usuario y por ficha; no es m
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🏗️ Arquitectura
+## <img src="docs/readme/ic-arquitectura.svg" width="24" height="24" alt=""> Arquitectura
 
 <p align="center">
   <img src="docs/readme/flujo.svg" alt="Cómo viaja una petición: vendedor, SPA en React, API Laravel con token, servicios de dominio y base de datos" width="100%">
@@ -114,7 +114,7 @@ No hay colas propias del dominio más allá de las tablas que Laravel crea por d
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🔄 Flujos de trabajo
+## <img src="docs/readme/ic-flujos.svg" width="24" height="24" alt=""> Flujos de trabajo
 
 ### Interpretación de un pedido con IA
 
@@ -155,7 +155,7 @@ stateDiagram-v2
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🗃️ Modelo de datos
+## <img src="docs/readme/ic-datos.svg" width="24" height="24" alt=""> Modelo de datos
 
 Eloquent con `$guarded = []` en los modelos de dominio; los formularios validan explícitamente en los controladores.
 
@@ -189,7 +189,7 @@ Un trait (`RegistraCambios`) escribe en `historial_cambios` cada alta, modificac
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🧭 Criterios y decisiones
+## <img src="docs/readme/ic-criterios.svg" width="24" height="24" alt=""> Criterios y decisiones
 
 | Decisión | Por qué |
 |---|---|
@@ -210,7 +210,7 @@ Un trait (`RegistraCambios`) escribe en `historial_cambios` cada alta, modificac
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🛠️ Stack
+## <img src="docs/readme/ic-stack.svg" width="24" height="24" alt=""> Stack
 
 | Capa | Tecnología | Versión |
 |---|---|---|
@@ -227,7 +227,7 @@ Un trait (`RegistraCambios`) escribe en `historial_cambios` cada alta, modificac
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🗂️ Estructura del repo
+## <img src="docs/readme/ic-estructura.svg" width="24" height="24" alt=""> Estructura del repo
 
 ```text
 backend/
@@ -246,7 +246,7 @@ frontend/
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🚀 Puesta en marcha
+## <img src="docs/readme/ic-arranque.svg" width="24" height="24" alt=""> Puesta en marcha
 
 Requisitos: PHP 8.3 o superior, Composer, Node.js y npm.
 
@@ -273,7 +273,7 @@ cp .env.example .env     # ajustar VITE_API_URL si el backend no corre en localh
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🧪 Pruebas y calidad
+## <img src="docs/readme/ic-pruebas.svg" width="24" height="24" alt=""> Pruebas y calidad
 
 ```bash
 cd backend && php artisan test
@@ -286,13 +286,13 @@ cd frontend && npm run lint
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 🐳 Despliegue
+## <img src="docs/readme/ic-despliegue.svg" width="24" height="24" alt=""> Despliegue
 
 No hay Docker, Docker Compose ni CI/CD configurados en el repositorio. Para desarrollo se usa SQLite y el servidor embebido de Laravel con Vite. **No hay despliegue productivo documentado en el repositorio.**
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 📌 Estado y pendientes
+## <img src="docs/readme/ic-estado.svg" width="24" height="24" alt=""> Estado y pendientes
 
 - Último commit: **12-11-2026** (`cd1f5c0`, aviso de versión nueva en la pantalla y actualización automática cuando es posible).
 - Sistema en desarrollo activo. Sin evidencia en el repositorio de despliegue en producción.
@@ -300,7 +300,7 @@ No hay Docker, Docker Compose ni CI/CD configurados en el repositorio. Para desa
 
 <img src="docs/readme/divider.svg" alt="" width="100%">
 
-## 📄 Licencia y autoría
+## <img src="docs/readme/ic-licencia.svg" width="24" height="24" alt=""> Licencia y autoría
 
 Desarrollado por el **Ing. Santiago Abasto**.
 
